@@ -82,13 +82,13 @@ def _is_ip(host: str) -> bool:
         return False
 
 
-async def fetch_url(url: str) -> str:
+async def fetch_url(url: str, browser: bool = True) -> str:
     url = str(url or "").strip()
     if why := await blocked(url):
         return why
     if websearch.blocked_domain(url):
         return websearch.refuse_text(url, fetching=True)
-    return await websearch.fetch(url, private=await private_host(url))
+    return await websearch.fetch(url, private=await private_host(url), browser=browser)
 
 
 async def direct_fetch(url: str) -> str:

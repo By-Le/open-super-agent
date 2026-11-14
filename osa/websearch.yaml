@@ -21,6 +21,21 @@ recipes:
     results: results
     item: {title: title, url: url, text: [summary, snippet], date: date}
 
+  # ---- Exa 的免费搜索服务（mcp.exa.ai，MCP 接口）：不用密钥、不要钱，有限速；英文好，能搜到 Reddit、X 的帖子。搜索词会发给 Exa ----
+  # request 里写 mcp（服务地址）、tool（工具名）、args（参数）的是 MCP 服务；parse: exa 解析它返回的“Title: / URL: / Published: / Highlights:”文字
+  - name: exa
+    kind: search
+    title: Exa（免费）
+    desc: Exa 的免费搜索服务，不用密钥、不要钱（有限速），英文好。搜索词会发给 Exa
+    en: {title: Exa (free), desc: "Exa's free search service: no key, no cost (rate-limited), good for English. Queries are sent to Exa"}
+    request:
+      mcp: https://mcp.exa.ai/mcp
+      tool: web_search_exa
+      args: {query: $query, numResults: $count, objective: 'The most relevant and authoritative pages for this query'}
+    recent:
+      args: {query: $query, numResults: $count, objective: 'Pages published on or after ${since}; prefer the most recent'}
+    parse: exa
+
   # ---- Tavily（docs.tavily.com/documentation/api-reference/endpoint/search）。英文资料好，每月有免费额度 ----
   - name: tavily
     kind: search
@@ -148,6 +163,7 @@ recipes:
     desc: 读 Reddit 的帖子和评论（Reddit 不登录读不了）。每次 1 个点数
     en: {title: Reddit (ScrapeCreators), desc: "Reads Reddit posts and comments (Reddit can't be read logged out). 1 credit per call"}
     link: https://app.scrapecreators.com/
+    auto: false                      # 要钱，默认不开（免费的 Exa 搜索在前面）
     fields:
       - {key: api_key, label: API Key, secret: true, env: SCRAPECREATORS_API_KEY}
     price_usd: 0.00188
@@ -157,6 +173,15 @@ recipes:
       headers: {x-api-key: $api_key}
       params: {url: $url}
     parse: reddit_comments
+
+  # ---- Reddit 的帖子和评论：Reddit 不登录读不了，让模型用电脑上登录过的浏览器读（第一次要用户登录）----
+  - name: reddit-browser
+    kind: fetch
+    hosts: [reddit.com, redd.it]
+    title: Reddit（电脑上的浏览器）
+    desc: Reddit 不登录读不了：Bot 用电脑上的浏览器读帖子和评论，第一次要你在右栏的电脑画面里登录
+    en: {title: Reddit (computer's browser), desc: "Reddit can't be read logged out: the bot reads threads with the computer's browser. Log in once in the computer view on the right"}
+    via: browser
 
   # ---- X 的单条帖子：X 嵌入帖子用的公开地址，不要钱、不用密钥，带点赞、回复数。只能读单条帖子（网址里有 /status/编号），搜不了。
   #      不是 X 公开承诺的接口，哪天变了就读不到（换下一家）----
@@ -199,6 +224,55 @@ recipes:
   # 多了 platform（x / reddit / xiaohongshu）；item 还能写 author、likes、comments、shares、views；url 可以是 ${路径} 模板。
   # price_usd_item：按返回的条数收钱；max_days：最多能搜最近几天（超出就换下一家）；long + long_after：days 超过这么多天时换成 long 里的请求。
 
+  # ---- 用 Exa 的免费搜索找 X 帖子、Reddit 帖子（不用密钥、不要钱）。X 的帖子再用嵌入帖子的公开地址补上作者、点赞、回复数（也不要钱）；
+  #      Reddit 只有标题和摘要，没有分数。Exa 不一定搜得到最新的，按天筛只能按它给的发布日期 ----
+  - name: exa-x
+    kind: posts
+    platform: x
+    title: X（Exa 搜索，免费）
+    desc: 用 Exa 的免费搜索找 X 帖子，再免费补上点赞、回复数。不用账号、不要钱；不一定是最新的
+    en: {title: X (Exa search, free), desc: "Finds X posts with Exa's free search, then fills in likes and replies for free. No account, no cost; may miss the newest posts"}
+    request:
+      mcp: https://mcp.exa.ai/mcp
+      tool: web_search_exa
+      args: {query: 'tweets on x.com about ${query}', numResults: 25, objective: 'Only individual x.com or twitter.com posts (status pages) about this topic; most engaged first'}
+    recent:
+      args: {query: 'tweets on x.com about ${query}', numResults: 25, objective: 'Only individual x.com or twitter.com posts (status pages) posted on or after ${since}; newest and most engaged first'}
+    parse: exa_x
+
+  - name: exa-reddit
+    kind: posts
+    platform: reddit
+    title: Reddit（Exa 搜索，免费）
+    desc: 用 Exa 的免费搜索找 Reddit 帖子，只有标题和摘要、没有分数。不用账号、不要钱；不一定是最新的
+    en: {title: Reddit (Exa search, free), desc: "Finds Reddit threads with Exa's free search: titles and snippets, no scores. No account, no cost; may miss the newest threads"}
+    request:
+      mcp: https://mcp.exa.ai/mcp
+      tool: web_search_exa
+      args: {query: 'Reddit discussion threads about ${query}', numResults: 15, objective: 'Only reddit.com comment threads (/r/<sub>/comments/) about this topic'}
+    recent:
+      args: {query: 'Reddit discussion threads about ${query}', numResults: 15, objective: 'Only reddit.com comment threads (/r/<sub>/comments/) posted on or after ${since}'}
+    parse: exa_reddit
+
+  # ---- FxTwitter（api.fxtwitter.com，开源项目 FxEmbed 的公开接口）：不用账号、不要钱，能搜 X 帖子，带点赞、转发、回复、浏览数。
+  #      是别人用自己的账号池搭的服务，X 对同类项目（Nitter）发过律师函，随时可能停；搜索词会发给它。默认不开 ----
+  - name: fxtwitter
+    kind: posts
+    platform: x
+    title: X（FxTwitter）
+    desc: 第三方的公开接口，不用账号、不要钱，能搜最新的 X 帖子。是别人用自己的账号搭的服务，X 对同类项目发过律师函，随时可能停用；搜索词会发给它。默认不开
+    en: {title: X (FxTwitter), desc: "A third-party public API: no account, no cost, searches the newest X posts. It runs on someone else's accounts; X has sent legal letters to similar projects, so it may stop at any time. Queries are sent to it. Off by default"}
+    auto: false
+    request:
+      method: GET
+      url: https://api.fxtwitter.com/2/search
+      params: {q: $query, feed: top, count: $count}
+    recent:
+      params: {q: '${query} since:${since}', feed: top, count: $count}
+    results: results
+    item: {url: url, text: text, date: [created_timestamp, created_at], author: '@${author.screen_name}',
+           likes: likes, comments: replies, shares: reposts, views: views}
+
   # ---- X 官方接口（docs.x.com/x-api/posts/search/introduction）。按条收费：每条帖子 0.005 美元，同一条一天内只算一次 ----
   # 不带 expansions=author_id：带了会多读用户资料，每个 0.01 美元
   - name: x
@@ -236,6 +310,7 @@ recipes:
     desc: 第三方的 Reddit 接口，带分数、评论数；读 Reddit 帖子和评论也走它。每次 1 个点数，注册送 100 个，之后约 1.88 美元 / 千次
     en: {title: Reddit (ScrapeCreators), desc: "Third-party Reddit API with scores and comment counts; reading Reddit threads and comments also goes through it. 1 credit per call; 100 free on signup, then about $1.88 per 1,000"}
     link: https://app.scrapecreators.com/
+    auto: false                      # 要钱，默认不开（免费的 Exa 搜索在前面）
     fields:
       - {key: api_key, label: API Key, secret: true, env: SCRAPECREATORS_API_KEY}
     price_usd: 0.00188

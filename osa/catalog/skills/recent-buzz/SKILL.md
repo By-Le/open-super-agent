@@ -14,9 +14,10 @@ apps: []
 3. 搜（同一轮里一起调用，会并行跑）：
    - web_search：中文、英文各一个说法，带 days。
    - X：先用便宜的办法。话题是“最近在热议什么”这类的，用 fetch_url 读 https://getdaytrends.com/国家/ 的热门话题榜（免费），再用 web_search 查相关话题；
-     要看具体讨论时才用 search_posts platform=x，一个关键词，带 days，噪音多时加 lang:en、-is:reply。X 按条收钱，每个任务有预算，一般只搜一次。
+     要看具体讨论时用 search_posts platform=x，一个关键词，带 days：先走免费的搜索，最近几天的可能找不到，这时才会用到按条收钱的（每个任务有预算）。
      结果里的帖子链接要细看的，用 fetch_url 读（不要钱）。
-   - search_posts platform=reddit：一两个关键词，带 days。
+   - search_posts platform=reddit：一两个关键词，带 days。说“都早于最近 N 天”时可以不带 days 再搜一次，看看以前的讨论。
+     Reddit 的帖子正文和评论要用 fetch_url 打开，它会让你用电脑上的浏览器读（第一次要用户登录）；挑一两篇最相关的读就够了。
    - 小红书：search_posts platform=xiaohongshu，照它返回的说法用电脑上的浏览器搜，最多看 5 到 10 篇笔记。
      要登录、出现验证码时调用 ask_human 请用户接手，不要自己试。
    - 某个渠道返回“搜不了”“还没填”“搜索失败”的，记下原因，不要换着法子硬搜，也不要去浏览器里打开搜索引擎。

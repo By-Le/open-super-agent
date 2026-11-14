@@ -38,6 +38,10 @@ async def _save_page(call: Call) -> str:
     return out
 
 
+async def _fetch_url(call: Call) -> str:
+    return await tools.fetch_url(str(call.args.get("url") or ""), browser=bool(call.env.get("use_pc")))
+
+
 async def _search_posts(call: Call) -> str:
     a = call.args
     return await tools.search_posts(str(a.get("platform") or ""), str(a.get("query") or ""), a.get("days"), a.get("count"),
@@ -87,9 +91,9 @@ def load():
     ctx.tool(Tool("search_posts", SEARCH_POSTS, _search_posts, where=web, gated=True, parallel=2,
                describe="搜 X、Reddit、小红书上的帖子，看大家怎么说（带点赞、评论数）；能只要最近几天的",
                   progress=lambda a: i18n.t("搜 {platform}：{what}", platform=str(a.get("platform") or ""), what=str(a.get("query") or "")[:60])))
-    ctx.simple("fetch_url", tools.schema("fetch_url", "读网页正文（截断到 8000 字）。要跑脚本才显示内容的网页一般也能读；X 的单条帖子、Reddit 的帖子和评论也能读", {"url": "网址"}),
-               tools.fetch_url, where=web, gated=True, parallel=3, describe="读网页正文（截断到 8000 字）",
-               progress=lambda a: i18n.t("读取网页：{what}", what=str(a.get("url") or "")[:60]))
+    ctx.tool(Tool("fetch_url", tools.schema("fetch_url", "读网页正文（截断到 8000 字）。要跑脚本才显示内容的网页一般也能读；X 的单条帖子、Reddit 的帖子和评论也能读", {"url": "网址"}),
+                  _fetch_url, where=web, gated=True, parallel=3, describe="读网页正文（截断到 8000 字）",
+                  progress=lambda a: i18n.t("读取网页：{what}", what=str(a.get("url") or "")[:60])))
     ctx.tool(Tool("save_page", library.SAVE_PAGE, _save_page, when=_not_draft,
                   progress=lambda a: i18n.t("保存页面：{title}", title=str(a.get("title", ""))[:40])))
     ctx.tool(Tool("read_page", library.READ_PAGE, lambda c: _sync(library.tool_read_page(c.args)), parallel=3,

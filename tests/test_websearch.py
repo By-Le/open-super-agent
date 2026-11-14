@@ -27,6 +27,13 @@ def clean(monkeypatch):
     monkeypatch.delenv("X_BEARER_TOKEN", raising=False)
     monkeypatch.delenv("SCRAPECREATORS_API_KEY", raising=False)
     websearch._spent.clear()
+    # Exa 的免费搜索（MCP）默认开着，测试里关掉、也不许真的连出去；要测它的用例自己打开、换掉 _mcp_call
+    off = [dict(r, auto=False) for r in websearch._DEFAULTS["recipes"] if r["name"] in ("exa", "exa-x", "exa-reddit")]
+    monkeypatch.setitem(CFG, "web", {**(CFG.get("web") or {}), "recipes": off})
+
+    async def no_network(*a, **k):
+        raise AssertionError("测试里不该连 Exa")
+    monkeypatch.setattr(websearch, "_mcp_call", no_network)
     for n in ("WEB_TAVILY_API_KEY", "WEB_JINA_API_KEY", "WEB_X_BEARER_TOKEN", "WEB_SCRAPECREATORS_API_KEY"):
         vault.delete(n)
     yield
@@ -56,13 +63,13 @@ def names(kind):
 
 def test_auto_order_without_deepseek():
     assert names("search") == ["duckduckgo"]       # 没填密钥、没填地址的不用
-    assert names("fetch") == ["x-post", "getdaytrends", "direct"]   # Jina 默认不开；只管某些网站的不用密钥，开着
+    assert names("fetch") == ["reddit-browser", "x-post", "getdaytrends", "direct"]   # Jina、ScrapeCreators 默认不开
 
 
 def test_auto_order_with_deepseek(monkeypatch):
     deepseek_on(monkeypatch)
     assert names("search") == ["deepseek", "duckduckgo"]
-    assert names("fetch") == ["deepseek", "x-post", "getdaytrends", "direct"]
+    assert names("fetch") == ["deepseek", "reddit-browser", "x-post", "getdaytrends", "direct"]
 
 
 async def test_duckduckgo_parse_and_block(monkeypatch):
@@ -194,7 +201,7 @@ async def test_searxng_field_and_range(monkeypatch):
 async def test_config_recipe_overrides_default(monkeypatch):
     mine = {"name": "duckduckgo", "kind": "search", "title": "我的", "request": {"method": "GET", "url": "https://my.example.org/s",
             "params": {"q": "$query"}}, "results": "hits", "item": {"title": "t", "url": "u", "text": "s"}}
-    monkeypatch.setitem(CFG, "web", {**(CFG.get("web") or {}), "recipes": [mine]})
+    monkeypatch.setitem(CFG, "web", {**CFG["web"], "recipes": [*CFG["web"]["recipes"], mine]})
     fake(monkeypatch, lambda req: httpx.Response(200, json={"hits": [{"t": "A", "u": "https://a.example.org/", "s": "b"}]}))
     assert [r["title"] for r in websearch.recipes("search") if r["name"] == "duckduckgo"] == ["我的"]
     assert await tools.web_search("q") == "- A | https://a.example.org/\n  b"
@@ -270,7 +277,7 @@ async def test_posts_xiaohongshu_points_to_browser():
 async def test_posts_max_days_skips(monkeypatch):
     monkeypatch.setenv("X_BEARER_TOKEN", "xb")
     x = dict(websearch.recipe("posts", "x"), max_days=7)
-    monkeypatch.setitem(CFG, "web", {**(CFG.get("web") or {}), "recipes": [x]})
+    monkeypatch.setitem(CFG, "web", {**CFG["web"], "recipes": [*CFG["web"]["recipes"], x]})
     seen = fake(monkeypatch, lambda req: httpx.Response(200, json=X_BODY))
     out = await tools.search_posts("x", "q", days=30)
     assert out.startswith("搜索失败") and "只能搜最近 7 天" in out and not seen
@@ -292,7 +299,8 @@ SC_THREAD = {"success": True, "post": {"title": "帖子标题", "selftext": "帖
 async def test_reddit_search_via_scrapecreators(monkeypatch):
     monkeypatch.setenv("SCRAPECREATORS_API_KEY", "sc")
     seen = fake(monkeypatch, lambda req: httpx.Response(200, json=SC_SEARCH))
-    assert [r["name"] for r in websearch.order("posts") if r["platform"] == "reddit"] == ["scrapecreators"]   # 公开接口默认不开
+    assert not [r for r in websearch.order("posts") if r["platform"] == "reddit"]          # 要钱的默认不开
+    websearch.save({"posts": ["scrapecreators"]})
     out = await tools.search_posts("reddit", "deepseek", days=30)
     assert out == "- r/LocalLLaMA · 2026-11-06 · 赞 321 · 评论 45 | https://www.reddit.com/r/LocalLLaMA/comments/abc/x/\n  DeepSeek V4.1 本地跑 正文"
     req = seen[0]
@@ -302,6 +310,7 @@ async def test_reddit_search_via_scrapecreators(monkeypatch):
 async def test_reddit_thread_via_scrapecreators(monkeypatch):
     monkeypatch.setenv("SCRAPECREATORS_API_KEY", "sc")
     deepseek_on(monkeypatch)
+    websearch.save({"fetch": ["scrapecreators", "deepseek"]})
     seen = fake(monkeypatch, lambda req: httpx.Response(200, json=SC_THREAD))
     out = await tools.fetch_url("https://www.reddit.com/r/LocalLLaMA/comments/abc/x/")
     assert out == ("# 帖子标题\n\nr/LocalLLaMA · u/op · 2026-11-06 · 赞 1200 · 评论 3\n\n帖子正文\n\n## 评论\n"
@@ -357,7 +366,7 @@ def test_new_recipes_after_saved_order():
     # 以前保存的顺序（没记 fetch_seen）：后来加的只管某些网站的读法照默认开着，用户自己没勾的通用服务还是关着
     conn.execute("insert or replace into settings values('web', ?)", (json.dumps({"fetch": ["deepseek"]}),))
     conn.commit()
-    assert names("fetch") == ["x-post", "getdaytrends"]          # 没有 DeepSeek 的密钥；direct 当时就有、没勾，所以不开
+    assert names("fetch") == ["reddit-browser", "x-post", "getdaytrends"]   # 没有 DeepSeek 的密钥；direct 当时就有、没勾，所以不开
     websearch.save({"fetch": ["direct"]})                        # 现在保存：记下当时全部的，没勾的都算关
     assert names("fetch") == ["direct"]
     assert json.loads(conn.execute("select value from settings where key='web'").fetchone()[0])["fetch_seen"]
@@ -394,3 +403,68 @@ async def test_settings_test_uses_each_sites_own_url(monkeypatch):
                 else httpx.Response(200, text=GDT))
     assert (await websearch.test("fetch", "x-post"))["ok"] and dict(seen[0].url.params)["id"] == "20"
     assert (await websearch.test("fetch", "getdaytrends"))["ok"] and str(seen[1].url) == "https://getdaytrends.com/"
+
+
+# ---------- Exa 的免费搜索、FxTwitter、Reddit 交给浏览器 ----------
+def exa_text(*rows):
+    return "\n---\n".join(f"Title: {t}\nURL: {u}\nPublished: {d}\nAuthor: N/A\nHighlights:\n{h}" for t, u, d, h in rows)
+
+
+def exa_on(monkeypatch, text, seen_args=None):
+    monkeypatch.setitem(CFG, "web", {**CFG["web"], "recipes": []})     # 测试夹具里关掉的 Exa 打开
+
+    async def call(url, tool, args, timeout=30):
+        if seen_args is not None:
+            seen_args.append((url, tool, args))
+        return text
+    monkeypatch.setattr(websearch, "_mcp_call", call)
+
+
+async def test_exa_x_finds_ids_and_fills_counts(monkeypatch):
+    today = dt.date.today().isoformat()
+    text = exa_text(("新闻", "https://news.example.org/a", today, "不是帖子"),
+                    ("镜像", "https://xitter.cf/mama/status/2121354304900735276", "N/A", "x"),
+                    ("转存", "https://threadreaderapp.com/thread/111.html", "N/A", "y"))
+    args = []
+    exa_on(monkeypatch, text, args)
+    synd = {**SYND, "created_at": f"{today}T01:00:00.000Z"}
+    seen = fake(monkeypatch, lambda req: httpx.Response(200, json=synd) if "2121354304900735276" in str(req.url)
+                else httpx.Response(404))
+    out = await tools.search_posts("x", "deepseek", days=7)
+    assert out == f"- @mama · {today} · 赞 424 · 评论 43 | https://x.com/mama/status/2121354304900735276\n  Ground stop https://faa.gov/x"
+    assert args[0][0] == "https://mcp.exa.ai/mcp" and args[0][2]["query"] == "tweets on x.com about deepseek"
+    assert {str(r.url).split("?")[0] for r in seen} == {"https://cdn.syndication.twimg.com/tweet-result"}
+
+
+async def test_exa_older_than_window_says_so(monkeypatch):
+    exa_on(monkeypatch, exa_text(("旧帖", "https://www.reddit.com/r/LocalLLaMA/comments/abc/old/", "2025-01-01T00:00:00Z", "很久以前")))
+    out = await tools.search_posts("reddit", "deepseek", days=7)
+    assert out.startswith("搜索失败") and "找到 1 条，但都早于最近 7 天" in out
+    out = await tools.search_posts("reddit", "deepseek")
+    assert out == "- r/LocalLLaMA · 2025-01-01 | https://www.reddit.com/r/LocalLLaMA/comments/abc/old/\n  旧帖 很久以前"
+
+
+async def test_exa_web_search(monkeypatch):
+    exa_on(monkeypatch, exa_text(("页面", "https://example.org/p", "2026-11-01T00:00:00Z", "内容  多余空白")))
+    assert await websearch.search("q", only=websearch.recipe("search", "exa")) == "- 页面 | https://example.org/p | 2026-11-01\n  内容 多余空白"
+
+
+async def test_fxtwitter_opt_in(monkeypatch):
+    body = {"code": 200, "results": [{"url": "https://x.com/a/status/1", "text": "新帖", "created_timestamp": 1794000000,
+                                      "created_at": "Thu Nov 06 06:40:00 +0000 2026", "author": {"screen_name": "a"},
+                                      "likes": 12, "replies": 3, "reposts": 0, "views": 900}]}
+    seen = fake(monkeypatch, lambda req: httpx.Response(200, json=body))
+    assert not [r for r in websearch.order("posts") if r["name"] == "fxtwitter"]           # 默认不开
+    websearch.save({"posts": ["fxtwitter"]})
+    out = await tools.search_posts("x", "deepseek", days=7)
+    assert out == "- @a · 2026-11-06 · 赞 12 · 评论 3 · 浏览 900 | https://x.com/a/status/1\n  新帖"
+    since = (dt.date.today() - dt.timedelta(days=7)).isoformat()
+    assert dict(seen[0].url.params) == {"q": f"deepseek since:{since}", "feed": "top", "count": "10"}
+    assert websearch._date("Thu Nov 13 21:27:33 +0000 2026") == "2026-11-13"
+
+
+async def test_reddit_links_go_to_the_browser():
+    out = await tools.fetch_url("https://www.reddit.com/r/LocalLLaMA/comments/abc/x/")
+    assert out.startswith("Reddit（电脑上的浏览器）：") and "browser_open 打开 https://www.reddit.com/r/LocalLLaMA/comments/abc/x/" in out
+    out = await tools.fetch_url("https://www.reddit.com/r/LocalLLaMA/comments/abc/x/", browser=False)
+    assert "没有电脑可用" in out

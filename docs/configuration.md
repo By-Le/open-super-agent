@@ -122,6 +122,7 @@ Bot 用 `web_search` 搜索网页、用 `fetch_url` 读网页正文。用哪家�
 | Brave Search | API Key（或 `BRAVE_API_KEY`） | 独立索引，英文好 |
 | 博查 | API Key（或 `BOCHA_API_KEY`） | 中文网页搜索 |
 | SearXNG | 地址（以前的 `search.searxng_url` 照样认） | 自己搭的元搜索，要在它的 settings.yml 里开 JSON 格式 |
+| Exa（免费） | 不用配置 | Exa 的免费搜索服务（MCP 接口），不要钱、有限速，英文好；搜索词会发给 Exa |
 | DuckDuckGo | 不用配置 | 免费，最后垫底；中文结果一般，请求多了会被限流 |
 
 | 读网页 | 要什么 | 说明 |
@@ -132,10 +133,17 @@ Bot 用 `web_search` 搜索网页、用 `fetch_url` 读网页正文。用哪家�
 
 | 社交平台的帖子（`search_posts`） | 要什么 | 说明 |
 |---|---|---|
+| X（Exa 搜索，免费） | 不用配置 | 用 Exa 的免费搜索找 X 帖子，再用嵌入帖子的公开地址补上点赞、回复数，都不要钱。Exa 的 X 索引会晚几天到几周，要最近几天的常常找不到，这时才轮到下面要钱的 |
+| Reddit（Exa 搜索，免费） | 不用配置 | 只有标题和摘要、没有分数；同样不一定有最新的 |
+| X（FxTwitter） | 不用配置，默认不开 | 开源项目 FxEmbed 的公开接口，能搜最新的帖子、带互动数，不要钱。是别人用自己的账号搭的服务，X 对同类项目（Nitter）发过律师函，随时可能停；搜索词会发给它。要用自己在设置里打开 |
 | X 官方接口 | X 开发者后台（console.x.com）的 Bearer Token（或环境变量 `X_BEARER_TOKEN`） | 按读到的帖子收钱，每条 0.005 美元，同一条一天内只算一次；`days` 超过 7 天时搜全部存档。每个任务最多花 `web.posts_budget_usd`（默认 0.05 美元，也就是搜一次），设置里能改 |
-| Reddit（ScrapeCreators） | ScrapeCreators 的 API Key（或 `SCRAPECREATORS_API_KEY`） | 第三方的 Reddit 接口，带分数、评论数；每次 1 个点数，注册送 100 个，之后约 1.88 美元 / 千次。Reddit 不登录已经什么都看不了（住宅 IP 也是 403），官方接口要人工审批几周 |
+| Reddit（ScrapeCreators） | ScrapeCreators 的 API Key（或 `SCRAPECREATORS_API_KEY`），默认不开 | 第三方的 Reddit 接口，带分数、评论数；每次 1 个点数，注册送 100 个，之后约 1.88 美元 / 千次。Reddit 不登录已经什么都看不了（住宅 IP 也是 403），官方接口要人工审批几周 |
 | Reddit 公开接口 | 不用密钥 | 服务器和代理的 IP 基本都被 Reddit 拦（403），默认不开 |
 | 小红书 | 在右栏的电脑画面里登录一次小红书 | 没有接口：`search_posts` 告诉 Bot 用电脑上的浏览器去搜，要登录或遇到验证码时请你接手 |
+
+Reddit 不登录已经什么都看不了（住宅 IP 也是 403，开源的 rdt-cli、last30days 的免 key 读法这周也被封了）：`fetch_url` 读 Reddit 链接时，让 Bot 用电脑上登录过的浏览器读（第一次要你登录）；开了 ScrapeCreators 就走它。
+
+MCP 服务的配方：`request` 里写 `mcp`（服务地址）、`tool`（工具名）、`args`（参数），`parse: exa` 解析 Exa 返回的文字。
 
 X 上不花钱的两条路：`fetch_url` 读 `https://getdaytrends.com/国家/` 拿到 X 现在的热门话题榜（只有话题名和排名），读 X 的单条帖子链接走 X 嵌入帖子的公开地址，带点赞、回复数，也不要钱（不是 X 公开承诺的接口，哪天变了就读不到）。
 

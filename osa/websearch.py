@@ -22,6 +22,7 @@
 
 不用的网站（web.block，设置里能改）：搜索结果里去掉，fetch_url 和浏览器都不打开。
 """
+import asyncio
 import datetime as dt
 import html
 import json
@@ -135,6 +136,11 @@ def chosen(kind: str) -> list[str]:
     return [x for x in v if isinstance(x, str)] if isinstance(v, list) else []
 
 
+# 记“保存时有哪些服务”（*_seen）之前就有的服务：以前保存的顺序里没勾它们，就是用户关掉的
+LEGACY_SEEN = {"search": ("deepseek", "tavily", "brave", "bocha", "searxng", "duckduckgo"), "fetch": ("deepseek", "jina", "direct"),
+               "posts": ("x", "scrapecreators", "reddit-public", "xiaohongshu-browser")}
+
+
 def _seen(kind: str) -> set[str] | None:
     """保存顺序那时已经有的服务；之后才加进配方的，在选过的列表里按自己的默认（auto）算开不开。
     以前保存的没记这个：当时只有不带 hosts 的（只管某些网站的读法是后来加的）。"""
@@ -142,7 +148,7 @@ def _seen(kind: str) -> set[str] | None:
     if kind not in s:
         return None
     seen = s.get(f"{kind}_seen")
-    return set(seen) if isinstance(seen, list) else {r["name"] for r in recipes(kind) if not r.get("hosts")}
+    return set(seen) if isinstance(seen, list) else set(LEGACY_SEEN.get(kind, ()))
 
 
 def _on(kind: str, r: dict, names: list[str]) -> bool:
@@ -309,8 +315,119 @@ def _items(r: dict, d) -> list[dict]:
     return out
 
 
+async def _mcp_call(url: str, tool: str, args: dict, timeout: float = 30) -> str:
+    """调一次 MCP 服务的工具（Exa 的免费搜索），返回它给的文字。每次新开一个会话：用得不多，不值得常连着。"""
+    import contextlib
+    from mcp import ClientSession
+    from mcp.client.streamable_http import streamable_http_client
+    from mcp.shared._httpx_utils import create_mcp_http_client
+    async with contextlib.AsyncExitStack() as stack:
+        client = await stack.enter_async_context(create_mcp_http_client())
+        streams = await stack.enter_async_context(streamable_http_client(url, http_client=client))
+        session = await stack.enter_async_context(ClientSession(streams[0], streams[1]))
+        await asyncio.wait_for(session.initialize(), timeout)
+        res = await asyncio.wait_for(session.call_tool(tool, args), timeout)
+    text = "\n".join(t for x in res.content if (t := getattr(x, "text", None)))
+    if getattr(res, "is_error", None) or getattr(res, "isError", None):   # mcp 2.x 叫 is_error，1.x 叫 isError
+        raise Failed(text[:200] or i18n.t("服务出错了"))
+    return text
+
+
+async def _send_mcp(r: dict, v: dict) -> str:
+    req = dict(r.get("request") or {})
+    if v.get("days") and r.get("recent"):
+        req |= r["recent"]
+    try:
+        return await _mcp_call(req["mcp"], req["tool"], render(req.get("args") or {}, v))
+    except Failed:
+        raise
+    except (asyncio.TimeoutError, TimeoutError):
+        raise Failed(i18n.t("连接超时"))
+    except Exception as e:   # MCP 连不上、限流、协议出错都在这里，换下一家
+        msg = str(e) or type(e).__name__
+        raise Failed(i18n.t("被限流了（HTTP 429）") if "429" in msg else msg[:160])
+
+
+def _exa_blocks(text: str) -> list[dict]:
+    """Exa 返回的文字：每条是 Title: / URL: / Published: / Author: / Highlights:，条与条之间是 ---。"""
+    out = []
+    for block in re.split(r"\n-{3,}\n", text or ""):
+        get = lambda k: (m.group(1).strip() if (m := re.search(rf"^{k}:[ \t]*(.*)$", block, re.M)) else "")   # noqa: E731
+        url = get("URL")
+        if not url.startswith(("http://", "https://")):
+            continue
+        hl = block.split("Highlights:", 1)[1] if "Highlights:" in block else ""
+        date = get("Published")
+        out.append({"title": _clean(get("Title")), "url": url, "text": _clean(hl), "date": None if date in ("", "N/A") else date,
+                    "author": "" if get("Author") in ("", "N/A") else get("Author")})
+    return out
+
+
+# X 帖子的编号：x.com、twitter.com，以及 Exa 常给的镜像和转存页（nitter、xitter、xcancel、fxtwitter、unrollnow、threadreaderapp……）
+_X_ID = re.compile(r"(?:(?:^|//|\.)(?:x|twitter|xcancel|fxtwitter|vxtwitter|fixupx|fixvx)\.com/[^/\s]+/status(?:es)?/"
+                   r"|//(?:[\w-]+\.)?(?:nitter|xitter)\.[\w.]+/[^/\s]+/status/|unrollnow\.com/status/|threadreaderapp\.com/thread/)(\d{8,})")
+_REDDIT_THREAD = re.compile(r"^https?://(?:www\.|old\.)?reddit\.com/r/([^/]+)/comments/\w+", re.I)
+
+
+def _since_ok(date, days: int | None) -> bool:
+    """在不在最近 days 天里；不知道日期的算在。"""
+    d = _date(date)
+    if not days or not re.match(r"\d{4}-\d{2}-\d{2}$", d):
+        return True
+    return d >= (dt.date.today() - dt.timedelta(days=days)).isoformat()
+
+
+async def _x_details(c: httpx.AsyncClient, tid: str) -> dict | None:
+    """用 X 嵌入帖子的公开地址补上作者、日期、正文、点赞、回复数（不要钱）；读不到返回 None。"""
+    try:
+        r = await c.get(f"https://cdn.syndication.twimg.com/tweet-result?id={tid}&token={_x_token(tid)}", headers=UA)
+        d = r.json() if r.status_code == 200 else None
+    except (httpx.HTTPError, ValueError):
+        return None
+    if not isinstance(d, dict) or not d.get("text"):
+        return None
+    user = d.get("user") or {}
+    text = str(((d.get("note_tweet") or {}).get("text")) or d.get("text") or "")
+    for u in (d.get("entities") or {}).get("urls") or []:
+        if u.get("url") and u.get("expanded_url"):
+            text = text.replace(u["url"], u["expanded_url"])
+    text = re.sub(r"\s*https://t\.co/\w+$", "", text)   # 最后那个是图片、视频的短链
+    return {"title": "", "url": f"https://x.com/{user.get('screen_name') or 'i'}/status/{tid}", "text": _clean(text),
+            "date": d.get("created_at"), "author": f"@{user['screen_name']}" if user.get("screen_name") else "",
+            "likes": d.get("favorite_count"), "comments": d.get("conversation_count")}
+
+
+def _recent(items: list[dict], days: int | None) -> list[dict]:
+    """只留最近 days 天的；搜到了但都更早时说出来（让模型知道不是没人讨论，可以放宽时间再搜）。"""
+    keep = [x for x in items if _since_ok(x.get("date"), days)]
+    if items and not keep:
+        raise Failed(i18n.t("找到 {n} 条，但都早于最近 {days} 天", n=len(items), days=days))
+    return keep
+
+
+async def _exa_x(c: httpx.AsyncClient, text: str, days: int | None, count: int) -> list[dict]:
+    """Exa 搜到的 X 帖子（也认镜像和转存页里的帖子编号），逐条免费补上点赞、回复数。"""
+    ids = list(dict.fromkeys(m.group(1) for b in _exa_blocks(text) if (m := _X_ID.search(b["url"]))))[:max(count, 10)]
+    found = await asyncio.gather(*(_x_details(c, i) for i in ids))
+    return _recent([x for x in found if x], days)[:count]
+
+
+def _exa_reddit(text: str, days: int | None) -> list[dict]:
+    threads = [b | {"author": f"r/{m.group(1)}", "url": b["url"].split("?")[0]}
+               for b in _exa_blocks(text) if (m := _REDDIT_THREAD.match(b["url"]))]
+    return _recent(threads, days)
+
+
 async def _search_one(c: httpx.AsyncClient, r: dict, query: str, days: int | None, count: int = COUNT) -> list[dict]:
-    resp = await _send(c, r, _vars(r, query=query, count=count, days=days))
+    v = _vars(r, query=query, count=count, days=days)
+    if (r.get("request") or {}).get("mcp"):
+        text = await _send_mcp(r, v)
+        if r.get("parse") == "exa_x":
+            return await _exa_x(c, text, days, count)
+        if r.get("parse") == "exa_reddit":
+            return _exa_reddit(text, days)[:count]
+        return [b for b in _exa_blocks(text) if _since_ok(b["date"], days)][:count]
+    resp = await _send(c, r, v)
     if r.get("parse") == "duckduckgo":
         return _ddg(resp.text)
     return _items(r, _json(resp))
@@ -424,7 +541,12 @@ def _date(v) -> str:
         return dt.datetime.fromtimestamp(v / 1000 if v > 1e11 else v, dt.timezone.utc).date().isoformat()
     s = str(v or "").strip()
     m = re.match(r"\d{4}-\d{2}-\d{2}", s)
-    return m.group(0) if m else s[:24]
+    if m:
+        return m.group(0)
+    try:   # X 的写法：Thu Nov 13 21:27:33 +0000 2026
+        return dt.datetime.strptime(s, "%a %b %d %H:%M:%S %z %Y").date().isoformat()
+    except ValueError:
+        return s[:24]
 
 
 def _format(items: list[dict]) -> str:
@@ -505,7 +627,7 @@ async def search(query: str, days: int | None = None, only: dict | None = None) 
     return head + _tail(notes)
 
 
-async def fetch(url: str, private: bool = False, only: dict | None = None) -> str:
+async def fetch(url: str, private: bool = False, only: dict | None = None, browser: bool = True) -> str:
     """读一个网页：按顺序试各家。private（本机、内网地址，config 里允许了才走到这里）只能自己抓，不发给别家。"""
     if only:
         rs = [only]
@@ -520,6 +642,13 @@ async def fetch(url: str, private: bool = False, only: dict | None = None) -> st
     notes = []
     async with _client(30) as c:
         for r in rs:
+            if r.get("via") == "browser":   # Reddit：不登录读不了，交给电脑上登录过的浏览器
+                if browser:
+                    return i18n.t("{name}：这个网站不登录读不了，用电脑上的浏览器读：browser_open 打开 {url}，用 browser_read 读正文和评论。"
+                                  "页面要登录或出现验证码时调用 ask_human，请用户在右栏的电脑画面里登录（只要登一次）。",
+                                  name=_tr(r, "title"), url=url)
+                notes.append(i18n.t("{name}：要用电脑上的浏览器读，这里没有电脑可用", name=_tr(r, "title")))
+                continue
             t0 = time.monotonic()
             try:
                 title, text = await _fetch_one(c, r, url)
