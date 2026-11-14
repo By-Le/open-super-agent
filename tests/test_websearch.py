@@ -468,3 +468,8 @@ async def test_reddit_links_go_to_the_browser():
     assert out.startswith("Reddit（电脑上的浏览器）：") and "browser_open 打开 https://www.reddit.com/r/LocalLLaMA/comments/abc/x/" in out
     out = await tools.fetch_url("https://www.reddit.com/r/LocalLLaMA/comments/abc/x/", browser=False)
     assert "没有电脑可用" in out
+
+
+async def test_settings_test_posts_without_days(monkeypatch):
+    exa_on(monkeypatch, exa_text(("旧帖", "https://www.reddit.com/r/a/comments/b/c/", "2025-01-01T00:00:00Z", "x")))
+    assert (await websearch.test("posts", "exa-reddit"))["ok"]

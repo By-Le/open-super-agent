@@ -884,7 +884,7 @@ async def test(kind: str, name: str) -> dict:
         out = await search("DeepSeek", only=r)
         ok = out.startswith("- ")
     elif kind == "posts":
-        out = await search_posts(r.get("platform") or "", "DeepSeek", days=3, only=r)
+        out = await search_posts(r.get("platform") or "", "DeepSeek", only=r)   # 测能不能用，不限时间（Exa 的索引晚几天，限了常常空）
         ok = out.startswith("- ") or r.get("via") == "browser"
     elif r.get("hosts"):   # 只管某些网站的：读配方里写的 test_url（那个网站上的一页）
         out = await fetch(r.get("test_url") or f"https://{r['hosts'][0]}/", only=r)
