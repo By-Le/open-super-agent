@@ -1817,5 +1817,27 @@
   "这一段": "This block",
   "上移": "Move up",
   "下移": "Move down",
-  "删除这一段": "Delete block"
+  "删除这一段": "Delete block",
+  "从 Notion 导入": "Import from Notion",
+  "读页面…": "Reading pages…",
+  "读数据库的行…": "Reading database rows…",
+  "建页面和数据库…": "Creating pages and databases…",
+  "写正文和行…": "Writing content and rows…",
+  "对上关联…": "Linking relations…",
+  "用应用市场里连着的 Notion 读，只读不写。勾上的页面连同它下面的子页面、数据库（连每一行）一起导进来，Notion 里的链接换成资料库里的。导过的再导一次是更新。": "Reads through the Notion app you connected in the app market; nothing is written to Notion. Checked pages come in with their subpages and databases (every row), and Notion links are rewritten to point into the library. Importing something again updates it.",
+  "在 Notion 里搜页面或数据库": "Search Notion for pages or databases",
+  "导入过的（勾上再导一次就是更新）": "Imported before (check to update)",
+  "{time} 导入": "imported {time}",
+  "搜一下要导入的页面，比如公司、项目的总页面。": "Search for what to import, e.g. the top page of a company or project.",
+  "没搜到": "Nothing found",
+  "要导入：{names}": "To import: {names}",
+  "导入中…": "Importing…",
+  "导完了": "Import finished",
+  "没导完：{error}": "Import stopped: {error}",
+  "新建 {pages} 个页面、{dbs} 个数据库、{rows} 行，更新 {updated} 处，下载 {files} 个文件": "Created {pages} pages, {dbs} databases and {rows} rows; updated {updated}; downloaded {files} files",
+  "{n} 条说明": [
+    "{n} note",
+    "{n} notes"
+  ],
+  "打开「{title}」": "Open \"{title}\""
 }

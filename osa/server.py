@@ -1082,6 +1082,41 @@ async def share_page(pid: int, data: dict = Body(...)):
 
 
 # ---------- 从 Notion 导入（notion_import.py）：只读 Notion，用服务器连着的那个会话 ----------
+@app.post("/api/notion/import")
+async def notion_import_start(data: dict = Body(...)):
+    """从 Notion 导入：{roots: [Notion 页面或数据库的网址 / 编号], parent_id?}。在后台导，返回 {job}，用 GET 看进度。"""
+    from . import notion_import
+    try:
+        job = notion_import.start([str(x) for x in data.get("roots") or []], data.get("parent_id"))
+    except notion_import.NotConnected as e:
+        raise HTTPException(409, str(e))
+    except ValueError as e:
+        _err(e)
+    return {"job": job}
+
+
+@app.get("/api/notion/import/{job}")
+async def notion_import_job(job: int):
+    from . import notion_import
+    j = notion_import.JOBS.get(job)
+    if not j:
+        raise HTTPException(404)
+    if j.state != "running" and not getattr(j, "announced", False):   # 导完了：资料库列表、开着的库刷新一下
+        j.announced = True
+        await broadcast({"type": "pages_changed"})
+        for d in j.nodes.values():
+            if d.get("type") == "database" and d.get("page_id"):
+                await broadcast({"type": "db_changed", "db_id": d["page_id"], "rows": [], "schema": True, "by": "user"})
+    return j.public()
+
+
+@app.get("/api/notion/imported")
+async def notion_imported():
+    """导入过的（最上层的页面和库）：再同步一次用。"""
+    from . import notion_import
+    return notion_import.imported()
+
+
 @app.post("/api/notion/read")
 async def notion_read(data: dict = Body(...)):
     """调一个只读的 Notion 工具（搜索、读页面、查数据库），原样返回它给的文字：导入前看看要导入的是什么。"""

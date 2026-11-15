@@ -1270,5 +1270,7 @@
   "只能用 Notion 读的工具": "Only Notion's read-only tools are allowed",
   "Notion 没连上：先到应用市场连上 Notion": "Notion isn't connected: connect it in the app market first",
   "Notion 报错：{error}": "Notion returned an error: {error}",
-  "Notion 没有回应": "Notion didn't respond"
+  "Notion 没有回应": "Notion didn't respond",
+  "选几个要导入的 Notion 页面或数据库": "Pick some Notion pages or databases to import",
+  "已经在导入了，等这次导完": "An import is already running; wait for it to finish"
 }

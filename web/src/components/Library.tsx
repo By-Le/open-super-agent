@@ -12,6 +12,7 @@ import { FileLink, fileUrl } from './Media'
 import { PC_NAMES } from './Computer'
 import { DocPage, prefetchDoc } from './doc/lazy'
 import { MoveDialog, PageTree, deletePage, newPage } from './PageTree'
+import NotionImport from './NotionImport'
 import DbView from './db/DbView'
 import PropsBar from './db/PropsBar'
 import { newDb } from './db/db'
@@ -116,6 +117,7 @@ function Pages() {
   const [list, setList] = useState<Page[] | null>(null)
   const [moving, setMoving] = useState<Page | null>(null)
   const [trash, setTrash] = useState(false)
+  const [notion, setNotion] = useState(false)
   const { q, setQ, hits } = useSearch('page')
   const load = () => api('/api/pages').then(setList)
   useEffect(() => {
@@ -128,6 +130,7 @@ function Pages() {
   const add = <>
     <button className="btn" onClick={() => newPage()}>＋ {t('新建页面')}</button>{/* i18n-ignore */}
     <button className="btn" onClick={() => newDb()}>＋ {t('新建数据库')}</button>{/* i18n-ignore */}
+    <button className="btn" onClick={() => setNotion(true)}>{t('从 Notion 导入')}</button>
   </>
   if (!list.length) return (
     <div className="lib-empty">
@@ -135,6 +138,7 @@ function Pages() {
       <p className="muted small">{t('Bot 做好的报告、清单、网页会存在这里。在对话里说“把结果做成页面”，或者在任务结果下面点“存为页面”。')}</p>
       <p>{add}</p>
       <p><button className="link-btn small" onClick={() => setTrash(true)}>{t('回收站')}</button></p>
+      {notion && <NotionImport onClose={() => { setNotion(false); load() }} />}
     </div>
   )
   return (
@@ -159,6 +163,7 @@ function Pages() {
       </>} />}
       {moving && <MoveDialog page={moving} list={list} onClose={() => setMoving(null)} />}
       {!hits && <button className="link-btn small lib-trash" onClick={() => setTrash(true)}>{t('回收站')}</button>}
+      {notion && <NotionImport onClose={() => { setNotion(false); load() }} />}
     </div>
   )
 }

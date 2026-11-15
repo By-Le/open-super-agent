@@ -1668,3 +1668,13 @@ textarea.newbot-role.edit { display: block; width: 100%; max-height: 360px; resi
 .doc-bh-menu { position: absolute; left: 0; top: 30px; flex-direction: column; align-items: stretch; min-width: 130px; }
 .doc-bh-menu button { text-align: left; padding: 0 10px; height: 34px; }
 .doc-bh-menu button:disabled { color: var(--fg3); }
+/* 从 Notion 导入（NotionImport.tsx） */
+.notion-import { width: min(560px, 100%); }
+.notion-import input[type=text], .notion-import > input { width: 100%; }
+.ni-list { min-height: 120px; }
+.ni-row { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 8px; cursor: pointer; flex-wrap: wrap; }
+.ni-row:hover { background: var(--bg2); }
+.ni-row > span:nth-child(2) { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.ni-row .muted { flex-basis: 100%; padding-left: 24px; }
+.ni-head { padding: 6px 8px 2px; }
+.ni-progress { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
