@@ -81,7 +81,7 @@ def save_page(bot_id: int | None, title: str, content: str, fmt: str = "markdown
     parent_id 只在新建时有用：放在哪个页面下面（排在最后）。kind、props 也只在新建时有用：数据库（db）和它的行（row），见 dbs.py；
     行的属性先写好再记第一版历史，第一版里就有属性。"""
     from . import applets, pagedoc
-    title = " ".join((title or "").split())[:120] or i18n.t("未命名页面")
+    title = " ".join((title or "").split())[:120] or ("" if kind == "row" else i18n.t("未命名页面"))   # 数据库的行可以没有名称
     fmt = fmt if fmt in FORMATS else "markdown"
     app = applets.manifest(app) if fmt == "html" else None
     by = by if by is not None else (f"bot:{bot_id}" if bot_id else "user")

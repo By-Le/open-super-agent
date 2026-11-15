@@ -1140,11 +1140,32 @@ async def change_db_schema(db_id: int, data: dict = Body(...)):
     """改表结构：{ops: [{op: add | update | delete, …}]}（见 dbs.change_schema）。"""
     _db_or_404(db_id)
     try:
-        db = dbs.change_schema(db_id, data.get("ops"))
+        db = dbs.change_schema(db_id, data.get("ops"), "user")
     except (ValueError, TypeError) as e:
         _err(e)
     await _db_saved(db_id, schema=True)
-    return dbs.public(db, data.get("view"))
+    return dbs.public(db, data.get("view")) | {"last_change": db["last_change"]}
+
+
+@app.get("/api/dbs/{db_id}/history")
+async def db_history(db_id: int):
+    """表结构的历史（新的在前），每条能撤销。"""
+    _db_or_404(db_id)
+    return dbs.history(db_id)
+
+
+@app.post("/api/dbs/{db_id}/history/{vid}/undo")
+async def db_undo(db_id: int, vid: int, data: dict = Body(default={})):
+    """撤销表结构历史里的一次改动（删掉的列和各行的值放回去），撤销本身也记一条。"""
+    _db_or_404(db_id)
+    try:
+        db = dbs.undo(db_id, vid, "user")
+    except LookupError as e:
+        raise HTTPException(404, str(e))
+    except ValueError as e:
+        _err(e)
+    await _db_saved(db_id, schema=True)
+    return dbs.public(db, data.get("view")) | {"last_change": db["last_change"]}
 
 
 @app.put("/api/dbs/{db_id}/views")
@@ -1170,6 +1191,14 @@ async def add_db_row(db_id: int, data: dict = Body(default={})):
     await _db_saved(db_id, [r["id"]], schema=True)   # 可能顺手加了选项
     await broadcast({"type": "pages_changed"})
     return dbs.public_row(r)
+
+
+@app.get("/api/dbs/{db_id}/rows/{rid}")
+async def get_db_row(db_id: int, rid: int):
+    """一行和它所在库的表结构（行页面顶上的属性栏用）。"""
+    r = _row_or_404(db_id, rid)
+    db = _db_or_404(db_id)
+    return {"db": {"id": db["id"], "title": db["title"], "locked": db["locked"], "schema": db["schema"]}, "row": dbs.public_row(r)}
 
 
 @app.patch("/api/dbs/{db_id}/rows/{rid}")

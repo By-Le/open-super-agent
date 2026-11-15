@@ -8,7 +8,8 @@
 - 行的正文还是 Markdown，按段编辑、评论、记历史都照旧（pagedoc.py）；属性改动也记一版历史（page_versions.props）。
 - 值有两种写法：网页发的是存的样子（选项 id、bot:3、{start, end}）；工具（Bot、外部 Agent）写名字（“进行中”、“Nova”、“2026-11-15”）。
   normalize 两种都认。工具读到的一律是名字。
-- 改表结构不记历史、不算冲突，按属性后写的为准；改类型时能转的值转过去（先变成文字再按新类型认），转不了的清空。
+- 改表结构不算冲突，按属性后写的为准；改类型时能转的值转过去（先变成文字再按新类型认），转不了的清空。
+  每次改表结构记一条历史（谁、改了什么、清掉或转换了哪些格子的旧值），能撤销：删掉的列和值都放得回来。
 - 筛选、排序在这里做，工具和网页用同一套。
 """
 import json
@@ -421,25 +422,44 @@ def _touch(db_id: int, schema: list[dict] | None = None, views: list[dict] | Non
     conn.commit()
 
 
-def _rewrite_values(db_id: int, key: str, fn):
-    """改表结构时改每一行这一列的值（fn(旧值) → 新值，None 是清空）。不记历史、不涨版本号：这是表结构的事。"""
+def _rewrite_values(db_id: int, key: str, fn, cells: dict):
+    """改表结构时改每一行这一列的值（fn(旧值) → 新值，None 是清空）。不涨行的版本号：这次改动记在库的表结构历史里，
+    cells 收集改了的格子 {行号: {key: [旧值, 新值]}}，撤销时拿它放回去。"""
     for r in conn.execute("select id, props from pages where parent_id=? and kind='row'", (db_id,)).fetchall():
         props = json.loads(r[1] or "{}")
         if key not in props:
             continue
-        new = fn(props[key])
-        if new == props[key]:
+        old = props[key]
+        new = fn(old)
+        if new == old:
             continue
         if new is None:
             props.pop(key)
         else:
             props[key] = new
         conn.execute("update pages set props=? where id=?", (json.dumps(props, ensure_ascii=False), r[0]))
+        first = cells.setdefault(str(r[0]), {}).get(key)
+        cells[str(r[0])][key] = [first[0] if first else old, new]   # 同一批里改了两次：旧值留最早的
 
 
-def change_schema(db_id: int, ops: list[dict]) -> dict:
+def _convert(old: dict, new: dict):
+    """改类型时一个值怎么转：先变成文字再按新类型认，认不出就清空。"""
+    def conv(v):
+        if new["type"] in COMPUTED:
+            return None
+        if old["type"] == "multi_select" and new["type"] in ("select", "status") and isinstance(v, list):
+            v = v[:1]   # 多选变单选：留第一个
+        try:
+            return normalize(new, display(old, v), create=True)
+        except ValueError:
+            return None
+    return conv
+
+
+def change_schema(db_id: int, ops: list[dict], by: str = "user") -> dict:
     """改表结构：{op: add, name, type, options?, format?} / {op: update, prop, name?, type?, options?, format?} / {op: delete, prop}。
-    prop 是 key 或名字。按顺序做，有一个不行整批不做。返回改好的库。"""
+    prop 是 key 或名字。按顺序做，有一个不行整批不做。每次改动记一条表结构历史（谁改的、改了什么、清掉或转换了哪些格子），
+    能撤销（undo）。返回改好的库，多一个 last_change（这次改动的摘要，见 _changes）。"""
     db = get_db(db_id)
     if not db:
         raise LookupError(i18n.t("没有数据库 #{id}", id=db_id))
@@ -448,6 +468,7 @@ def change_schema(db_id: int, ops: list[dict]) -> dict:
     schema = json.loads(json.dumps(db["schema"]))
     views = db["views"]
     later: list = []   # 表结构都通过了才改行里的值
+    changes: list[dict] = []   # 给人看的摘要：[{kind, key, name, …}]
     for op in ops:
         if not isinstance(op, dict):
             raise ValueError("每个改动都要是一个对象")
@@ -456,6 +477,7 @@ def change_schema(db_id: int, ops: list[dict]) -> dict:
             if len(schema) > MAX_PROPS:
                 raise ValueError(f"最多 {MAX_PROPS} 个属性")
             schema.append(_new_prop(schema, op))
+            changes.append({"kind": "add", "key": schema[-1]["key"], "name": schema[-1]["name"], "type": schema[-1]["type"]})
             continue
         prop = prop_of({"schema": schema}, op.get("prop"))
         if not prop:
@@ -465,6 +487,7 @@ def change_schema(db_id: int, ops: list[dict]) -> dict:
                 raise ValueError("名称不能删")
             schema.remove(prop)
             later.append(("drop", prop["key"], None, None))
+            changes.append({"kind": "delete", "key": prop["key"], "name": prop["name"]})
             continue
         if kind != "update":
             raise ValueError(f"不认识的改动：{kind}（只能是 add、update、delete）")
@@ -474,6 +497,8 @@ def change_schema(db_id: int, ops: list[dict]) -> dict:
                 raise ValueError("属性要有名字")
             if any(p is not prop and p["name"].lower() == name.lower() for p in schema):
                 raise ValueError(f"已经有叫「{name}」的属性了")
+            if name != prop["name"]:
+                changes.append({"kind": "rename", "key": prop["key"], "name": name, "from": prop["name"]})
             prop["name"] = name
         old = json.loads(json.dumps(prop))
         if op.get("type") is not None and _type(op["type"]) != prop["type"]:
@@ -492,37 +517,175 @@ def change_schema(db_id: int, ops: list[dict]) -> dict:
             else:
                 prop.pop("format", None)
             later.append(("convert", prop["key"], old, prop))
+            changes.append({"kind": "type", "key": prop["key"], "name": prop["name"], "from": old["type"], "to": new_t})
         if op.get("options") is not None:
             if prop["type"] not in OPTIONED:
                 raise ValueError(f"「{prop['name']}」不是单选、多选或状态，没有选项")
             before = {o["id"] for o in prop.get("options") or []}
+            was = json.dumps(prop.get("options") or [], ensure_ascii=False)
             prop["options"] = _clean_options(prop, op["options"], prop.get("options") or [])
             if gone := before - {o["id"] for o in prop["options"]}:
                 later.append(("unoption", prop["key"], gone, None))
+            if json.dumps(prop["options"], ensure_ascii=False) != was:
+                changes.append({"kind": "options", "key": prop["key"], "name": prop["name"]})
         if op.get("format") is not None and prop["type"] == "number":
             if op["format"] not in FORMATS:
                 raise ValueError(f"数字的格式只能是：{'、'.join(FORMATS)}")
+            if op["format"] != prop.get("format"):
+                changes.append({"kind": "format", "key": prop["key"], "name": prop["name"]})
             prop["format"] = op["format"]
+    cells: dict = {}
     for what, key, a, b in later:
         if what == "drop":
-            _rewrite_values(db_id, key, lambda v: None)
+            _rewrite_values(db_id, key, lambda v: None, cells)
         elif what == "unoption":
             _rewrite_values(db_id, key, lambda v, gone=a: ([x for x in v if x not in gone] or None) if isinstance(v, list)
-                            else None if v in gone else v)
+                            else None if v in gone else v, cells)
         else:
-            def conv(v, old=a, new=b):
-                if new["type"] in COMPUTED:
-                    return None
-                if old["type"] == "multi_select" and new["type"] in ("select", "status") and isinstance(v, list):
-                    v = v[:1]   # 多选变单选：留第一个
-                try:
-                    return normalize(new, display(old, v), create=True)
-                except ValueError:
-                    return None
-            _rewrite_values(db_id, key, conv)
+            _rewrite_values(db_id, key, _convert(a, b), cells)
     views = [_fix_view(v, schema) for v in views] if views else _default_views(schema)
+    if not changes and not cells and schema == db["schema"]:
+        return get_db(db_id) | {"last_change": []}
+    _counts(changes, cells)
+    _record(db, by, db["schema"], schema, db["views"], views, cells, changes)
     _touch(db_id, schema=schema, views=views)
-    return get_db(db_id)
+    return get_db(db_id) | {"last_change": changes}
+
+
+# ---------- 表结构的历史：每次改动一条，能撤销 ----------
+HISTORY_LABEL = "schema"
+MAX_HISTORY = 50
+
+
+def _counts(changes: list[dict], cells: dict):
+    """摘要里写上清掉了几行的值（删属性、改类型转不过去、去掉了用着的选项）。"""
+    for c in changes:
+        if c["kind"] in ("delete", "type", "options"):
+            c["cleared"] = sum(1 for kv in cells.values() if c["key"] in kv and kv[c["key"]][1] is None and kv[c["key"]][0] is not None)
+
+
+def _record(db: dict, by: str, before: list[dict], after: list[dict], views_before: list, views_after: list, cells: dict,
+            changes: list[dict], undo_of: int | None = None):
+    """记一条表结构历史（page_versions，label = schema，props 里是这次改动），库的版本号 +1。"""
+    b = {p["key"]: p for p in before}
+    a = {p["key"]: p for p in after}
+    entry = {"props": {k: [b.get(k), a.get(k)] for k in [*b, *[k for k in a if k not in b]] if b.get(k) != a.get(k)},
+             "order": [p["key"] for p in before], "cells": cells, "views": [views_before, views_after], "changes": changes}
+    if undo_of is not None:
+        entry["undo_of"] = undo_of
+    now, newv = time.time(), db["version"] + 1
+    conn.execute("update pages set version=? where id=?", (newv, db["id"]))
+    conn.execute("insert into page_versions(page_id, version, title, content, meta, by, ts_start, ts, label, props) values(?,?,?,?,?,?,?,?,?,?)",
+                 (db["id"], newv, db["title"], "", None, by, now, now, HISTORY_LABEL, json.dumps(entry, ensure_ascii=False)))
+    old = conn.execute("select id from page_versions where page_id=? and label=? order by id desc limit -1 offset ?",
+                       (db["id"], HISTORY_LABEL, MAX_HISTORY)).fetchall()
+    conn.executemany("delete from page_versions where id=?", old)
+
+
+def history(db_id: int) -> list[dict]:
+    """库的表结构历史，新的在前：[{id, version, by, ts, changes, undo_of?, undone_by?}]。"""
+    rows = conn.execute("select id, version, by, ts, props from page_versions where page_id=? and label=? order by id desc",
+                        (db_id, HISTORY_LABEL)).fetchall()
+    out = []
+    for vid, v, by, ts, props in rows:
+        e = json.loads(props or "{}")
+        out.append({"id": vid, "version": v, "by": by, "ts": ts, "changes": e.get("changes") or [], "undo_of": e.get("undo_of")})
+    undone = {x["undo_of"]: x["id"] for x in out if x["undo_of"]}
+    for x in out:
+        if x["id"] in undone:
+            x["undone_by"] = undone[x["id"]]
+    return out
+
+
+def undo(db_id: int, vid: int, by: str = "user") -> dict:
+    """撤销表结构历史里的一次改动：只动那次改到的属性（删掉的放回原来的位置，改了的换回原来的定义，加的删掉），
+    那次清掉或转换的格子放回旧值；之后又被人改过的格子留着现在的值（类型换回去了的，按新类型转一下）。
+    撤销本身也记一条，可以再撤销。返回改好的库，last_change 是 [{kind: undo, of, items, kept}]。"""
+    db = get_db(db_id)
+    if not db:
+        raise LookupError(i18n.t("没有数据库 #{id}", id=db_id))
+    r = conn.execute("select props from page_versions where id=? and page_id=? and label=?", (vid, db_id, HISTORY_LABEL)).fetchone()
+    if not r:
+        raise LookupError(i18n.t("没有这一版"))
+    entry = json.loads(r[0])
+    schema = json.loads(json.dumps(db["schema"]))
+    keys = lambda: [p["key"] for p in schema]   # noqa: E731
+    removed: list[str] = []
+    retyped: dict[str, tuple[dict, dict]] = {}
+    for key, (before, after) in entry["props"].items():
+        at = keys().index(key) if key in keys() else None
+        if before is None:   # 那次加的：删掉
+            if at is not None and schema[at]["type"] != "title":
+                removed.append(key)
+                schema.pop(at)
+            continue
+        before = json.loads(json.dumps(before))
+        if any(p["key"] != key and p["name"].lower() == before["name"].lower() for p in schema):
+            before["name"] = (before["name"] + "（恢复）")[:NAME_LEN]   # 名字被别的属性占了
+        if at is None:   # 那次删的（或者后来删了）：放回原来的位置
+            order = entry.get("order") or []
+            pos = next((keys().index(k) + 1 for k in reversed(order[:order.index(key)]) if k in keys()), 1) if key in order else len(schema)
+            schema.insert(pos, before)
+        else:
+            if schema[at]["type"] != before["type"]:
+                retyped[key] = (schema[at], before)
+            schema[at] = before
+    cells: dict = {}
+    kept = 0
+    rows_now = {str(x[0]): json.loads(x[1] or "{}") for x in conn.execute("select id, props from pages where parent_id=? and kind='row'", (db_id,))}
+    for rid, props in rows_now.items():
+        changed = False
+        for key in removed:
+            if key in props:
+                cells.setdefault(rid, {})[key] = [props.pop(key), None]
+                changed = True
+        for key, (old, new) in (entry["cells"].get(rid) or {}).items():
+            if key in removed:
+                continue
+            cur = props.get(key)
+            if cur == new:
+                val = old
+            else:   # 之后被人改过：留着现在的值（类型换回去了就转一下）
+                kept += 1
+                val = _convert(*retyped[key])(cur) if key in retyped and cur is not None else cur
+            if val != cur:
+                cells.setdefault(rid, {})[key] = [cur, val]
+                if val is None:
+                    props.pop(key, None)
+                else:
+                    props[key] = val
+                changed = True
+        if changed:
+            conn.execute("update pages set props=? where id=?", (json.dumps(props, ensure_ascii=False), int(rid)))
+    views_before, views_after = entry.get("views") or [None, None]
+    same = json.dumps(db["views"], ensure_ascii=False) == json.dumps(views_after, ensure_ascii=False)
+    views = views_before if same and views_before else [_fix_view(v, schema) for v in db["views"]]
+    changes = [{"kind": "undo", "of": vid, "items": entry.get("changes") or [], "kept": kept}]
+    _record(db, by, db["schema"], schema, db["views"], views, cells, changes, undo_of=vid)
+    _touch(db_id, schema=schema, views=views)
+    return get_db(db_id) | {"last_change": changes}
+
+
+def change_text(c: dict) -> str:
+    """一条改动给模型看的样子（网页上按 kind 自己翻译）。"""
+    k = c["kind"]
+    cleared = f"，清掉了 {c['cleared']} 行的值" if c.get("cleared") else ""
+    if k == "add":
+        return f"加了属性「{c['name']}」（{TYPES.get(c.get('type'), '')}）"
+    if k == "delete":
+        return f"删了属性「{c['name']}」{cleared}"
+    if k == "rename":
+        return f"把「{c['from']}」改名为「{c['name']}」"
+    if k == "type":
+        return f"把「{c['name']}」从{TYPES.get(c['from'], c['from'])}改成{TYPES.get(c['to'], c['to'])}" + (
+            f"，{c['cleared']} 行的值转不过去，清掉了" if c.get("cleared") else "")
+    if k == "options":
+        return f"改了「{c['name']}」的选项" + (f"，{c['cleared']} 行用了去掉的选项，清掉了" if c.get("cleared") else "")
+    if k == "format":
+        return f"改了「{c['name']}」的数字格式"
+    if k == "undo":
+        return "撤销了：" + "；".join(change_text(x) for x in c.get("items") or [])
+    return k
 
 
 # ---------- 视图 ----------
@@ -898,7 +1061,8 @@ DB_CREATE = {"type": "function", "function": {
 DB_SCHEMA = {"type": "function", "function": {
     "name": "db_schema",
     "description": "改数据库的表结构：加属性、改名、改类型（能转的值会转过去，转不了的清空）、改选项（给全部选项，同名的保留，去掉的选项从各行清掉）、删属性。"
-                   "按顺序做，有一个不行整批不做。",
+                   "按顺序做，有一个不行整批不做。删属性、改类型、去掉用着的选项会清掉各行里的值：每次改动都记进库的历史，用户能撤销，"
+                   "但没让你删的属性、选项不要动，拿不准先问用户。",
     "parameters": {"type": "object", "properties": {
         "db_id": {"type": "integer"},
         "ops": {"type": "array", "items": {"type": "object", "properties": {
@@ -991,14 +1155,18 @@ def tool_create(who, args: dict) -> tuple[str, dict | None]:
 
 
 def tool_schema(who, args: dict) -> tuple[str, dict | None]:
+    by, _ = _who(who)
     db, why = _writable(args.get("db_id"))
     if not db:
         return f"没改：{why}", None
     try:
-        db = change_schema(db["id"], args.get("ops"))
+        db = change_schema(db["id"], args.get("ops"), by)
     except (ValueError, TypeError, LookupError) as e:
         return f"没改：{e}", None
-    return f"已改数据库 #{db['id']}「{db['title']}」的表结构，现在的属性：{schema_text(db)}", {"db_id": db["id"]}
+    done = "；".join(change_text(c) for c in db["last_change"]) or "没有变化"
+    lost = any(c.get("cleared") for c in db["last_change"])
+    return (f"已改数据库 #{db['id']}「{db['title']}」的表结构：{done}。" + ("用户能在这个库的“历史”里撤销这次改动。" if lost else "")
+            + f"\n现在的属性：{schema_text(db)}"), {"db_id": db["id"]}
 
 
 def tool_query(args: dict) -> str:

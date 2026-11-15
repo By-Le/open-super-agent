@@ -431,6 +431,8 @@ def restore(pid: int, vid: int, by: str = "user") -> dict:
     r = conn.execute("select version, title, content, meta, props from page_versions where id=? and page_id=?", (vid, pid)).fetchone()
     if not r:
         raise LookupError(i18n.t("没有这一版"))
+    if (library.get_page(pid, False) or {}).get("kind") == "db":
+        raise ValueError(i18n.t("数据库的表结构改动在库的“历史”里撤销"))
     if r[4] is not None:   # 数据库的行：属性也回到那一版（改了的键记成这次改的）
         from . import dbs
         dbs.restore_props(pid, json.loads(r[4]), by)
@@ -461,7 +463,7 @@ def render(pid: int, start: str | None = None, limit: int = READ_LIMIT) -> str:
         return dbs.render_db(pid, limit)
     owner = bots.get(p["bot_id"]) if p.get("bot_id") else None
     maker = f"「{owner['name']}」建的" if owner else f"「{name_of('agent:' + str(p['agent_id']))}」建的" if p.get("agent_id") else "用户建的"
-    head = (f"《{p['title']}》{library.link(pid)} · 版本 {p['version']} · " + maker +
+    head = (f"《{p['title'] or '无标题'}》{library.link(pid)} · 版本 {p['version']} · " + maker +
             f" · {time.strftime('%Y-%m-%d', time.localtime(p['updated']))} 更新" + (" · 已锁定（只有用户能改，有意见用 comment_page）" if p.get("locked") else ""))
     fam = library.family(pid)
     if fam["ancestors"] or fam["children"]:

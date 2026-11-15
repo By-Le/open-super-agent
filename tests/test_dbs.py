@@ -318,3 +318,75 @@ async def test_search(made):
     r = dbs.add_row(db["id"], {"客户": "猕猴桃果业"}, "user", "续约")
     hits = await search.search("猕猴桃果业", None, ("page",))
     assert any(h["ref"] == r["id"] for h in hits)
+
+
+# ---------- 表结构的历史和撤销 ----------
+def test_schema_history_undo(made):
+    db = new_db(made, [{"name": "级", "type": "select", "options": ["高", "低"]}, {"name": "备注", "type": "text"}, {"name": "分", "type": "number"}])
+    rs = [dbs.add_row(db["id"], {"级": lv, "备注": f"第{k}行", "分": k}, "user", f"r{k}") for k, lv in enumerate(["高", "低", "高"])]
+    key_of = lambda name: dbs.prop_of(dbs.get_db(db["id"]), name)["key"]   # noqa: E731
+    lv_key, note_key = key_of("级"), key_of("备注")
+    vals = lambda name: [dbs.display(dbs.prop_of(dbs.get_db(db["id"]), name), dbs.value_of(dbs.get_row(r["id"]), dbs.prop_of(dbs.get_db(db["id"]), name)))   # noqa: E731
+                         for r in rs]
+
+    # 删一列：历史里记着清掉了 3 行；撤销以后列回到原来的位置，值都回来
+    out = dbs.change_schema(db["id"], [{"op": "delete", "prop": "级"}], "bot:7")
+    assert out["last_change"] == [{"kind": "delete", "key": lv_key, "name": "级", "cleared": 3}]
+    assert dbs.prop_of(dbs.get_db(db["id"]), "级") is None and all(lv_key not in dbs.get_row(r["id"])["props"] for r in rs)
+    h = dbs.history(db["id"])
+    assert h[0]["by"] == "bot:7" and h[0]["changes"][0]["cleared"] == 3 and "清掉了 3 行的值" in dbs.change_text(h[0]["changes"][0])
+    back = dbs.undo(db["id"], h[0]["id"], "user")
+    assert [p["name"] for p in back["schema"]] == ["名称", "级", "备注", "分"] and vals("级") == ["高", "低", "高"]
+    h = dbs.history(db["id"])
+    assert h[0]["undo_of"] == h[1]["id"] and h[1]["undone_by"] == h[0]["id"]
+    assert dbs.change_text(h[0]["changes"][0]).startswith("撤销了：删了属性「级」")
+
+    # 改类型（文字 → 数字，全都转不过去）；其中一格之后又被人改了：撤销时那一格留着现在的值（按文字存回去）
+    dbs.change_schema(db["id"], [{"op": "update", "prop": "备注", "type": "number"}])
+    assert vals("备注") == ["", "", ""]
+    dbs.update_row(rs[1]["id"], {"备注": 42}, "user")
+    dbs.undo(db["id"], dbs.history(db["id"])[0]["id"])
+    assert dbs.prop_of(dbs.get_db(db["id"]), "备注")["type"] == "text" and vals("备注") == ["第0行", "42", "第2行"]
+    assert dbs.history(db["id"])[0]["changes"][0]["kept"] == 1
+
+    # 去掉一个用着的选项：那几行清掉；撤销以后选项和值都回来
+    dbs.change_schema(db["id"], [{"op": "update", "prop": "级", "options": ["低"]}])
+    assert vals("级") == ["", "低", ""]
+    dbs.undo(db["id"], dbs.history(db["id"])[0]["id"])
+    assert [o["name"] for o in dbs.prop_of(dbs.get_db(db["id"]), "级")["options"]] == ["高", "低"] and vals("级") == ["高", "低", "高"]
+
+    # 撤销“加属性”就是删掉它；再撤销这次撤销，属性和值又回来
+    dbs.change_schema(db["id"], [{"op": "add", "name": "新列", "type": "text"}])
+    dbs.update_row(rs[0]["id"], {"新列": "有值"}, "user")
+    dbs.undo(db["id"], dbs.history(db["id"])[0]["id"])
+    assert dbs.prop_of(dbs.get_db(db["id"]), "新列") is None
+    dbs.undo(db["id"], dbs.history(db["id"])[0]["id"])
+    assert vals("新列") == ["有值", "", ""]
+
+    # 只动那次改到的属性：之后别的改动（改名）不受影响；删掉的列名字被占了就加“（恢复）”
+    dbs.change_schema(db["id"], [{"op": "delete", "prop": "分"}])
+    gone = dbs.history(db["id"])[0]["id"]
+    dbs.change_schema(db["id"], [{"op": "update", "prop": "备注", "name": "说明"}, {"op": "add", "name": "分", "type": "text"}])
+    dbs.undo(db["id"], gone)
+    names = [p["name"] for p in dbs.get_db(db["id"])["schema"]]
+    assert "说明" in names and "分（恢复）" in names and vals("分（恢复）") == ["0", "1", "2"]
+    assert dbs.change_schema(db["id"], [{"op": "update", "prop": "说明", "name": "说明"}])["last_change"] == []   # 没变不记
+    with pytest.raises(LookupError):
+        dbs.undo(db["id"], 999999)
+    with pytest.raises(ValueError):   # 数据库不走页面的“回到这一版”
+        pagedoc.restore(db["id"], dbs.history(db["id"])[0]["id"])
+
+
+async def test_history_api(made, events):
+    db = new_db(made)
+    r = dbs.add_row(db["id"], {"负责人": "用户"}, "user", "x")
+    out, _ = dbs.tool_schema("bot:1", {"db_id": db["id"], "ops": [{"op": "delete", "prop": "负责人"}]})
+    assert "清掉了 1 行的值" in out and "撤销" in out
+    async with http() as c:
+        h = (await c.get(f"/api/dbs/{db['id']}/history")).json()
+        assert h[0]["changes"][0]["kind"] == "delete" and h[0]["by"] == "bot:1"
+        got = (await c.post(f"/api/dbs/{db['id']}/history/{h[0]['id']}/undo", json={})).json()
+        assert any(p["name"] == "负责人" for p in got["schema"]) and got["last_change"][0]["kind"] == "undo"
+        assert got["rows"][0]["props"]["owner"] == ["user"] and r["id"] == got["rows"][0]["id"]
+        assert (await c.post(f"/api/dbs/{db['id']}/history/999999/undo", json={})).status_code == 404
+    assert any(e["db_id"] == db["id"] and e.get("schema") for e in events.of("db_changed"))
