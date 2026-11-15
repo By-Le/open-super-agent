@@ -7,7 +7,7 @@ import { ask, notice } from '../Dialog'
 import Markdown from '../Markdown'
 import { extensions } from './schema'
 import { DocSync, REMOTE, type Conflict, type PageBlocks, type Status } from './sync'
-import { ImageBox, SlashMenu, Toolbar, safeHref, slashItems } from './menus'
+import { BlockHandle, ImageBox, SlashMenu, Toolbar, insertImages, moveBlock, safeHref, slashItems } from './menus'
 import { CommentsPanel, countOpen, type Draft, type PageComment } from './comments'
 import { HistoryPanel, HistoryView, type Version } from './history'
 import type { Row } from './diff'
@@ -58,12 +58,34 @@ export default function DocEditor({ id, fallback }: { id: number; fallback: stri
         else if (safeHref(href)) window.open(href, '_blank', 'noopener,noreferrer')
         return true
       },
+      // 粘贴、拖进来的图片：传上去插进页面（拖的插在松手的位置）
+      handlePaste: (_view, e) => {
+        const files = Array.from(e.clipboardData?.files || []).filter(f => f.type.startsWith('image/'))
+        if (!files.length || !edRef.current) return false
+        e.preventDefault()
+        insertImages(edRef.current, files)
+        return true
+      },
+      handleDrop: (view, e, _slice, moved) => {
+        const files = Array.from((e as DragEvent).dataTransfer?.files || []).filter(f => f.type.startsWith('image/'))
+        if (moved || !files.length || !edRef.current) return false
+        e.preventDefault()
+        insertImages(edRef.current, files, view.posAtCoords({ left: (e as DragEvent).clientX, top: (e as DragEvent).clientY })?.pos)
+        return true
+      },
       handleKeyDown: (_view, e) => {
         if ((e.metaKey || e.ctrlKey) && e.key === 's') { e.preventDefault(); sync.current?.save(); return true }   // 顺手按了保存：马上存，也不弹浏览器的另存为
+        if (e.altKey && e.shiftKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown') && edRef.current) {   // 整段上移、下移
+          e.preventDefault()
+          moveBlock(edRef.current, e.key === 'ArrowUp' ? -1 : 1)
+          return true
+        }
         return false
       },
     },
   }, [id])
+  const edRef = useRef(editor)
+  edRef.current = editor
 
   useEffect(() => {
     if (!editor || editor.isDestroyed) return
@@ -213,6 +235,7 @@ export default function DocEditor({ id, fallback }: { id: number; fallback: stri
       {editor && !editor.isDestroyed && <>
         <SlashMenu editor={editor} />
         <Toolbar editor={editor} onComment={startComment} />
+        {!viewing && <BlockHandle editor={editor} />}
         {imageBox && <ImageBox editor={editor} onClose={() => setImageBox(false)} />}
       </>}
     </div>

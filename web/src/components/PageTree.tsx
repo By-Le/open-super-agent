@@ -40,8 +40,8 @@ export async function newPage(parent: number | null = null) {
 }
 
 export async function deletePage(p: Page, kids: number) {
-  const msg = p.kind === 'db' ? t('删除数据库「{title}」？里面所有的行（连同正文和历史）都会删掉，分享链接也会失效。', { title: p.title }) : kids ? t('删除页面「{title}」？它下面的 {n} 个子页面会挪到上一级，分享链接也会失效。', { title: p.title, n: kids })
-    : t('删除页面「{title}」？分享链接也会失效。', { title: p.title })
+  const msg = (p.kind === 'db' ? t('删除数据库「{title}」？里面所有的行会一起删掉，分享链接也会失效。', { title: p.title }) : kids ? t('删除页面「{title}」？它下面的 {n} 个子页面会挪到上一级，分享链接也会失效。', { title: p.title, n: kids })
+    : t('删除页面「{title}」？分享链接也会失效。', { title: p.title })) + t('（先放进回收站，30 天内能恢复）')
   if (!(await ask(msg, { ok: t('删除'), danger: true }))) return false
   await api(`/api/pages/${p.id}`, { method: 'DELETE' })
   return true

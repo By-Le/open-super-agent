@@ -149,24 +149,133 @@ def share(pid: int, on: bool) -> dict:
     return get_page(pid, False)
 
 
-def delete_page(pid: int, cascade: bool = False):
-    """删页面。子页面默认挪到上一级、排在它原来的位置；cascade 就连子页面一起删。数据库总是连行一起删（行不能离开库）。"""
+def delete_page(pid: int, cascade: bool = False, trash: bool = True):
+    """删页面。子页面默认挪到上一级、排在它原来的位置；cascade 就连子页面一起删。数据库总是连行一起删（行不能离开库）。
+    trash：先整个（连版本历史、评论、小应用的数据，库连同它的行）收进回收站，30 天内能恢复。"""
     from . import pagecomments, pagedoc   # noqa: F401  确保版本历史、评论的表已经建好
     p = get_page(pid, False)
-    if p:
-        kids = _children(pid)
-        if cascade or p["kind"] == "db":
-            for k in kids:
-                delete_page(k[0], cascade=True)
-        elif kids:
-            after = _next_after(p["parent_id"], p["pos"])
-            step = ((after if after is not None else p["pos"] + 1) - p["pos"]) / (len(kids) + 1)
-            for n, (kid, _) in enumerate(kids, 1):
-                conn.execute("update pages set parent_id=?, pos=? where id=?", (p["parent_id"], p["pos"] + step * n, kid))
+    if not p:
+        return
+    kids = _children(pid)
+    gone = [pid]
+    if cascade or p["kind"] == "db":
+        gone += sorted(descendants(pid), key=lambda i: (len(_ancestors_ids(i)), i))
+    if trash:
+        conn.execute("insert into page_trash(page_id, title, kind, format, deleted, data) values(?,?,?,?,?,?)",
+                     (pid, p["title"], p["kind"], p["format"], time.time(), json.dumps({"pages": [_dump(i) for i in gone]}, ensure_ascii=False)))
+    if not (cascade or p["kind"] == "db") and kids:
+        after = _next_after(p["parent_id"], p["pos"])
+        step = ((after if after is not None else p["pos"] + 1) - p["pos"]) / (len(kids) + 1)
+        for n, (kid, _) in enumerate(kids, 1):
+            conn.execute("update pages set parent_id=?, pos=? where id=?", (p["parent_id"], p["pos"] + step * n, kid))
+    for i in gone:
+        _purge(i)
+    conn.commit()
+
+
+def _purge(pid: int):
+    from . import pagecomments
     conn.execute("delete from pages where id=?", (pid,))
     conn.execute("delete from page_data where page_id=?", (pid,))
     conn.execute("delete from page_versions where page_id=?", (pid,))
     pagecomments.drop_page(pid)
+
+
+def _ancestors_ids(pid: int) -> list[int]:
+    out, cur = [], pid
+    while (r := conn.execute("select parent_id from pages where id=?", (cur,)).fetchone()) and r[0] is not None and r[0] not in out:
+        out.append(r[0])
+        cur = r[0]
+    return out
+
+
+def _rows(q: str, args) -> list[dict]:
+    cur = conn.execute(q, args)
+    cols = [d[0] for d in cur.description]
+    return [dict(zip(cols, r)) for r in cur.fetchall()]
+
+
+def _dump(pid: int) -> dict:
+    """一个页面的全部：页面这一行、版本历史、评论、小应用的数据。"""
+    return {"page": _rows("select * from pages where id=?", (pid,))[0],
+            "versions": _rows("select * from page_versions where page_id=? order by id", (pid,)),
+            "comments": _rows("select * from page_comments where page_id=? order by id", (pid,)),
+            "data": _rows("select * from page_data where page_id=?", (pid,))}
+
+
+# ---------- 回收站：删掉的页面留 30 天 ----------
+TRASH_DAYS = 30
+conn.execute("""create table if not exists page_trash(
+  id integer primary key, page_id integer, title text, kind text, format text, deleted real, data text)""")
+conn.commit()
+
+
+def trash() -> list[dict]:
+    out = []
+    for i, pid, title, kind, fmt, deleted, n in conn.execute(
+            "select id, page_id, title, kind, format, deleted, json_array_length(data, '$.pages') from page_trash order by deleted desc"):
+        out.append({"id": i, "page_id": pid, "title": title, "kind": kind or "page", "format": fmt, "deleted": deleted,
+                    "count": n or 1, "expires": deleted + TRASH_DAYS * 86400})
+    return out
+
+
+def _insert(table: str, row: dict, drop_id: bool = False) -> int:
+    have = {r[1] for r in conn.execute(f"pragma table_info({table})")}
+    row = {k: v for k, v in row.items() if k in have and not (drop_id and k == "id")}
+    return conn.execute(f"insert into {table}({', '.join(row)}) values({', '.join('?' * len(row))})", list(row.values())).lastrowid
+
+
+def restore_trash(tid: int) -> dict:
+    """从回收站放回去：原来的上级还在就放回原来的位置，不在了放到最上层。编号被别的页面占了就换一个新的。"""
+    from . import pagecomments, pagedoc   # noqa: F401  确保版本历史、评论的表已经建好
+    r = conn.execute("select data, kind from page_trash where id=?", (tid,)).fetchone()
+    if not r:
+        raise LookupError(i18n.t("回收站里没有这一项"))
+    pages = json.loads(r[0])["pages"]
+    top = pages[0]["page"]
+    if top.get("kind") == "row" and not conn.execute("select 1 from pages where id=? and kind='db'", (top.get("parent_id"),)).fetchone():
+        raise ValueError(i18n.t("这一行所在的数据库已经不在了，恢复不了"))
+    if top.get("kind") != "row" and conn.execute("select count(*) from pages where coalesce(kind, 'page') != 'row'").fetchone()[0] >= MAX_PAGES:
+        raise ValueError(i18n.t("资料库最多 {n} 个页面，先删掉一些", n=MAX_PAGES))
+    ids: dict[int, int] = {}
+    for item in pages:
+        pg = dict(item["page"])
+        old = pg["id"]
+        if conn.execute("select 1 from pages where id=?", (old,)).fetchone():
+            pg.pop("id")
+        if pg.get("parent_id") in ids:
+            pg["parent_id"] = ids[pg["parent_id"]]
+        elif item is pages[0] and pg.get("parent_id") is not None and not conn.execute("select 1 from pages where id=?", (pg["parent_id"],)).fetchone():
+            pg["parent_id"] = None   # 原来的上级不在了：放到最上层的最后
+            pg["pos"] = _end_pos(None)
+        if pg.get("share_token") and conn.execute("select 1 from pages where share_token=?", (pg["share_token"],)).fetchone():
+            pg["share_token"] = None
+        ids[old] = _insert("pages", pg, drop_id="id" not in pg)
+        for v in item["versions"]:
+            _insert("page_versions", {**v, "page_id": ids[old]}, drop_id=True)
+        cids: dict[int, int] = {}
+        for c in item["comments"]:
+            cids[c["id"]] = _insert("page_comments", {**c, "page_id": ids[old], "parent_id": cids.get(c.get("parent_id"), c.get("parent_id"))},
+                                    drop_id=True)
+        for d in item["data"]:
+            _insert("page_data", {**d, "page_id": ids[old]})
+    conn.execute("delete from page_trash where id=?", (tid,))
+    conn.commit()
+    return get_page(ids[top["id"]], False)
+
+
+def drop_trash(tid: int | None = None):
+    """彻底删掉回收站里的一项（不给就清空）。"""
+    if tid is None:
+        conn.execute("delete from page_trash")
+    else:
+        conn.execute("delete from page_trash where id=?", (tid,))
+    conn.commit()
+
+
+def purge_trash():
+    """回收站里放了 30 天的清掉。"""
+    conn.execute("delete from page_trash where deleted < ?", (time.time() - TRASH_DAYS * 86400,))
     conn.commit()
 
 
@@ -272,6 +381,44 @@ def set_data(pid: int, updates: dict) -> dict:
 def link(pid: int) -> str:
     """对话里引用页面用的地址，前端会在资料库里打开它。"""
     return f"/library/pages/{pid}"
+
+
+_LINK = re.compile(r"/library/pages/(\d+)")
+
+
+def recent_pages(chat_id: int, limit: int = 3, scan: int = 30) -> str:
+    """对话最近 scan 条消息里提到的页面（新的在前，至多 limit 个），每个一行：版本、没解决的评论、最后谁改的。
+    交接时接手的 Bot 每轮都看得到页面现在的样子，不用记着去查。"""
+    from . import pagedoc
+    seen: list[int] = []
+    for text, meta in conn.execute("select content, meta from messages where chat_id=? order by id desc limit ?", (chat_id, scan)):
+        found = [int(m) for m in reversed(_LINK.findall(text or ""))]
+        if meta and '"page"' in meta:   # 页面上的评论叫醒 Bot 时私聊里那条通知（kind=page_comment）
+            try:
+                if isinstance(pg := json.loads(meta).get("page"), int):
+                    found.insert(0, pg)
+            except ValueError:
+                pass
+        for pid in found:
+            if pid not in seen:
+                seen.append(pid)
+        if len(seen) >= limit * 3:
+            break
+    out = []
+    for pid in seen:
+        p = get_page(pid, False)
+        if not p:
+            continue
+        n = conn.execute("select count(*) from page_comments where page_id=? and parent_id is null and resolved=0", (pid,)).fetchone()[0]
+        last = conn.execute("select by, ts from page_versions where page_id=? and label != 'base' order by id desc limit 1", (pid,)).fetchone()
+        who = pagedoc.name_of(last[0]) if last and last[0] else ""
+        ago = int((time.time() - (last[1] if last else p["updated"])) // 60)
+        when = "刚刚" if ago < 1 else f"{ago} 分钟前" if ago < 60 else f"{ago // 60} 小时前" if ago < 1440 else f"{ago // 1440} 天前"
+        out.append(f"- #{pid}《{p['title']}》版本 {p['version']}" + (f" · {n} 串评论没解决" if n else "")
+                   + (f" · 最后是 {who} 改的（{when}）" if who else f" · {when}更新") + (" · 已锁定" if p["locked"] else ""))
+        if len(out) >= limit:
+            break
+    return "\n".join(out)
 
 
 SAVE_PAGE = {"type": "function", "function": {

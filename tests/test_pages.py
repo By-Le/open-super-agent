@@ -405,6 +405,58 @@ def test_delete_removes_history(bot):
     assert not pagedoc.versions(pid) and json.loads("[]") == []
 
 
+async def test_trash(bot, events):
+    """删掉的进回收站：连版本历史、评论、子页面（cascade）、库的行一起放回去；原来的上级不在了放到最上层；30 天后清掉。"""
+    from osa import dbs, pagecomments
+    b = bot()
+    parent = library.save_page(b["id"], "父", "# 父")["id"]
+    pid = library.save_page(b["id"], "要删的", "# 标题\n\n第一段", parent_id=parent)["id"]
+    kid = library.save_page(b["id"], "孙子", "内容", parent_id=pid)["id"]
+    pagedoc.apply(pid, pagedoc.load(pid)[0]["version"], [{"op": "insert", "end": True, "markdown": "第二段"}], "user")
+    bid = pagedoc.load(pid)[1][1]["id"]
+    c = pagecomments.add(pid, "user", "这段再想想", bid)
+    pagecomments.add(pid, "bot:1", "好", None, None, c["id"])
+    library.delete_page(pid, cascade=True)
+    assert library.get_page(pid, False) is None and library.get_page(kid, False) is None
+    item = next(x for x in library.trash() if x["page_id"] == pid)
+    assert item["title"] == "要删的" and item["count"] == 2
+    library.delete_page(parent)   # 原来的上级也删了
+    async with http() as cl:
+        r = await cl.post(f"/api/trash/{item['id']}/restore")
+        assert r.status_code == 200
+        back = r.json()
+        assert back["title"] == "要删的" and back["parent_id"] is None
+        assert (await cl.post(f"/api/trash/{item['id']}/restore")).status_code == 404
+    nid = back["id"]
+    assert "第二段" in library.get_page(nid)["content"] and len(pagedoc.versions(nid)) >= 2
+    cs = pagecomments.comments(nid)
+    assert [x["text"] for x in cs] == ["这段再想想", "好"] and cs[1]["parent_id"] == cs[0]["id"] and cs[0]["block_id"] == bid
+    assert [k["title"] for k in library.family(nid)["children"]] == ["孙子"]
+    assert events.of("pages_changed")
+    # 数据库连行一起回来；单独删的行回到它的库
+    db = dbs.create("库", "user", schema=dbs.default_schema())
+    rows = [dbs.add_row(db["id"], {"状态": "进行中"}, "user", f"行{k}")["id"] for k in range(3)]
+    library.delete_page(rows[0])
+    library.restore_trash(next(x for x in library.trash() if x["page_id"] == rows[0])["id"])
+    assert len(dbs.rows(db["id"])) == 3
+    library.delete_page(db["id"])
+    assert dbs.get_db(db["id"]) is None
+    library.restore_trash(next(x for x in library.trash() if x["page_id"] == db["id"])["id"])
+    restored = next(p for p in library.list_pages() if p["title"] == "库" and p["kind"] == "db")
+    assert [r["title"] for r in dbs.rows(restored["id"])] == ["行0", "行1", "行2"]
+    # 行所在的库不在了：恢复不了
+    one = dbs.rows(restored["id"])[0]["id"]
+    library.delete_page(one)
+    library.delete_page(restored["id"], trash=False)
+    with pytest.raises(ValueError, match="数据库已经不在"):
+        library.restore_trash(next(x for x in library.trash() if x["page_id"] == one)["id"])
+    # 放了 30 天的清掉
+    memory.conn.execute("update page_trash set deleted=deleted-31*86400 where page_id=?", (one,))
+    library.purge_trash()
+    assert not any(x["page_id"] == one for x in library.trash())
+    library.delete_page(nid, cascade=True, trash=False)
+
+
 async def test_bot_reads_then_edits_in_chat(llm, events, bot, pages):
     """对话里：Bot 先 read_page 拿到版本号和段落编号，再 edit_page 改别的 Bot 建的页面。"""
     a, b = bot("调研员"), bot("写手乙")
@@ -468,3 +520,47 @@ async def test_hierarchy(no_password, bot, pages, events):
         assert (await c.delete(f"/api/pages/{a}?cascade=true")).json() == {"ok": True}   # 连子页面一起删
     assert not library.get_page(a, False) and not library.get_page(d, False) and not library.get_page(sub, False)
     assert library.get_page(grand, False)   # 已经挪走的不受影响
+
+
+def test_recent_pages(bot):
+    """每轮状态里附上对话最近提到的页面：新的在前，至多 3 个，写版本、没解决的评论、最后谁改的。"""
+    from osa import pagecomments
+    b = bot()
+    ps = [library.save_page(b["id"], f"页{k}", f"# 页{k}")["id"] for k in range(4)]
+    for k, pid in enumerate(ps):
+        memory.add("assistant", f"写好了：[页{k}]({library.link(pid)})", b["chat_id"], b["id"])
+    pagecomments.add(ps[3], "user", "这里再改改")
+    text = library.recent_pages(b["chat_id"])
+    lines = text.splitlines()
+    assert len(lines) == 3 and lines[0].startswith(f"- #{ps[3]}《页3》版本 1 · 1 串评论没解决 · 最后是 {b['name']} 改的")
+    assert f"#{ps[0]}" not in text
+    library.delete_page(ps[3], trash=False)
+    assert f"#{ps[3]}" not in library.recent_pages(b["chat_id"]) and f"#{ps[0]}" in library.recent_pages(b["chat_id"])
+    for pid in ps[:3]:
+        library.delete_page(pid, trash=False)
+
+
+def test_replace_group_keeps_ids(bot, pages):
+    """网页上整组改“Markdown 原文”块（含 HTML 的表格）：没变的行、改了的行都留着原来的编号，新加的行才发新编号。"""
+    from osa import pagecomments
+    b = bot()
+    table = "| 名 | 值 |\n| --- | --- |\n| a | <b>1</b> |\n| b | 2 |\n| c | 3 |"
+    pid = new(pages, b, "# 表\n\n" + table)
+    i = ids(pid)   # 标题、表头、三行
+    assert len(i) == 5
+    pagecomments.add(pid, "user", "这行对吗", i[3])
+    v = pagedoc.load(pid)[0]["version"]
+    changed = "| 名 | 值 |\n| --- | --- |\n| a | <b>1</b> |\n| b | 20 |\n| c | 3 |\n| d | 4 |"
+    res = pagedoc.apply(pid, v, [{"op": "replace", "block": i[1], "markdown": changed, "group": i[2:]}], "user")
+    after = ids(pid)
+    assert after[:5] == i and len(after) == 6 and res["removed"] == []
+    assert md_of(pid)[3] == "| b | 20 |" and pagecomments.comments(pid)[0]["block_id"] == i[3]
+    by = {x["id"]: x["by"] for x in pagedoc.load(pid)[1]}
+    assert by[i[2]] == f"bot:{b['id']}" and by[i[3]] == "user"   # 没改的行作者不变
+    # 删掉一行：那一行的编号去掉
+    v = pagedoc.load(pid)[0]["version"]
+    res = pagedoc.apply(pid, v, [{"op": "replace", "block": i[1], "markdown": "| 名 | 值 |\n| --- | --- |\n| a | <b>1</b> |\n| c | 3 |\n| d | 4 |",
+                                  "group": after[2:]}], "user")
+    assert res["removed"] == [i[3]] and ids(pid) == [i[0], i[1], i[2], i[4], after[5]]
+    with pytest.raises(pagedoc.Conflict):   # 组里的编号对不上（被别人删了一行）
+        pagedoc.apply(pid, res["version"], [{"op": "replace", "block": i[1], "markdown": "x", "group": [i[3]]}], "user")

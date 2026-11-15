@@ -7,7 +7,7 @@ import time
 import openai
 from .computer import tools as ctools
 from .config import CFG, call_kwargs, client_for
-from . import applets, approvals, botadmin, bots, dm, dsml, i18n, media, memories, memory, providers, registry, routines, skills, tasklog
+from . import applets, approvals, botadmin, bots, dm, dsml, i18n, library, media, memories, memory, providers, registry, routines, skills, tasklog
 from . import builtin  # noqa: F401  导入即注册内置工具
 from . import worker as worker_mod
 from .worker import Task, run_worker, run_heavy
@@ -110,7 +110,7 @@ STATE_PROMPT = """
 {approvals}
 
 这一轮你能用的工具（能做什么以这里为准：对话里你以前说过“做不到”“没有这个工具”的，可能是那时还没有，现在这里有就直接用）：
-{tools}{memories}{turn}"""
+{tools}{memories}{pages}{turn}"""
 
 GROUP_PROMPT = """
 
@@ -496,9 +496,12 @@ class Router:
             bot_rule=PRIMARY_RULE if b["is_primary"] else OTHER_RULE.format(primary=p) if (p := bots.primary_name()) else "",
             attach_rule=ATTACH_SEE if see else ATTACH_BLIND) + i18n.model_hint()
         recent = memories.turn_block(self.bot_id, related)
+        pages = library.recent_pages(cid)
         state = STATE_PROMPT.format(tasks=self._task_list(), approvals=approvals.summary(self.bot_id),
                                     tools="、".join(t["function"]["name"] for t in self._tools()),
-                                    memories="\n\n" + recent if recent else "", turn=self._turn_block())
+                                    memories="\n\n" + recent if recent else "",
+                                    pages="\n\n对话里最近提到的资料库页面（接着改之前先 read_page 拿最新的版本和段落编号）：\n" + pages if pages else "",
+                                    turn=self._turn_block())
         msgs = [{"role": "system", "content": system}] + with_state(
             memory.context(cid, self.bot_id if chat["kind"] == "group" else None, me=self.bot_id,
                            images=media.MODEL_IMAGES if see else 0), state)

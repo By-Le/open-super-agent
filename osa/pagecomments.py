@@ -156,6 +156,17 @@ async def post(pid: int, text: str, block: str | None = None, quote: str | None 
     return c
 
 
+def reply_note(c: dict | None) -> dict | None:
+    """Bot 回复了用户起头的那串评论：推送到手机用（osa/push.message_for）。别的评论不推。"""
+    if not c or not str(c.get("by", "")).startswith("bot:") or not c.get("parent_id"):
+        return None
+    root = get(c["parent_id"])
+    if not root or root["by"] != "user":
+        return None
+    p = library.get_page(c["page_id"], False)
+    return {"id": c["id"], "by": c["by"], "text": c["text"][:300], "title": p["title"] if p else ""}
+
+
 def _replied(pid: int, root: int, bot_id: int, since: float) -> bool:
     return any(c["by"] == f"bot:{bot_id}" and c["ts"] >= since for c in comments(pid) if (c["parent_id"] or c["id"]) == root)
 
@@ -167,10 +178,10 @@ async def after_turn(bot_id: int, woke: dict, shown: str, since: float):
     if not shown.strip() or not get(root) or _replied(pid, root, bot_id, since):
         return
     try:
-        add(pid, f"bot:{bot_id}", shown[:MAX_COMMENT], reply_to=root)
+        c = add(pid, f"bot:{bot_id}", shown[:MAX_COMMENT], reply_to=root)
     except (ValueError, LookupError):
         return
-    await registry.emit("page_comments", page_id=pid)
+    await registry.emit("page_comments", page_id=pid, reply=reply_note(c))
 
 
 async def after_task(task):
@@ -180,10 +191,10 @@ async def after_task(task):
         return
     text = task.result if task.status == "done" else i18n.t("（任务 #{id} 没做完：{result}）", id=task.id, result=task.result[:300])
     try:
-        add(pid, f"bot:{task.bot_id}", text[:MAX_COMMENT], reply_to=root)
+        c = add(pid, f"bot:{task.bot_id}", text[:MAX_COMMENT], reply_to=root)
     except (ValueError, LookupError):
         return
-    await registry.emit("page_comments", page_id=pid)
+    await registry.emit("page_comments", page_id=pid, reply=reply_note(c))
 
 
 # ---------- 工具：comment_page ----------
@@ -200,9 +211,9 @@ COMMENT_PAGE = {"type": "function", "function": {
         "required": ["page_id"]}}}
 
 
-def tool_comment(who: int | str, args: dict) -> tuple[str, int | None]:
+def tool_comment(who: int | str, args: dict, wrote: list | None = None) -> tuple[str, int | None]:
     """comment_page：返回 (给模型的结果, 改了评论的页面编号)。who 是 Bot 的编号，或者作者（agent:<id>，外部 Agent）。
-    都走 add，不叫醒任何 Bot。"""
+    都走 add，不叫醒任何 Bot。wrote：给了就把写好的评论放进去（推送用）。"""
     by = who if isinstance(who, str) else f"bot:{who}"
     pid = args.get("page_id")
     p = library.get_page(pid, False) if isinstance(pid, int) else None
@@ -217,6 +228,8 @@ def tool_comment(who: int | str, args: dict) -> tuple[str, int | None]:
         out = []
         if text:
             c = add(pid, by, text, args.get("block"), None, reply_to)
+            if wrote is not None:
+                wrote.append(c)
             out.append(f"已在页面 #{pid}「{p['title']}」{'回复评论 #' + str(c['parent_id']) if c['parent_id'] else '写了评论'}（#{c['id']}）")
         if args.get("resolve"):
             if reply_to is None:

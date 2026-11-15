@@ -1,10 +1,13 @@
 // 斜杠菜单（打 / 或中文输入法下的 、）和选中文字时的格式菜单。菜单项都是 Markdown 存得下的格式。
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Extension, type Editor } from '@tiptap/core'
-import { PluginKey } from '@tiptap/pm/state'
+import { PluginKey, TextSelection, type EditorState } from '@tiptap/pm/state'
+import type { Node as PMNode } from '@tiptap/pm/model'
 import Suggestion from '@tiptap/suggestion'
 import { BubbleMenu } from '@tiptap/react/menus'
 import { t } from '../../i18n'
+import { notice } from '../Dialog'
+import { shrinkImage, uploadMedia } from '../Media'
 
 export type SlashItem = { key: string; label: string; icon: string; kw: string; run: (e: Editor) => void }
 export type SlashState = { items: SlashItem[]; rect: DOMRect | null; pick: (it: SlashItem) => void } | null
@@ -156,9 +159,28 @@ export function Toolbar({ editor, onComment }: { editor: Editor; onComment?: () 
   )
 }
 
-/** 插图片：在光标那里弹一个填网址的小框（手机 App 里没有 prompt()）。 */
+/** 传图片：浏览器里先缩（和对话里发图一样），存进 media，插成 ![文件名](/api/media/编号)。pos 不给就插在光标处。 */
+export async function insertImages(editor: Editor, files: File[], pos?: number) {
+  for (const f of files.filter(x => /^image\/(png|jpe?g|webp|gif)$/.test(x.type))) {
+    try {
+      const m = await uploadMedia(await shrinkImage(f), f.name)
+      const alt = f.name.replace(/\.[a-z0-9]+$/i, '').slice(0, 60)
+      const chain = editor.chain().focus()
+      ;(pos !== undefined ? chain.insertContentAt(pos, { type: 'image', attrs: { src: `/api/media/${m.id}`, alt } }) : chain.setImage({ src: `/api/media/${m.id}`, alt })).run()
+    } catch (e: any) { notice(e.message) }
+  }
+}
+
+/** 插图片：在光标那里弹一个小框，填网址或者传图片（手机 App 里没有 prompt()）。 */
 export function ImageBox({ editor, onClose }: { editor: Editor; onClose: () => void }) {
   const [url, setUrl] = useState('')
+  const pick = useRef<HTMLInputElement>(null)
+  const box = useRef<HTMLDivElement>(null)
+  useEffect(() => {   // 点别处就关
+    const h = (e: MouseEvent) => { if (!box.current?.contains(e.target as Node)) onClose() }
+    document.addEventListener('mousedown', h)
+    return () => document.removeEventListener('mousedown', h)
+  }, [onClose])
   const at = editor.view.coordsAtPos(editor.state.selection.from)
   const done = () => {
     const src = safeHref(url)
@@ -166,9 +188,106 @@ export function ImageBox({ editor, onClose }: { editor: Editor; onClose: () => v
     onClose()
   }
   return (
-    <div className="doc-url-box" style={{ left: at.left, top: at.bottom + 6 }} data-no-swipe="">
+    <div ref={box} className="doc-url-box" style={{ left: at.left, top: at.bottom + 6 }} data-no-swipe="">
       <input autoFocus value={url} placeholder={t('图片网址')} onChange={e => setUrl(e.target.value)}
-        onKeyDown={e => { if (e.key === 'Enter') done(); if (e.key === 'Escape') onClose() }} onBlur={onClose} />
+        onKeyDown={e => { if (e.key === 'Enter') done(); if (e.key === 'Escape') onClose() }} />
+      <input ref={pick} type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden
+        onChange={async e => { const fs = Array.from(e.target.files || []); onClose(); await insertImages(editor, fs) }} />
+      <button className="btn" onClick={() => pick.current?.click()}>{t('传图片')}</button>
+      <button className="icon-btn small" title={t('关闭')} onClick={onClose}>×</button>
     </div>
   )
 }
+
+
+// ---------- 段的菜单（手机上用）：光标所在的段左边一个“⋮”，点开上移、下移、删除 ----------
+// 段和服务器的切法一样：列表的每一项、顶层的段落 / 标题 / 整个代码块……（表格的行不在这里挪）。挪的是节点本身，段编号跟着走，保存时是一次“挪位置”。
+type Unit = { from: number; node: PMNode; parent: PMNode; index: number; item: boolean }
+
+function unitAt(state: EditorState): Unit | null {
+  const sel = state.selection, $f = sel.$from
+  if ($f.depth === 0) {   // 选中了整个顶层节点（分割线、图片块）
+    const node = state.doc.nodeAt(sel.from)
+    return node ? { from: sel.from, node, parent: state.doc, index: $f.index(0), item: false } : null
+  }
+  const top = $f.node(1)
+  if (top.type.name === 'table') return null
+  if ($f.depth >= 2 && ['bulletList', 'orderedList', 'taskList'].includes(top.type.name)) {
+    return { from: $f.before(2), node: $f.node(2), parent: top, index: $f.index(1), item: true }
+  }
+  return { from: $f.before(1), node: top, parent: state.doc, index: $f.index(0), item: false }
+}
+
+export function moveBlock(editor: Editor, dir: -1 | 1): boolean {
+  const { state } = editor
+  const u = unitAt(state)
+  if (!u) return false
+  const other = u.parent.maybeChild(u.index + dir)
+  if (!other) return false
+  const offset = state.selection.from - u.from
+  const tr = state.tr.delete(u.from, u.from + u.node.nodeSize)
+  const at = dir < 0 ? u.from - other.nodeSize : u.from + other.nodeSize
+  tr.insert(at, u.node)
+  tr.setSelection(TextSelection.near(tr.doc.resolve(Math.min(at + Math.max(offset, 1), tr.doc.content.size))))
+  editor.view.dispatch(tr.scrollIntoView())
+  return true
+}
+
+export function deleteBlock(editor: Editor): boolean {
+  const { state } = editor
+  const u = unitAt(state)
+  if (!u) return false
+  let from = u.from, to = u.from + u.node.nodeSize
+  if (u.item && u.parent.childCount === 1) {   // 列表里只剩这一项：整个列表去掉
+    from = state.selection.$from.before(1)
+    to = from + u.parent.nodeSize
+  }
+  const tr = state.tr
+  if (from === 0 && to === state.doc.content.size) tr.replaceWith(0, to, state.schema.nodes.paragraph.create())   // 页面不能是空的：留一个空段
+  else tr.delete(from, to)
+  tr.setSelection(TextSelection.near(tr.doc.resolve(Math.min(from, tr.doc.content.size))))
+  editor.view.dispatch(tr.scrollIntoView())
+  return true
+}
+
+export function BlockHandle({ editor }: { editor: Editor }) {
+  const [at, setAt] = useState<{ top: number; left: number; up: boolean; down: boolean } | null>(null)
+  const [open, setOpen] = useState(false)
+  const box = useRef<HTMLDivElement>(null)
+  const opened = useRef(false)
+  opened.current = open
+  useEffect(() => {
+    if (!TOUCH) return
+    const place = () => {
+      const u = editor.isEditable ? unitAt(editor.state) : null
+      const dom = u && (editor.view.nodeDOM(u.from) as HTMLElement | null)
+      if (!u || !dom?.getBoundingClientRect || (!editor.isFocused && !opened.current)) { setAt(null); return }
+      const r = dom.getBoundingClientRect()
+      setAt({ top: r.top, left: r.left, up: !!u.parent.maybeChild(u.index - 1), down: !!u.parent.maybeChild(u.index + 1) })
+    }
+    const blur = () => setTimeout(() => { if (!opened.current && !box.current?.contains(document.activeElement)) setAt(null) }, 150)
+    editor.on('selectionUpdate', place)
+    editor.on('update', place)
+    editor.on('focus', place)
+    editor.on('blur', blur)
+    addEventListener('scroll', place, true)
+    addEventListener('resize', place)
+    return () => {
+      editor.off('selectionUpdate', place); editor.off('update', place); editor.off('focus', place); editor.off('blur', blur)
+      removeEventListener('scroll', place, true); removeEventListener('resize', place)
+    }
+  }, [editor])
+  if (!at) return null
+  const run = (fn: () => void) => { fn(); setOpen(false); editor.commands.focus() }
+  return (
+    <div ref={box} className="doc-block-handle" style={{ top: at.top, left: Math.max(2, at.left - 26) }} data-no-swipe="">
+      <button className="doc-bh-btn" title={t('这一段')} onMouseDown={e => e.preventDefault()} onClick={() => setOpen(!open)}>⋮</button>
+      {open && <div className="doc-toolbar doc-bh-menu">
+        <button disabled={!at.up} onMouseDown={e => e.preventDefault()} onClick={() => run(() => moveBlock(editor, -1))}>↑ {t('上移')}</button>
+        <button disabled={!at.down} onMouseDown={e => e.preventDefault()} onClick={() => run(() => moveBlock(editor, 1))}>↓ {t('下移')}</button>
+        <button className="danger-text" onMouseDown={e => e.preventDefault()} onClick={() => run(() => deleteBlock(editor))}>{t('删除这一段')}</button>
+      </div>}
+    </div>
+  )
+}
+

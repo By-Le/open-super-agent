@@ -196,7 +196,8 @@ def _conflict(b: dict, op: str, reason: str) -> dict:
 
 def apply(pid: int, base, ops, by: str) -> dict:
     """按段修改。ops：
-      {op: replace, block, markdown}（markdown 为空就是删掉）、{op: delete, block, merged_into?}、
+      {op: replace, block, markdown}（markdown 为空就是删掉；带 group: [后面几段的编号] 是连着的几段整组换掉，按内容对齐保住编号）、
+      {op: delete, block, merged_into?}、
       {op: insert, after: 编号 | null（null 是最前面）| before: 编号 | end: true, markdown, new_id?}、
       {op: move, block, after: 编号 | null}
     markdown 可以是好几段。全部生效或者都不生效；冲突时抛 Conflict。返回 {version, order, blocks（改动的段）, merged, removed}。"""
@@ -234,6 +235,31 @@ def apply(pid: int, base, ops, by: str) -> dict:
         if not isinstance(op, dict):
             raise ValueError(i18n.t("每个修改都要是一个对象"))
         t = op.get("op")
+        if t == "replace" and op.get("group"):   # 网页上的“Markdown 原文”块整组改了：和原来的几段按内容对齐，没变的、改了的都留着编号
+            k = at(op.get("block"))
+            ids = [blocks.clean_id(x) for x in op["group"]] if isinstance(op["group"], list) else []
+            if k < 0 or [b["id"] for b in work[k + 1:k + 1 + len(ids)]] != ids:
+                conflicts.append({"block": blocks.clean_id(op.get("block")), "op": t, "reason": "missing"})
+                continue
+            olds = work[k:k + 1 + len(ids)]
+            if stale := [b for b in olds if b["v"] > base and b["id"] not in touched]:
+                conflicts += [_conflict(b, t, "changed") for b in stale]
+                continue
+            parts = blocks.split(blocks.strip_ids(op.get("markdown") or ""))
+            new = []
+            for (oi, same), (m, gap) in zip(blocks.align([b["md"] for b in olds], [m for m, _ in parts]), parts):
+                if oi is not None:
+                    new.append({**olds[oi], "gap": gap} if same else {**olds[oi], "md": m, "gap": gap, "by": by, "v": newv, "ts": now})
+                else:
+                    nid = blocks.new_id(taken)
+                    taken.add(nid)
+                    new.append({"id": nid, "md": m, "gap": gap, "by": by, "v": newv, "ts": now})
+                keep_gap.add(new[-1]["id"])
+            kept = {b["id"] for b in new}
+            removed += [b["id"] for b in olds if b["id"] not in kept]
+            work[k:k + len(olds)] = new
+            touched.update(kept | {b["id"] for b in olds})
+            continue
         if t in ("replace", "delete"):
             k = at(op.get("block"))
             if k < 0:

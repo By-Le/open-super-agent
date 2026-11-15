@@ -30,6 +30,14 @@ function Composer({ placeholder, bots, auto, onSend, onCancel, autoFocus }: {
   const [text, setText] = useState('')
   const [wake, setWake] = useState<string>('')
   const [busy, setBusy] = useState(false)
+  // 打 @ 弹出 Bot 的名字（评论里 @ 谁就叫醒谁，见 osa/pagecomments.targets），上下键选，回车或 Tab 填进去
+  const everyone = useStore(s => s.bots)
+  const [pick, setPick] = useState(0)
+  const [shut, setShut] = useState(false)
+  const box = useRef<HTMLTextAreaElement>(null)
+  const at = text.match(/(?:^|\s)@([^\s@]*)$/)
+  const matches = at && !shut ? everyone.filter(b => b.name.toLowerCase().startsWith(at[1].toLowerCase())).slice(0, 8) : []
+  const choose = (name: string) => { setText(text.replace(/@([^\s@]*)$/, `@${name} `)); setPick(0); box.current?.focus() }
   const send = async () => {
     if (!text.trim() || busy) return
     setBusy(true)
@@ -40,8 +48,20 @@ function Composer({ placeholder, bots, auto, onSend, onCancel, autoFocus }: {
   }
   return (
     <div className="dc-composer">
-      <textarea value={text} autoFocus={autoFocus} rows={2} placeholder={placeholder} onChange={e => setText(e.target.value)}
-        onKeyDown={e => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') send(); if (e.key === 'Escape') onCancel?.() }} />
+      {matches.length > 0 && <div className="mention-list dc-mentions">
+        {matches.map((b, i) => <button key={b.id} className={i === pick % matches.length ? 'on' : ''} onMouseDown={e => { e.preventDefault(); choose(b.name) }}>
+          <b>@{b.name}</b><span className="muted small">{t('叫它来处理')}</span></button>)}
+      </div>}
+      <textarea ref={box} value={text} autoFocus={autoFocus} rows={2} placeholder={placeholder} onChange={e => { setText(e.target.value); setShut(false) }}
+        onKeyDown={e => {
+          if (matches.length && !e.nativeEvent.isComposing) {
+            if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); setPick((pick + (e.key === 'ArrowDown' ? 1 : matches.length - 1)) % matches.length); return }
+            if ((e.key === 'Enter' && !e.metaKey && !e.ctrlKey) || e.key === 'Tab') { e.preventDefault(); choose(matches[pick % matches.length].name); return }
+            if (e.key === 'Escape') { e.preventDefault(); setShut(true); return }
+          }
+          if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') send()
+          if (e.key === 'Escape') onCancel?.()
+        }} />
       <div className="dc-row">
         {bots && <select value={wake} onChange={e => setWake(e.target.value)} title={t('谁来处理这条评论')}>
           <option value="">{auto}</option>

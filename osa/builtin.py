@@ -60,9 +60,10 @@ def _db_tool(fn):
 
 
 async def _comment_page(call: Call) -> str:
-    out, pid = pagecomments.tool_comment(call.bot_id, call.args)
+    wrote: list = []
+    out, pid = pagecomments.tool_comment(call.bot_id, call.args, wrote)
     if pid:
-        await registry.emit("page_comments", page_id=pid)
+        await registry.emit("page_comments", page_id=pid, reply=pagecomments.reply_note(wrote[0] if wrote else None))
     return out
 
 

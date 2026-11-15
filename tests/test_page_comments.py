@@ -121,7 +121,12 @@ async def test_comment_wakes_author_and_reply_lands_in_thread(no_password, llm, 
     body = llm.bodies("router", "Writer9")[-1]
     assert f"用户在资料库页面 #{pid}《周报》上写了评论 #{root}" in last_user(body)                 # 这一轮的说明
     assert any(f"留了评论 #{root}，这是用户的话）应该是四件事" in str(m.get("content")) for m in body["messages"])
+    assert f"对话里最近提到的资料库页面" in last_user(body) and f"#{pid}《周报》版本" in last_user(body)   # 每轮附上页面现在的样子
     assert any(e["type"] == "page_comments" and e["page_id"] == pid for e in events.events)
+    ev = await until(lambda: next((e for e in events.of("page_comments") if e.get("reply")), None), what="带着回复的事件")
+    from osa import push
+    title, body, url, tag = push.message_for(ev)   # 没开着网页时推到手机
+    assert title == "Writer9 回复了你在「周报」的评论" and body == "改好了，换成了四件事" and url == f"/library/pages/{pid}"
     await settle()
 
 

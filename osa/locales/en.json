@@ -1263,5 +1263,8 @@
   "先撤销，再从列表里删掉": "Revoke it before removing it from the list",
   "没收到文件": "No file received",
   "文件太大了（最多 {n} MB）": "The file is too large (max {n} MB)",
-  "没有这个按钮": "No such button"
+  "没有这个按钮": "No such button",
+  "回收站里没有这一项": "That item is not in the trash",
+  "这一行所在的数据库已经不在了，恢复不了": "This row's database no longer exists, so it can't be restored",
+  "{who} 回复了你在「{title}」的评论": "{who} replied to your comment on \"{title}\""
 }

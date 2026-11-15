@@ -67,7 +67,7 @@ _events = registry.Context("server")
 _events.on("pages_changed", lambda: broadcast({"type": "pages_changed"}))
 _events.on("page_data", lambda page_id, data: broadcast({"type": "page_data", "page_id": page_id, "data": data}))
 _events.on("page_changed", lambda **kw: broadcast({"type": "page_changed", **kw}))
-_events.on("page_comments", lambda page_id: broadcast({"type": "page_comments", "page_id": page_id}))
+_events.on("page_comments", lambda page_id, reply=None: broadcast({"type": "page_comments", "page_id": page_id, **({"reply": reply} if reply else {})}))
 _events.on("db_changed", lambda **kw: broadcast({"type": "db_changed", **kw}))
 
 
@@ -1081,9 +1081,40 @@ async def share_page(pid: int, data: dict = Body(...)):
     return p
 
 
+@app.get("/api/trash")
+async def list_trash():
+    """回收站：删掉的页面、数据库、行，30 天后自动清掉。"""
+    return library.trash()
+
+
+@app.post("/api/trash/{tid}/restore")
+async def restore_trash(tid: int):
+    try:
+        p = library.restore_trash(tid)
+    except LookupError as e:
+        raise HTTPException(404, str(e))
+    except ValueError as e:
+        _err(e)
+    await _row_touched(p)
+    await broadcast({"type": "pages_changed"})
+    return p
+
+
+@app.delete("/api/trash/{tid}")
+async def drop_trash(tid: int):
+    library.drop_trash(tid)
+    return {"ok": True}
+
+
+@app.delete("/api/trash")
+async def empty_trash():
+    library.drop_trash()
+    return {"ok": True}
+
+
 @app.delete("/api/pages/{pid}")
 async def delete_page(pid: int, cascade: bool = False):
-    """删页面：子页面默认挪到上一级；cascade=true 连子页面一起删。数据库连行一起删。"""
+    """删页面（先进回收站，30 天内能恢复）：子页面默认挪到上一级；cascade=true 连子页面一起删。数据库连行一起删。"""
     p = library.get_page(pid, False)
     library.delete_page(pid, cascade)
     if p:

@@ -123,7 +123,7 @@ export default function DbView({ id }: { id: number }) {
   }
   const delRow = async (r: DbRow) => {
     setPop(null)
-    if (!(await ask(t('删除「{title}」这一行？它的正文和历史也会删掉。', { title: r.title || t('无标题') }), { ok: t('删除'), danger: true }))) return
+    if (!(await ask(t('删除「{title}」这一行？（先放进回收站，30 天内能恢复）', { title: r.title || t('无标题') }), { ok: t('删除'), danger: true }))) return
     setData({ ...data, rows: data.rows.filter(x => x.id !== r.id), total: data.total - 1, count: data.count - 1 })
     dbApi.remove(id, r.id).catch(failed)
   }

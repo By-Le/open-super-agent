@@ -149,9 +149,10 @@ export class DocSync {
       if (sent.has(id) || this.conflicts.has(id)) continue
       const md = this.changed(l)
       if (md === null) continue
-      ops.push({ op: 'replace', block: id, markdown: md })
+      const rest = restOf(l.node)
+      // 原文块整组改了：整组交给服务器，按内容和原来的几段对齐（没改的行留着编号和评论）
+      ops.push(rest.length ? { op: 'replace', block: id, markdown: md, group: rest } : { op: 'replace', block: id, markdown: md })
       sent.set(id, { node: l.node, md })
-      for (const r of restOf(l.node)) ops.push({ op: 'delete', block: r })   // 原文块整组改了：其余的段并进来
     }
     return { ops, sent }
   }
@@ -220,6 +221,15 @@ export class DocSync {
         this.base.set(b.id, { md: b.md, gap: b.gap, v: b.v, by: b.by, ts: b.ts, node: null, canon: b.md })
         mismatch = true
       }
+    }
+    // 发出去的段服务器原样留着（不在 blocks 里，比如原文块整组改了、第一行没变）：也算存上了，不然下次还当它没存、再发一遍
+    const kept = new Set(res.order), back = new Set(res.blocks.map(b => b.id))
+    for (const [id, s] of sent) {
+      const cur = this.base.get(id)
+      if (back.has(id) || !cur || !kept.has(id)) continue
+      cur.node = s.node
+      cur.canon = s.md
+      if (s.md !== cur.md) mismatch = true
     }
     this.order = res.order
     const local: string[] = []

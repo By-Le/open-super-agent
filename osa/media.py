@@ -172,7 +172,8 @@ def used() -> set[str]:
     for (c,) in conn.execute("""select content from pages where content like '%/api/media/%'
                                 union all select content from page_versions where content like '%/api/media/%'
                                 union all select props from pages where props like '%/api/media/%'
-                                union all select props from page_versions where props like '%/api/media/%'"""):   # 数据库的文件属性
+                                union all select props from page_versions where props like '%/api/media/%'
+                                union all select data from page_trash where data like '%/api/media/%'"""):   # 数据库的文件属性、回收站
         out.update(EMBED.findall(c or ""))
     return out
 
@@ -187,8 +188,10 @@ def gc():
 
 
 async def gc_loop():
+    from . import library
     while True:
         try:
+            library.purge_trash()   # 回收站里放了 30 天的先清掉，它们引用的图片接着就能清
             gc()
         except Exception as e:
             print(f"清理对话图片出错：{e}", flush=True)
