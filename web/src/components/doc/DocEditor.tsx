@@ -8,6 +8,8 @@ import Markdown from '../Markdown'
 import { extensions } from './schema'
 import { DocSync, REMOTE, type Conflict, type PageBlocks, type Status } from './sync'
 import { ImageBox, SlashMenu, Toolbar, safeHref, slashItems } from './menus'
+import { CommentsPanel, countOpen, type Draft, type PageComment } from './comments'
+import { blocksOf } from './markdown'
 
 const when = (ts: number) => new Date(ts * 1000).toLocaleString(locale, { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
 
@@ -22,7 +24,13 @@ export default function DocEditor({ id, fallback }: { id: number; fallback: stri
   const [ready, setReady] = useState(false)
   const [err, setErr] = useState('')
   const [imageBox, setImageBox] = useState(false)
+  const [comments, setComments] = useState<PageComment[]>([])
+  const [panel, setPanel] = useState(false)
+  const [draft, setDraft] = useState<Draft | null>(null)
+  const [focus, setFocus] = useState<string | null>(null)
+  const [owner, setOwner] = useState<number | null>(null)
   const sync = useRef<DocSync | null>(null)
+  const loadComments = () => api(`/api/pages/${id}/comments`).then(setComments).catch(() => {})
 
   const nameOf = (by: string) => {
     const m = by.match(/^bot:(\d+)$/)
@@ -77,10 +85,12 @@ export default function DocEditor({ id, fallback }: { id: number; fallback: stri
     let editTimer: ReturnType<typeof setTimeout> | undefined
     ;(async () => {
       if (await DocSync.recover(id) === 'lost') notice(t('上次离开时没存上的修改和别人的修改冲突了，没能补存。'))
-      const data: PageBlocks = await api(`/api/pages/${id}/blocks`)
+      const data: PageBlocks & { bot_id?: number | null } = await api(`/api/pages/${id}/blocks`)
       if (!alive) return
       s.load(data)
+      setOwner(data.bot_id ?? null)
       setReady(true)
+      loadComments()
     })().catch(e => alive && setErr(e.message))
     const onUpdate = ({ transaction }: any) => { if (!transaction.getMeta(REMOTE)) s.schedule() }
     const onPage = (e: Event) => {
@@ -93,7 +103,16 @@ export default function DocEditor({ id, fallback }: { id: number; fallback: stri
       }
       s.remote(d.version)
     }
-    const onResync = () => s.remote(Number.MAX_SAFE_INTEGER)   // 断线重连：漏掉的改动补上
+    const onResync = () => { s.remote(Number.MAX_SAFE_INTEGER); loadComments() }   // 断线重连：漏掉的改动补上
+    const onComments = (e: Event) => { if ((e as CustomEvent).detail?.page_id === id) loadComments() }
+    // 光标停在有评论的段上：面板里那串评论亮起来
+    const onSelect = () => {
+      const at = editor.state.selection.from
+      const l = blocksOf(editor.state.doc).find(b => at >= b.pos && at <= b.pos + b.node.nodeSize)
+      setFocus(l?.id && s.counts.has(l.id) ? l.id : null)
+    }
+    editor.on('selectionUpdate', onSelect)
+    window.addEventListener('osa-page-comments', onComments)
     const onHide = () => { if (document.visibilityState === 'hidden') s.save() }
     editor.on('update', onUpdate)
     window.addEventListener('osa-page', onPage)
@@ -106,6 +125,8 @@ export default function DocEditor({ id, fallback }: { id: number; fallback: stri
       editor.off('update', onUpdate)
       window.removeEventListener('osa-page', onPage)
       window.removeEventListener('osa-page-resync', onResync)
+      window.removeEventListener('osa-page-comments', onComments)
+      editor.off('selectionUpdate', onSelect)
       document.removeEventListener('visibilitychange', onHide)
       window.removeEventListener('pagehide', s.flush)
       s.destroy()
@@ -113,16 +134,41 @@ export default function DocEditor({ id, fallback }: { id: number; fallback: stri
   }, [editor, id])
 
   useEffect(() => { if (connected) sync.current?.retryNow() }, [connected])
+  useEffect(() => {   // 每段有几串没解决的评论：画在作者条旁边
+    const s = sync.current
+    if (!s || !ready) return
+    s.counts = countOpen(comments)
+    s.paint()
+  }, [comments, ready])
+
+  // 选中文字点“评论”：挂在选区所在的那一段，选中的字作为引文
+  const startComment = () => {
+    if (!editor) return
+    const { from, to } = editor.state.selection
+    const l = blocksOf(editor.state.doc).find(b => from >= b.pos && from <= b.pos + b.node.nodeSize)
+    const known = l?.id && sync.current?.base.has(l.id) ? l.id : null   // 还没存上的新段先挂整页
+    setDraft({ block: known, quote: editor.state.doc.textBetween(from, to, ' ').slice(0, 200) })
+    setPanel(true)
+  }
+  const jumpTo = (bid: string) => {
+    document.querySelector(`.doc-body [data-bid="${bid}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    sync.current?.paint([bid])
+    setFocus(bid)
+  }
+  const open = comments.filter(c => !c.parent_id && !c.resolved).length
 
   const STATUS: Record<Status, string> = {
     saved: t('已保存'), saving: t('保存中…'), offline: t('离线，连上以后自动保存'), conflict: t('有冲突'), error: t('保存失败'),
   }
   const jump = (bid: string) => document.querySelector(`.doc-body [data-bid="${bid}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' })
   return (
-    <div className="doc">
+    <div className={'doc' + (panel ? ' with-comments' : '')}>
       <div className="doc-status muted small">
         <span className={'doc-dot ' + status} />{status === 'error' && sync.current?.error ? `${STATUS.error}：${sync.current.error}` : STATUS[status]}
         {editing && <span className="doc-editing"> · {t('{name} 正在编辑', { name: nameOf(editing) })}</span>}
+        <span className="grow" />
+        {ready && <button className={'doc-cbtn' + (panel ? ' on' : '')} onClick={() => setPanel(!panel)} title={t('评论')}>
+          💬 {open ? t('{n} 条评论', { n: open }) : t('评论')}</button>}
       </div>
       {conflicts.map(c => (
         <div className="doc-banner" key={c.id}>
@@ -138,9 +184,12 @@ export default function DocEditor({ id, fallback }: { id: number; fallback: stri
       <div className="page-md doc-wrap" style={ready ? undefined : { display: 'none' }}>
         <EditorContent editor={editor} />
       </div>
+      {panel && <CommentsPanel pageId={id} comments={comments} order={sync.current?.order || []} ownerBot={owner}
+        blockMd={b => sync.current?.base.get(b)?.md ?? null} authorOf={b => sync.current?.base.get(b)?.by || ''}
+        draft={draft} setDraft={setDraft} focus={focus} onJump={jumpTo} onClose={() => { setPanel(false); setDraft(null) }} reload={loadComments} />}
       {editor && !editor.isDestroyed && <>
         <SlashMenu editor={editor} />
-        <Toolbar editor={editor} />
+        <Toolbar editor={editor} onComment={startComment} />
         {imageBox && <ImageBox editor={editor} onClose={() => setImageBox(false)} />}
       </>}
     </div>

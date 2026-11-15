@@ -57,6 +57,7 @@ osa/
   memories.py      长期记忆：每个 Bot 的记忆、共享的用户事实、做过的事、从其他助手导入
   library.py       资料库：页面（存储、分享链接、save_page 工具）、小应用的清单和数据（page_data 工具）、电脑里的文件（列目录、删除、置顶）
   blocks.py        资料库页面的切段：把 Markdown 正文切成一段一段（只切行区间、不改文字）、段之间的 gap、对齐新旧两版的段
+  pagecomments.py  资料库页面的评论：挂在段上的评论串、叫醒负责的 Bot、自动回帖（comment_page 工具）
   pagedoc.py       资料库页面按段读写：段的编号和作者、按段修改和冲突检查（edit_page 工具）、整页重写时保住没变的段、版本历史、read_page 的样子
   mcpapps.py       应用自带的界面（MCP Apps）：工具上的 _meta.ui、拼 CSP、取界面、替界面调工具 / 读资源、和小应用共用的确认
   applets.py       小应用：清单校验、页面里的 SDK（window.osa，返回原文时内联）、从界面调工具（走确认规则）和替用户发消息
@@ -129,6 +130,7 @@ web/src/
 | `task_steps` | 后台任务的过程：每一步的类型（思考 / 工具 / 结果……）、Heavy 里是哪个研究员、标题、内容、状态、用时。`task_id` 是“任务已派发”那条消息的 id；工具那一步的工具名在 `name`（标题会被进度说明盖掉）；只留最近 `memory.task_log_days` 天 |
 | `memories` | 长期记忆。`bot_id` 为空的是共享的用户事实；`kind=work` 是自动记的“做过的事” |
 | `pages`、`file_pins` | 资料库的页面（`share_token` 不为空表示已分享）和置顶的文件路径。`block_meta`（JSON）是 markdown 页面每段的编号、作者（`by`：user / bot:<id> / 空）、最后改动的版本（`v`）和指纹（`h`），按位置对应从 `content` 切出来的段；`version` 每次提交 +1；`locked` 为 1 时 Bot 只能读 |
+| `page_comments` | 页面的评论：挂在哪一段（`block_id`，空的是整页）、回复的是哪串（`parent_id`）、谁写的（`by`）、引文、是否已解决（整串一起）、叫醒了哪些 Bot（`woke`） |
 | `page_versions` | 页面的版本历史：每版的标题、正文、段的元数据、谁改的、起止时间；同一个人 10 分钟内接着改并进同一版；`label` 是 `base`（旧页面第一次被改前的原样）或 `restore:<版本>`；每页最多 50 版、总共 4 MB |
 | `push_subs` | 开启了推送的设备（推送服务地址和密钥）；VAPID 私钥存在 `settings` 的 `vapid` 里 |
 | `channels` | 聊天软件连接：平台、绑定的对话（`chat_id`）、配对的私聊（`peer`）、配对码；token / App Secret 在保险库的 `channel_<id>` |
@@ -417,6 +419,10 @@ web/src/
   新加的段的 gap 由 `blocks.fix_gaps` 算：列表项和非列表段之间一定隔空行，免得后面的段落被当成懒续行吞进列表项。
 - 按段改的冲突只看要改的段：它在调用方读过之后（`v > base`）被别人改过才拒绝，整批都不写，并把那几段现在的内容和改的人告诉调用方。
   markdown 页面谁都能改（锁定的除外），html 页面和小应用的数据仍然只有建它的 Bot 能改；`save_page` 更新最近是别人改的页面必须带 `version`。
+- **评论只有用户写的会叫醒 Bot**（Bot 写的不叫醒任何 Bot，免得来回停不下来）。通知存成 Bot 私聊里 `kind=page_comment` 的消息，
+  `memory.context` 只按当时存下的 meta 渲染（不现查页面）：评论是用户的话不改，段落原文和标题 defang。叫醒用 `dm.wake`，
+  `woke.from` 是那串评论的第一条（不是 Bot 编号，`_turn_block` 和 `cancel_task` 都单独处理）。那一轮没派任务、
+  Bot 自己也没在这串里回过（从这一轮开始算），就把这一轮的回复贴进去；派了任务的，任务结果贴回来（`Task.comment`）。
 - 用户在网页上按段保存只广播 `page_changed`（带改动的段编号），不发 `pages_changed`：后者会让列表、页面卡片整个重拉。
 - 搜索索引：页面改了一段，其余没变的块沿用原来的向量（`search._vectors`），编辑器几秒存一次也不会每次都把整页重算。
 - **网页编辑器（`web/src/components/doc/`）以 Markdown 为准**：只开 Markdown 存得下的格式（提示框存成 `> [!NOTE]`，折叠块存成 `<details>`）。

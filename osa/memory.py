@@ -216,6 +216,13 @@ def context(chat_id: int, viewer: int | None = None, me: int | None = None, imag
                 msgs.append({"role": "user", "content": f"（系统通知：{whose}提交的视频还在生成，好了会自动显示。描述：{defang(meta.get('prompt') or c)}）"})
         elif r == "task" and meta.get("kind") in ("dm", "dm_reply"):
             msgs.append({"role": "user", "content": _dm_line(meta, defang(c), b, me, name)})
+        elif r == "task" and meta.get("kind") == "page_comment":
+            # 用户在资料库页面上写的评论（pagecomments.py）：评论是用户的话，不改；段落原文和标题可能是 Bot 写的、网上来的，要 defang。
+            # 只用当时存下的 meta，不现查页面：页面后来改了，历史也不变
+            where = f"的 ⟦{meta['block']}⟧ 这段（原文：「{defang((meta.get('quote') or '')[:200])}」）" if meta.get("block") else ""
+            again = f"，回复评论 #{meta['root']}" if meta.get("root") and meta.get("root") != meta.get("comment") else ""
+            msgs.append({"role": "user", "content": f"（用户在资料库页面 #{meta.get('page')}《{defang(meta.get('title') or '')}》{where}"
+                                                    f"留了评论 #{meta.get('comment')}{again}，这是用户的话）{c}"})
         elif r == "task":  # 任务记录作为系统通知给 Router，避免它模仿这种格式
             whose = f"{name(b)} 的" if others and b else ""
             note = f"（系统通知，非用户发言；这是{whose}任务结果，已作为卡片直接展示给用户，不用复述，除非用户问起）" \

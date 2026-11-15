@@ -20,7 +20,7 @@ from starlette.background import BackgroundTask
 from . import backup
 backup.apply_pending()   # 确认过的恢复：在打开数据库之前换上
 from . import applets, approvals, auth, avatars, botadmin, bots, catalog, channels, computer, dm, events, groups, i18n, library, mcp_hub, media, memories, memory, push, router as rt, routines
-from . import generation, mcpapps, observe, outputs, pagedoc, prices, providers, search, security, settings, skills, tasklog, teach, templates, unfurl, vault, videos, websearch
+from . import generation, mcpapps, observe, outputs, pagecomments, pagedoc, prices, providers, search, security, settings, skills, tasklog, teach, templates, unfurl, vault, videos, websearch
 from .computer import link
 from .computer.base import HOSTS
 from . import builtin, registry  # noqa: F401  builtin：导入即注册内置工具
@@ -67,6 +67,7 @@ _events = registry.Context("server")
 _events.on("pages_changed", lambda: broadcast({"type": "pages_changed"}))
 _events.on("page_data", lambda page_id, data: broadcast({"type": "page_data", "page_id": page_id, "data": data}))
 _events.on("page_changed", lambda **kw: broadcast({"type": "page_changed", **kw}))
+_events.on("page_comments", lambda page_id: broadcast({"type": "page_comments", "page_id": page_id}))
 
 
 async def parent_watch(pid: int, every: float = 2):
@@ -995,6 +996,47 @@ async def page_version(pid: int, vid: int):
     if not (v := pagedoc.version(pid, vid)):
         raise HTTPException(404, i18n.t("没有这一版"))
     return v
+
+
+# ---------- 资料库：评论（pagecomments.py）。用户写的评论叫醒负责的 Bot ----------
+@app.get("/api/pages/{pid}/comments")
+async def list_page_comments(pid: int):
+    _page_or_404(pid)
+    return pagecomments.comments(pid)
+
+
+@app.post("/api/pages/{pid}/comments")
+async def add_page_comment(pid: int, data: dict = Body(...)):
+    """{text, block?, quote?, reply_to?, wake?}：wake 不给是自动选（见 pagecomments.targets），false 是不叫，数字是叫这个 Bot。"""
+    _page_or_404(pid)
+    try:
+        return await pagecomments.post(pid, str(data.get("text") or ""), data.get("block"), data.get("quote"), data.get("reply_to"), data.get("wake"))
+    except LookupError as e:
+        raise HTTPException(404, str(e))
+    except (ValueError, TypeError) as e:
+        _err(e)
+
+
+@app.patch("/api/pages/{pid}/comments/{cid}")
+async def update_page_comment(pid: int, cid: int, data: dict = Body(...)):
+    try:
+        c = pagecomments.update(pid, cid, data.get("text"), data.get("resolved"))
+    except LookupError as e:
+        raise HTTPException(404, str(e))
+    except (ValueError, TypeError) as e:
+        _err(e)
+    await broadcast({"type": "page_comments", "page_id": pid})
+    return c
+
+
+@app.delete("/api/pages/{pid}/comments/{cid}")
+async def delete_page_comment(pid: int, cid: int):
+    try:
+        pagecomments.delete(pid, cid)
+    except LookupError as e:
+        raise HTTPException(404, str(e))
+    await broadcast({"type": "page_comments", "page_id": pid})
+    return {"ok": True}
 
 
 @app.post("/api/pages/{pid}/versions/{vid}/restore")

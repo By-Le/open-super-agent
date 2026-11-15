@@ -113,7 +113,7 @@ export const safeHref = (href: string) => {
 }
 
 /** 选中文字时的格式菜单：粗体、斜体、删除线、行内代码、链接。 */
-export function Toolbar({ editor }: { editor: Editor }) {
+export function Toolbar({ editor, onComment }: { editor: Editor; onComment?: () => void }) {
   const [link, setLink] = useState<string | null>(null)
   const apply = () => {
     const href = safeHref(link || '')
@@ -123,7 +123,9 @@ export function Toolbar({ editor }: { editor: Editor }) {
   }
   return (
     <BubbleMenu editor={editor} className="doc-toolbar" data-no-swipe=""
-      shouldShow={({ editor: e, state }) => e.isEditable && !state.selection.empty && !e.isActive('codeBlock') && !e.isActive('rawBlock')}
+      // 焦点去了别处（比如点“评论”以后在评论框里打字）就收起；填链接的输入框在菜单里，算菜单自己的焦点
+      shouldShow={({ editor: e, state, view, element }) => e.isEditable && !state.selection.empty && !e.isActive('codeBlock') && !e.isActive('rawBlock')
+        && (view.hasFocus() || element.contains(document.activeElement))}
       options={{ placement: 'top', onHide: () => setLink(null) }}>
       {link !== null ? (
         <span className="doc-link-box">
@@ -138,6 +140,7 @@ export function Toolbar({ editor }: { editor: Editor }) {
           <button className={editor.isActive('strike') ? 'on' : ''} title={t('删除线')} onClick={() => editor.chain().focus().toggleStrike().run()}><s>S</s></button>
           <button className={editor.isActive('code') ? 'on' : ''} title={t('行内代码')} onClick={() => editor.chain().focus().toggleCode().run()}>{'</>'}</button>
           <button className={editor.isActive('link') ? 'on' : ''} title={t('链接')} onClick={() => setLink(editor.getAttributes('link').href || '')}>🔗</button>
+          {onComment && <button title={t('评论')} onClick={onComment}>💬</button>}
         </>
       )}
     </BubbleMenu>

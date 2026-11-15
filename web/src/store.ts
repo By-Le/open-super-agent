@@ -538,6 +538,9 @@ function handle(d: any) {
     case 'pages_changed':
       window.dispatchEvent(new CustomEvent('osa-pages'))
       break
+    case 'page_comments':   // 某个页面的评论变了：打开着的评论面板去取
+      window.dispatchEvent(new CustomEvent('osa-page-comments', { detail: d }))
+      break
     case 'page_changed':   // 某个页面的内容改了（Bot 改的，或者你在别的窗口改的）：打开着它的编辑器去取改动
       window.dispatchEvent(new CustomEvent('osa-page', { detail: d }))
       break

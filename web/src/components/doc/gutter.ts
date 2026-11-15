@@ -6,7 +6,7 @@ import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import { blocksOf } from './markdown'
 
 export type Who = { name: string; color: string } | null
-export type GutterMeta = { by: Map<string, { by: string; ts: number }>; conflicts: Set<string>; flash: Set<string> }
+export type GutterMeta = { by: Map<string, { by: string; ts: number }>; conflicts: Set<string>; flash: Set<string>; counts: Map<string, number> }
 export const gutterKey = new PluginKey<GutterMeta>('gutter')
 
 export const Gutter = Extension.create<{ who: (by: string) => Who; when: (ts: number) => string }>({
@@ -17,7 +17,7 @@ export const Gutter = Extension.create<{ who: (by: string) => Who; when: (ts: nu
     return [new Plugin<GutterMeta>({
       key: gutterKey,
       state: {
-        init: () => ({ by: new Map(), conflicts: new Set(), flash: new Set() }),
+        init: () => ({ by: new Map(), conflicts: new Set(), flash: new Set(), counts: new Map() }),
         apply: (tr, cur) => ({ ...cur, ...(tr.getMeta(gutterKey) || {}) }),
       },
       props: {
@@ -29,10 +29,13 @@ export const Gutter = Extension.create<{ who: (by: string) => Who; when: (ts: nu
             if (!l.id) continue
             const m = meta.by.get(l.id)
             const w = m ? who(m.by) : null
-            const cls = ['blk', w ? 'blk-bot' : '', meta.conflicts.has(l.id) ? 'blk-conflict' : '', meta.flash.has(l.id) ? 'blk-flash' : ''].filter(Boolean).join(' ')
+            const n = meta.counts.get(l.id) || 0
+            const cls = ['blk', w ? 'blk-bot' : '', meta.conflicts.has(l.id) ? 'blk-conflict' : '', meta.flash.has(l.id) ? 'blk-flash' : '',
+              n ? 'blk-c' : ''].filter(Boolean).join(' ')
             if (cls === 'blk') continue
             decos.push(Decoration.node(l.pos, l.pos + l.node.nodeSize, {
               class: cls, ...(w ? { style: `--by:${w.color}`, 'data-by': w.name, title: `${w.name} · ${when(m!.ts)}` } : {}),
+              ...(n ? { 'data-comments': String(n) } : {}),
             }))
           }
           return DecorationSet.create(state.doc, decos)

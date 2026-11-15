@@ -4,7 +4,7 @@
 每个工具只在这里写一次，Router 和 Worker 都从注册表（registry.py）找；在哪些场合给模型用、要不要走确认规则，都在 Tool 上写明。
 电脑工具、Router 自己的几个、botadmin 还没迁过来（见 registry.py 开头）。
 """
-from . import i18n, images, library, media, pagedoc, registry, routines, sandbox, search, skills, tools, videos
+from . import i18n, images, library, media, pagecomments, pagedoc, registry, routines, sandbox, search, skills, tools, videos
 from .registry import APPLET, ROUTER, WORKER, Call, Tool
 
 ctx = registry.Context("builtin")
@@ -47,6 +47,13 @@ async def _edit_page(call: Call) -> str:
     if event:
         await registry.emit("page_changed", **event)
         await registry.emit("pages_changed")
+    return out
+
+
+async def _comment_page(call: Call) -> str:
+    out, pid = pagecomments.tool_comment(call.bot_id, call.args)
+    if pid:
+        await registry.emit("page_comments", page_id=pid)
     return out
 
 
@@ -138,6 +145,8 @@ def load():
     ctx.tool(Tool("edit_page", pagedoc.EDIT_PAGE, _edit_page, when=_not_draft,
                   describe="按段改资料库里的 markdown 页面（别的 Bot 建的也能改，只动要改的段）",
                   progress=lambda a: i18n.t("改页面 #{id}", id=a.get("page_id"))))
+    ctx.tool(Tool("comment_page", pagecomments.COMMENT_PAGE, _comment_page, when=_not_draft,
+                  progress=lambda a: i18n.t("评论页面 #{id}", id=a.get("page_id"))))
     from . import sources
     sources.register(ctx)
 

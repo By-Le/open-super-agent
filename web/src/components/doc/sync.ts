@@ -39,6 +39,7 @@ export class DocSync {
   order: string[] = []
   base = new Map<string, Base>()
   conflicts = new Map<string, Conflict>()
+  counts = new Map<string, number>()   // 每段有几串没解决的评论（评论面板给的）
   status: Status = 'saved'
   error = ''
   onChange: () => void = () => {}
@@ -78,7 +79,7 @@ export class DocSync {
   paint(flash: string[] = []) {
     if (this.editor.isDestroyed) return
     const by = new Map([...this.base].map(([id, b]) => [id, { by: b.by, ts: b.ts }]))
-    const tr = this.editor.state.tr.setMeta(gutterKey, { by, conflicts: new Set(this.conflicts.keys()), flash: new Set(flash) })
+    const tr = this.editor.state.tr.setMeta(gutterKey, { by, conflicts: new Set(this.conflicts.keys()), flash: new Set(flash), counts: this.counts })
     this.editor.view.dispatch(tr.setMeta('addToHistory', false).setMeta('preventUpdate', true))
     if (flash.length) setTimeout(() => !this.editor.isDestroyed && this.editor.view.dispatch(
       this.editor.state.tr.setMeta(gutterKey, { flash: new Set() }).setMeta('addToHistory', false).setMeta('preventUpdate', true)), 1200)

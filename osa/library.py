@@ -134,10 +134,11 @@ def share(pid: int, on: bool) -> dict:
 
 
 def delete_page(pid: int):
-    from . import pagedoc   # noqa: F401  确保版本历史的表已经建好
+    from . import pagecomments, pagedoc   # noqa: F401  确保版本历史、评论的表已经建好
     conn.execute("delete from pages where id=?", (pid,))
     conn.execute("delete from page_data where page_id=?", (pid,))
     conn.execute("delete from page_versions where page_id=?", (pid,))
+    pagecomments.drop_page(pid)
     conn.commit()
 
 

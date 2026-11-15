@@ -1229,5 +1229,12 @@
   "没有要做的修改": "No changes to make",
   "每个修改都要是一个对象": "Each change must be an object",
   "不认识的修改：{op}": "Unknown change: {op}",
-  "没有这一版": "That version doesn't exist"
+  "没有这一版": "That version doesn't exist",
+  "评论页面 #{id}": "Comment on page #{id}",
+  "（任务 #{id} 没做完：{result}）": "(Task #{id} didn't finish: {result})",
+  "评论不能是空的": "The comment can't be empty",
+  "评论太长（最多 {n} 字）": "The comment is too long (max {n} characters)",
+  "没有评论 #{id}": "No comment #{id}",
+  "没有段落 ⟦{id}⟧": "No block ⟦{id}⟧",
+  "用户在页面上的评论": "the user's comment on a page"
 }

@@ -122,6 +122,9 @@ def _commit(p: dict, title: str, work: list[dict], by: str, label: str = "",
         conn.rollback()
         raise Conflict(p["version"], [])
     _snapshot(p["id"], newv, title, content, meta, by, label, now)
+    if merged:
+        from . import pagecomments   # 被并掉的段上的评论挪到留下的那段
+        pagecomments.reanchor(p["id"], merged)
     conn.commit()
     p.update(title=title, content=content, version=newv, updated=now)
     return work, merged
@@ -427,16 +430,19 @@ def render(pid: int, start: str | None = None, limit: int = READ_LIMIT) -> str:
         return f"没有页面 #{pid}"
     owner = bots.get(p["bot_id"]) if p.get("bot_id") else None
     head = (f"《{p['title']}》{library.link(pid)} · 版本 {p['version']} · " + (f"「{owner['name']}」建的" if owner else "用户建的") +
-            f" · {time.strftime('%Y-%m-%d', time.localtime(p['updated']))} 更新" + (" · 已锁定（只有用户能改）" if p.get("locked") else ""))
+            f" · {time.strftime('%Y-%m-%d', time.localtime(p['updated']))} 更新" + (" · 已锁定（只有用户能改，有意见用 comment_page）" if p.get("locked") else ""))
+    from . import pagecomments
+    tail = pagecomments.render(pid)
+    tail = "\n\n" + tail if tail else ""
     if not blks:
-        return head + "\n\n（空页面）"
+        return head + "\n\n（空页面）" + tail
     k0 = 0
     note = ""
     if start:
         k0 = next((k for k, b in enumerate(blks) if b["id"] == blocks.clean_id(start)), -1)
         if k0 < 0:
             k0, note = 0, f"（没有段落 ⟦{blocks.clean_id(start)}⟧，从头显示）\n"
-    legend = "（每段前一行的 ⟦xxxx⟧ 是段落编号，只给 edit_page 用，不是正文，写内容时不要带上）"
+    legend = "（每段前一行的 ⟦xxxx⟧ 是段落编号，只给 edit_page / comment_page 用，不是正文，写内容时不要带上）"
     out, used = [], len(head) + len(legend) + len(note) + 4
     for k in range(k0, len(blks)):
         b = blks[k]
@@ -452,7 +458,7 @@ def render(pid: int, start: str | None = None, limit: int = READ_LIMIT) -> str:
             break
         out.append(piece)
         used += len(piece) + 2
-    return f"{head}\n{note}{legend}\n\n" + "\n\n".join(out)
+    return f"{head}\n{note}{legend}\n\n" + "\n\n".join(out) + tail
 
 
 # ---------- 工具：edit_page ----------

@@ -55,6 +55,7 @@ class Task:
     apps: list = field(default_factory=list)    # 用到的应用界面（MCP Apps，见 mcpapps.py），显示在任务结果下面
     mac: int = 0                           # 派到你的哪台 Mac 上做（computer/link.py 的编号）；0 是用共用电脑
     mac_name: str = ""
+    comment: dict | None = None            # 因页面评论派的任务：做完把结果贴回那串评论 {"page", "root"}（见 pagecomments.py）
 
 
 def _public(self) -> dict:
