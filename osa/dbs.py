@@ -944,17 +944,44 @@ def update_row(row_id: int, props: dict, by: str, base: int | None = None) -> tu
     return get_row(row_id), changed
 
 
+def fits(prop: dict, v) -> bool:
+    """历史里存的值放到现在的表结构下还认不认得：后来改了类型、删了选项就不认得了（改表结构不给行记版本，旧版本里还是原来的样子）。"""
+    if v is None or prop["type"] == "title":
+        return True
+    if prop["type"] in COMPUTED:
+        return False
+    try:
+        return normalize({**prop}, v, create=False) == v
+    except (ValueError, TypeError, AttributeError, KeyError):
+        return False
+
+
+def stale_keys(db_id: int, props: dict) -> list[str]:
+    """一版历史的属性里，放到现在的表结构下认不出的键（列删了、类型改了、选项删了）。"""
+    db = get_db(db_id)
+    keys = {p["key"]: p for p in (db or {}).get("schema") or []}
+    return [k for k, v in props.items() if k not in keys or not fits(keys[k], v)]
+
+
 def restore_props(row_id: int, props: dict, by: str):
-    """回到某一版时（pagedoc.restore）：属性换成那一版的，改了的键记成这次改的。版本号由接下来的提交来涨。"""
+    """回到某一版时（pagedoc.restore）：属性换成那一版的，改了的键记成这次改的。版本号由接下来的提交来涨。
+    只动现在表结构里有的列；那一版的值放到现在认不出（后来改了类型、删了选项）的留着现在的值，删掉的列不带回来（在库的历史里撤销）。"""
     row = get_row(row_id)
     if not row:
         return
-    meta = dict(row["meta"])
-    for k in set(props) | set(row["props"]):
-        if props.get(k) != row["props"].get(k):
-            meta[k] = {"v": row["version"] + 1, "by": by, "ts": time.time()}
+    db = get_db(row["db_id"])
+    cur, meta = dict(row["props"]), dict(row["meta"])
+    for p in db["schema"]:
+        k, old = p["key"], props.get(p["key"])
+        if p["type"] == "title" or p["type"] in COMPUTED or old == cur.get(k) or not fits(p, old):
+            continue
+        if old is None:
+            cur.pop(k, None)
+        else:
+            cur[k] = old
+        meta[k] = {"v": row["version"] + 1, "by": by, "ts": time.time()}
     conn.execute("update pages set props=?, props_meta=? where id=?",
-                 (json.dumps(props, ensure_ascii=False), json.dumps(meta, ensure_ascii=False), row_id))
+                 (json.dumps(cur, ensure_ascii=False), json.dumps(meta, ensure_ascii=False), row_id))
 
 
 def public_row(r: dict) -> dict:

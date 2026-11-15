@@ -1726,5 +1726,8 @@
   "撤销了：{what}": "Undid: {what}",
   "（{n} 格之后被改过，留着现在的值）": " ({n} cells were edited afterwards and kept their current values)",
   "还没有改过表结构。加列、删列、改类型、改选项都会记在这里，能撤销。": "No property changes yet. Adding, deleting, retyping properties and changing options are recorded here and can be undone.",
-  "已撤销": "Undone"
+  "已撤销": "Undone",
+  "表结构后来改过，{names}当时的值不显示。": "The schema changed since then; the old values of {names} can't be shown.",
+  "正文没变。": "The body didn't change.",
+  "这一版和上一版看不出差别。": "No visible difference from the previous version."
 }

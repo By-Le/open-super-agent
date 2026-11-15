@@ -3,14 +3,19 @@
 // 手机上列表是整屏的：点开一版时列表收起来（不然对比被它盖在底下），对比上面有“← 历史”回到列表；左边缘右滑也是返回。
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../../store'
+import { notice } from '../Dialog'
 import { locale, t } from '../../i18n'
 import Markdown from '../Markdown'
 import { diffBlocks, type Row } from './diff'
 import { useBack } from '../../swipe'
 import { useAuthors } from '../../authors'
+import { dbApi, type DbProp } from '../db/db'
+import { PropsDiff, PropsSnapshot, propChanges, type PropChange, type PropsSnap } from '../db/PropsDiff'
 
 export type Version = { id: number; version: number; title: string; by: string; ts_start: number; ts: number; label: string; size: number }
-type Snap = Version & { content: string; blocks?: { id: string; md: string }[] }
+// 数据库的行多带着那一版的属性、所在的库和现在认不出的键（osa/pagedoc.version）
+type Snap = Version & { content: string; blocks?: { id: string; md: string }[]; props?: Record<string, any>; db_id?: number; stale?: string[] }
+type Live = { schema: DbProp[]; now: PropsSnap }
 
 const when = (ts: number) => new Date(ts * 1000).toLocaleString(locale, { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
 const clock = (ts: number) => new Date(ts * 1000).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' })
@@ -55,9 +60,10 @@ export function HistoryPanel({ pageId, picked, onPick, onClose, stamp }: {
 
 type Mode = 'now' | 'prev' | 'only'
 
-export function HistoryView({ pageId, version, list, current, onRestorePage, onRestoreBlock, onClose, onBack }: {
+export function HistoryView({ pageId, version, list, current, onRestorePage, onRestoreBlock, onRestored, onClose, onBack }: {
   pageId: number; version: Version; list: Version[]; current: { id: string; md: string }[]
   onRestorePage: (v: Version) => Promise<void>; onRestoreBlock: (row: Row) => Promise<void>; onClose: () => void
+  onRestored: () => void   // 恢复了一个属性（数据库的行）：历史列表要重新取
   onBack: () => void   // 回到版本列表（手机上）
 }) {
   const name = useName()
@@ -69,11 +75,44 @@ export function HistoryView({ pageId, version, list, current, onRestorePage, onR
   const [busy, setBusy] = useState(false)
   const [open, setOpen] = useState<Set<number>>(new Set())   // 展开了的“没变的段”
   const before = list[list.findIndex(v => v.id === version.id) + 1]
+  const [tick, setTick] = useState(0)   // 数据库的表结构变了：重新取这两版（哪些旧值认不出由服务器按新的表结构算）
+  useEffect(() => { setSnap(null); setPrev(null) }, [pageId, version.id])
   useEffect(() => {
-    setSnap(null); setPrev(null)
     api(`/api/pages/${pageId}/versions/${version.id}`).then(setSnap)
     if (before) api(`/api/pages/${pageId}/versions/${before.id}`).then(setPrev)
-  }, [pageId, version.id])
+  }, [pageId, version.id, tick])
+  // 数据库的行：库现在的表结构和这一行现在的属性（“和现在比”用），别人改了这一行就重新取
+  const [live, setLive] = useState<Live | null>(null)
+  const dbId = snap?.db_id
+  useEffect(() => {
+    if (!dbId) return
+    const load = () => api(`/api/dbs/${dbId}/rows/${pageId}`).then(d => setLive({ schema: d.db.schema, now: { title: d.row.title, props: d.row.props } })).catch(() => {})
+    load()
+    const h = (e: Event) => {
+      const x = (e as CustomEvent).detail
+      if (x?.db_id !== dbId) return
+      if (x.schema) setTick(n => n + 1)
+      if (x.schema || !x.rows?.length || x.rows.includes(pageId)) load()
+    }
+    window.addEventListener('osa-db', h)
+    return () => window.removeEventListener('osa-db', h)
+  }, [dbId, pageId])
+  const asProps = (s: Snap): PropsSnap => ({ title: s.title, props: s.props || {}, stale: s.stale })
+  const props = useMemo(() => {
+    if (!live || !snap?.props || mode === 'only') return null
+    const [from, to] = mode === 'now' ? [asProps(snap), live.now] : prev?.props ? [asProps(prev), asProps(snap)] : [null, null]
+    if (!from || !to) return null
+    // 认不出的旧值不比；只提那些这次真有不同的（不然每一版都提一遍）
+    const stale = new Set([...from.stale || [], ...to.stale || []])
+    const names = live.schema.filter(p => stale.has(p.key) && JSON.stringify(from.props[p.key]) !== JSON.stringify(to.props[p.key])).map(p => p.name)
+    return { changes: propChanges(live.schema, from, to), stale: names }
+  }, [live, snap, prev, mode])
+  const restoreProp = (c: PropChange) => run(async () => {
+    try {
+      await dbApi.update(dbId!, pageId, { [c.prop.key]: c.old })
+      onRestored()
+    } catch (e: any) { notice(e.message) }
+  })
   const rows = useMemo(() => {
     if (!snap?.blocks) return null
     if (mode === 'now') return diffBlocks(snap.blocks, current)   // 从这一版到现在改了什么
@@ -106,10 +145,14 @@ export function HistoryView({ pageId, version, list, current, onRestorePage, onR
         {list[0]?.id !== version.id && <button className="btn" disabled={busy} onClick={() => run(() => onRestorePage(version))}>{t('回到这一版')}</button>}
         <button className="btn" onClick={onClose}>{t('回到编辑')}</button>
       </div>
+      {snap && mode === 'only' && live && snap.props && <PropsSnapshot schema={live.schema} snap={asProps(snap)} />}
+      {props && mode !== 'only' && <PropsDiff changes={props.changes} mode={mode} staleNames={props.stale} busy={busy} restoreLabel={backLabel} onRestore={restoreProp} />}
       {!snap ? <p className="muted">{t('加载中…')}</p> : mode === 'only' || !snap.blocks ? (
         <div className="md"><Markdown text={snap.content} /></div>
       ) : !rows!.some(r => r.kind !== 'same') ? (
-        <p className="muted">{mode === 'now' ? t('这一版和现在一样。') : t('这一版只改了标题。')}</p>
+        snap.props ? (props?.changes.length || props?.stale.length ? <p className="muted small">{t('正文没变。')}</p>
+          : <p className="muted">{mode === 'now' ? t('这一版和现在一样。') : t('这一版和上一版看不出差别。')}</p>)
+          : <p className="muted">{mode === 'now' ? t('这一版和现在一样。') : t('这一版只改了标题。')}</p>
       ) : (
         <div className="dhv-rows">
           {groups.map(g => {

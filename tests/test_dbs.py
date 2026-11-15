@@ -132,6 +132,25 @@ def test_rows_and_conflicts(made):
         library.save_page(None, "子页面", "x", parent_id=db["id"])   # 库下面也不放
 
 
+def test_restore_after_schema_change(made):
+    """表结构改了以后回到行的旧版本：现在认不出的旧值不带回来（版本接口标成 stale），删掉的列也不回来。"""
+    db = new_db(made)
+    dbs.change_schema(db["id"], [{"op": "add", "name": "备注", "type": "text"}])
+    note = P(dbs.get_db(db["id"]), "备注")["key"]
+    r = dbs.add_row(db["id"], {"名称": "a", "状态": "进行中", "负责人": ["用户"], "备注": "abc"}, "user")
+    v1 = pagedoc.versions(r["id"])[0]["id"]
+    dbs.update_row(r["id"], {"状态": "已完成", "备注": "def"}, "bot:1")   # 换个人改，不和第一版并成一版
+    dbs.change_schema(db["id"], [{"op": "update", "prop": "备注", "type": "number"}, {"op": "delete", "prop": "负责人"}])
+    snap = pagedoc.version(r["id"], v1)
+    assert snap["db_id"] == db["id"] and set(snap["stale"]) == {note, "owner"}   # "abc" 不是数，负责人删了
+    pagedoc.restore(r["id"], v1)
+    back = dbs.get_row(r["id"])
+    st = P(dbs.get_db(db["id"]), "状态")
+    assert back["props"] == {"status": st["options"][1]["id"]}   # 状态回去了；备注（转数字时清掉了）不变成 "abc"，负责人不回来
+    assert pagedoc.version(r["id"], pagedoc.versions(r["id"])[0]["id"])["stale"] == []
+    assert not dbs.fits(st, "o-gone") and dbs.fits(st, st["options"][0]["id"]) and dbs.fits(st, None)
+
+
 def test_delete_db_cascades(made):
     db = new_db(made)
     rs = [dbs.add_row(db["id"], {}, "user", f"r{k}")["id"] for k in range(3)]

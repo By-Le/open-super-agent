@@ -202,7 +202,7 @@ export default function DocEditor({ id, fallback }: { id: number; fallback: stri
       </div>
       {viewing && sync.current && <div className="page-md">
         <HistoryView key={viewing.v.id} pageId={id} version={viewing.v} list={viewing.list} current={sync.current.current()}
-          onRestorePage={restorePage} onRestoreBlock={restoreBlock} onBack={() => setViewing(null)}
+          onRestorePage={restorePage} onRestoreBlock={restoreBlock} onRestored={() => setStamp(x => x + 1)} onBack={() => setViewing(null)}
           onClose={() => { setViewing(null); if (isPhone()) setSide(null) }} />   {/* 手机上列表是整屏的：回到编辑就一起关掉 */}
       </div>}
       {side === 'history' && <HistoryPanel pageId={id} picked={viewing?.v || null} stamp={stamp} onPick={(v, list) => setViewing({ v, list })}

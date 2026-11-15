@@ -418,9 +418,13 @@ def version(pid: int, vid: int) -> dict | None:
     if not r:
         return None
     out = {"id": r[0], "version": r[1], "title": r[2], "content": r[3], "by": r[5], "ts_start": r[6], "ts": r[7], "label": r[8]}
-    if r[9] is not None:   # 数据库的行：那一版的属性
-        out["props"] = json.loads(r[9])
     p = library.get_page(pid, False)
+    if r[9] is not None:   # 数据库的行：那一版的属性，和所在的库（网页按库现在的表结构画）；stale 是放到现在的表结构下认不出的键
+        out["props"] = json.loads(r[9])
+        if p and p.get("kind") == "row" and p.get("parent_id"):
+            from . import dbs
+            out["db_id"] = p["parent_id"]
+            out["stale"] = dbs.stale_keys(p["parent_id"], out["props"])
     if r[4] is not None or (p and p["format"] == "markdown"):
         out["blocks"] = [public(b) for b in _snap_blocks(r[3], r[4])]
     return out
