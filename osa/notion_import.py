@@ -95,9 +95,9 @@ def parse_fetch(raw: str) -> dict:
             except ValueError:
                 st = {}
             out["sources"].append({"url": m.group(1), "schema": st.get("schema") or {}})
-        for m in re.finditer(r"<view url=\"[^\"]*\">\s*(\{.*?\})\s*</view>", text, re.S):
+        for m in re.finditer(r"<view url=\"\{*([^\"}]*)\}*\">\s*(\{.*?\})\s*</view>", text, re.S):
             try:
-                out["views"].append(json.loads(m.group(1)))
+                out["views"].append({**json.loads(m.group(2)), "url": m.group(1)})
             except ValueError:
                 pass
     return out
@@ -325,12 +325,32 @@ def row_value(name: str, nt: str, row: dict, users: dict):
     if nt in ("created_time", "last_edited_time"):
         return _dt(v, True) and {"start": _dt(v, True)}
     if nt == "number":
+        if isinstance(v, str):
+            try:
+                v = float(v.replace(",", ""))
+                v = int(v) if v.is_integer() else v
+            except ValueError:
+                return None
         return v if isinstance(v, (int, float)) and not isinstance(v, bool) else None
     if isinstance(v, (list, dict)):
         v = json.dumps(v, ensure_ascii=False)
     if isinstance(v, str):
         return v[:dbs.MAX_TEXT] or None
     return v
+
+
+def _int(v) -> int | None:
+    if isinstance(v, int) and not isinstance(v, bool):
+        return v
+    m = re.search(r"(\d+)\s*$", str(v or ""))
+    return int(m.group(1)) if m else None
+
+
+def _inline(v: str, link) -> str:
+    """属性里的文字也带 Notion 的标记（<mention>、加粗）：转成 Markdown，链接换成资料库里的，合成一行。"""
+    if "<" not in v and "notion." not in v:
+        return v
+    return " ".join(to_markdown(v, link).split("\n")).strip()
 
 
 # ---------- 导入 ----------
@@ -443,22 +463,32 @@ class Import:
             d = self.nodes[n]
             if d["type"] != "database" or not d["sources"]:
                 continue
-            src = d["sources"][0]["url"]
-            rows, offset = [], 0
-            while True:
-                q = f'SELECT * FROM "{src}" LIMIT {PAGE_ROWS} OFFSET {offset}'
-                got = json.loads(await call("notion-query-data-sources", {"data": {"mode": "sql", "data_source_urls": [src], "query": q}}))
-                batch = got.get("results") or []
-                rows += batch
-                if len(batch) < PAGE_ROWS:
-                    break
-                offset += PAGE_ROWS
+            rows = await self._query(d)
             auto = next((k for k, p in d["sources"][0]["schema"].items() if p.get("type") == "auto_increment_id"), None)
-            rows.sort(key=lambda r: (r.get(auto) or 0) if auto else (r.get("createdTime") or ""))
+            rows.sort(key=lambda r: _int(r.get(auto)) or 0 if auto else (r.get("createdTime") or ""))
             d["rows"] = rows
             for r in rows:
                 if rid := nid(r.get("url") or r.get("id")):
                     self.rows[rid] = {"db": n, "row": r, "page_id": mapped(rid)}
+
+    async def _query(self, d: dict) -> list[dict]:
+        """一个库的所有行：先按它的视图查（Notion 免费版的 SQL 查询每小时有限额，按视图查不算），没有视图再用 SQL。"""
+        view = next((v["url"] for v in d["views"] if str(v.get("url", "")).startswith("view://")), None)
+        if view:
+            got = json.loads(await call("notion-query-data-sources", {"data": {"mode": "view", "view_url": view}}))
+            if got.get("has_more"):
+                self.note(f"「{d['title']}」行太多，只导了前 {len(got.get('results') or [])} 行")
+            return got.get("results") or []
+        src = d["sources"][0]["url"]
+        rows, offset = [], 0
+        while True:
+            q = f'SELECT * FROM "{src}" LIMIT {PAGE_ROWS} OFFSET {offset}'
+            got = json.loads(await call("notion-query-data-sources", {"data": {"mode": "sql", "data_source_urls": [src], "query": q}}))
+            batch = got.get("results") or []
+            rows += batch
+            if len(batch) < PAGE_ROWS:
+                return rows
+            offset += PAGE_ROWS
 
     def create(self):
         """建页面和库（正文先空着，等所有编号都有了再写）。导过的就沿用。"""
@@ -488,10 +518,11 @@ class Import:
 
     async def fill(self):
         self.step = "content"
-        for n in self.order:
-            d = self.nodes[n]
-            if d["type"] == "database":
-                await self.fill_db(d)
+        dbs_ = [self.nodes[n] for n in self.order if self.nodes[n]["type"] == "database"]
+        for d in dbs_:   # 先把所有行建出来，正文、属性里提到别的行时链接才对得上
+            self._make_rows(d)
+        for d in dbs_:
+            await self.fill_db(d)
         for n in self.order:
             d = self.nodes[n]
             if d["type"] == "page":
@@ -508,15 +539,33 @@ class Import:
         if p and p["content"]:
             self.counts["updated"] += 1
 
+    def _title_key(self, d: dict) -> str | None:
+        return next((k for k, p in (d["sources"][0]["schema"] if d["sources"] else {}).items() if p.get("type") == "title"), None)
+
+    def _make_rows(self, d: dict):
+        tk = self._title_key(d)
+        for r in d.get("rows") or []:
+            rid = nid(r.get("url") or r.get("id"))
+            entry = self.rows.get(rid) if rid else None
+            if not entry or (entry.get("page_id") and dbs.get_row(entry["page_id"])):
+                continue
+            row = dbs.add_row(d["page_id"], {}, "user", title=str(r.get(tk) or "")[:120] if tk else "")
+            entry["page_id"] = row["id"]
+            entry["new"] = True
+            _remember(rid, row["id"], "row")
+            self.counts["rows"] += 1
+
     async def fill_db(self, d: dict):
+        """每一行：属性按 Notion 现在的写（新建的、导过的都一样），正文从行的页面取。"""
         db = dbs.get_db(d["page_id"])
-        schema = d["sources"][0]["schema"] if d["sources"] else {}
-        _, keys = map_schema(schema)
+        _, keys = map_schema(d["sources"][0]["schema"] if d["sources"] else {})
         by_name = {p["name"]: p for p in db["schema"]}
+        uid = next((p for p in db["schema"] if p["type"] == "unique_id"), None)
         prefix = ""
         for r in d.get("rows") or []:
             rid = nid(r.get("url") or r.get("id"))
-            if not rid:
+            entry = self.rows.get(rid) if rid else None
+            if not entry or not entry.get("page_id"):
                 continue
             page = parse_fetch(await call("notion-fetch", {"id": rid}))
             props, title, number = {}, "", None
@@ -525,62 +574,48 @@ class Import:
                 if not prop:
                     continue
                 if nt == "title":
-                    title = str(r.get(name) or page["props"].get(name) or "")
+                    title = _inline(str(r.get(name) or page["props"].get(name) or ""), self.link)
                     continue
                 if prop["type"] == "unique_id":
-                    number = r.get(name)
-                    shown = str(page["props"].get(name) or "")
-                    if m := re.match(r"^(.*?)(\d+)$", shown):
+                    number = _int(r.get(name))
+                    if m := re.match(r"^(.*?)(\d+)$", str(page["props"].get(name) or "")):
                         prefix = m.group(1)
                     continue
                 v = row_value(name, nt, r, self.users)
+                if prop["type"] in ("text", "url") and isinstance(v, str):
+                    v = _inline(v, self.link)[:dbs.MAX_TEXT] or None
                 if prop["type"] == "files":
                     v = await self._files(_json_list(r.get(name)), rid)
                 props[prop["key"]] = v
-            md = to_markdown(page["content"], self.link)
-            entry = self.rows[rid]
-            if entry.get("page_id"):
-                row = dbs.get_row(entry["page_id"])
-                if row:
-                    try:
-                        if dbs.update_row(row["id"], {**{k: v for k, v in props.items()}, "title": title}, "user")[1]:
-                            self.counts["updated"] += 1
-                    except ValueError as e:
-                        self.note(f"「{title}」有的属性没更新：{e}")
-                    self._write(row["id"], title, md, "row")
-                    continue
+            row_id = entry["page_id"]
             try:
-                row = dbs.add_row(db["id"], {k: v for k, v in props.items() if v is not None}, "user", title=title)
-            except ValueError as e:   # 某个值认不出：去掉认不出的再加
-                self.note(f"「{title}」有的属性没导：{e}")
-                row = dbs.add_row(db["id"], {}, "user", title=title)
-                for k, v in props.items():
+                changed = dbs.update_row(row_id, {**props, "title": title}, "user")[1]
+            except ValueError:   # 有认不出的值：一个一个写，认不出的跳过
+                changed = []
+                for k, v in {**props, "title": title}.items():
                     try:
-                        dbs.update_row(row["id"], {k: v}, "user")
-                    except ValueError:
-                        pass
-            entry["page_id"] = row["id"]
-            _remember(rid, row["id"], "row")
-            created = r.get("createdTime")
+                        changed += dbs.update_row(row_id, {k: v}, "user")[1]
+                    except ValueError as e:
+                        self.note(f"「{title}」的一个属性没导：{e}")
+            if changed and not entry.get("new"):
+                self.counts["updated"] += 1
             fields, args = [], []
-            if created:
+            if entry.get("new") and (created := r.get("createdTime")):
                 try:
-                    ts = time.mktime(time.strptime(str(created)[:19].replace("T", " "), "%Y-%m-%d %H:%M:%S")) - time.timezone
                     fields.append("created=?")
-                    args.append(ts)
+                    args.append(time.mktime(time.strptime(str(created)[:19].replace("T", " "), "%Y-%m-%d %H:%M:%S")) - time.timezone)
                 except ValueError:
-                    pass
-            uid = next((p for p in db["schema"] if p["type"] == "unique_id"), None)
+                    fields.pop()
             if uid and isinstance(number, int):
-                cur = dbs.get_row(row["id"])["props"]
-                cur[uid["key"]] = number
-                fields.append("props=?")
-                args.append(json.dumps(cur, ensure_ascii=False))
+                cur = dbs.get_row(row_id)["props"]
+                if cur.get(uid["key"]) != number:
+                    cur[uid["key"]] = number
+                    fields.append("props=?")
+                    args.append(json.dumps(cur, ensure_ascii=False))
             if fields:
-                conn.execute(f"update pages set {', '.join(fields)} where id=?", (*args, row["id"]))
+                conn.execute(f"update pages set {', '.join(fields)} where id=?", (*args, row_id))
                 conn.commit()
-            self._write(row["id"], title, md, "row")
-            self.counts["rows"] += 1
+            self._write(row_id, title, to_markdown(page["content"], self.link), "row")
         # 自动编号：前缀用 Notion 显示的（TASK-），下一个号接着最大的
         db = dbs.get_db(d["page_id"])
         for p in db["schema"]:

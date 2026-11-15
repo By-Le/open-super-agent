@@ -111,13 +111,12 @@ class FakeNotion:
         if tool == "notion-get-users":
             return json.dumps({"results": [{"id": "user://abc", "name": "Kada"}]})
         if tool == "notion-query-data-sources":
-            if "OFFSET 0" not in args["data"]["query"]:
-                return json.dumps({"results": []})
-            rows = [{"url": f"https://app.notion.com/{R2}", "createdTime": "2026-10-14 07:23:25Z", "标题": "写周报", "编号": 7, "状态": self.status[R2],
+            assert args["data"]["mode"] == "view" and args["data"]["view_url"] == "view://x"   # 按视图查，不用 SQL（免费版有限额）
+            rows = [{"url": f"https://app.notion.com/{R2}", "createdTime": "2026-10-14 07:23:25Z", "标题": "写周报", "编号": "7", "状态": self.status[R2],
                      "接手人": "Forge", "date:截止日期:start": "2026-11-20", "date:截止日期:end": None, "date:截止日期:is_datetime": 0,
-                     "要": "__YES__", "分": 3, "产出位置": "/workspace/a.md", "人": '["user://abc"]'},
+                     "要": "__YES__", "分": "3", "产出位置": f'见 <mention url="https://app.notion.com/p/{R1}">做设计</mention>', "人": '["user://abc"]'},
                     {"url": f"https://app.notion.com/{R1}", "createdTime": "2026-10-13 01:00:00Z", "标题": "做设计", "编号": 3, "状态": self.status[R1],
-                     "接手人": "Nova", "要": "__NO__", "人": "[]"}]
+                     "接手人": "Nova", "要": "__NO__", "人": "[]", "产出位置": f'接着看 <mention url="https://app.notion.com/p/{R2}">写周报</mention>'}]
             return json.dumps({"results": rows, "has_more": False}, ensure_ascii=False)
         i = notion_import.nid(args["id"])
         if i == ROOT:
@@ -183,6 +182,8 @@ async def test_import_and_sync(monkeypatch, events):
         assert dbs.display(P["编号"], 7) == "TASK-7" and dbs.display(P["状态"], w["props"][P["状态"]["key"]]) == "已发布"
         assert w["props"][P["截止日期"]["key"]] == {"start": "2026-11-20"} and w["props"][P["要"]["key"]] is True and w["props"][P["分"]["key"]] == 3
         assert w["props"][P["人"]["key"]] == "Kada" and P["人"]["type"] == "text"
+        assert w["props"][P["产出位置"]["key"]] == f"见 [做设计](/library/pages/{r1['id']})"   # 属性里的提及也换成资料库的链接
+        assert r1["props"][P["产出位置"]["key"]] == f"接着看 [写周报](/library/pages/{w['id']})"   # 提到后面的行也对得上
         assert library.get_page(w["id"], False)["created"] < library.get_page(db_id, False)["created"]   # 留着 Notion 里的创建时间
         # 再导一次：不重复建，改了的跟着变，没改的段编号不变
         before = [b["id"] for b in __import__("osa").pagedoc.load(root)[1]]

@@ -25,6 +25,25 @@ function Files({ v }: { v: DbFile[] }) {
       <span>{f.name}</span></a>))}</span>
 }
 
+/** 文字格里的 [标题](地址) 和网址点得开；资料库里的页面在资料库里打开。 */
+function Linked({ text }: { text: string }) {
+  const parts: React.ReactNode[] = []
+  const re = /\[([^\]\n]+)\]\(((?:https?:\/\/|\/library\/pages\/)[^)\s]+)\)|(https?:\/\/[^\s<>)\]，。；]+)/g
+  let last = 0, m: RegExpExecArray | null
+  while ((m = re.exec(text))) {
+    if (m.index > last) parts.push(text.slice(last, m.index))
+    const url = m[2] || m[3], label = m[1] || m[3]
+    const page = url.match(/^\/library\/pages\/(\d+)$/)
+    parts.push(page
+      ? <a key={m.index} href={url} onClick={e => { e.preventDefault(); e.stopPropagation(); openLibrary(Number(page[1])) }}>{label}</a>
+      : <a key={m.index} href={url} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()}>{label}</a>)
+    last = m.index + m[0].length
+  }
+  if (!parts.length) return <>{text}</>
+  if (last < text.length) parts.push(text.slice(last))
+  return <>{parts}</>
+}
+
 function Calc({ prop, v }: { prop: DbProp; v: any }) {
   if (typeof v === 'boolean') return <span className={'db-check' + (v ? ' on' : '')}>{v ? '✓' : ''}</span>
   if (typeof v === 'number') return <span className="db-num">{fmtNumber(prop, v)}</span>
@@ -59,6 +78,7 @@ export function Value({ prop, v }: { prop: DbProp; v: any }) {
     case 'url': return <a href={v} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()}>{v.replace(/^https?:\/\//, '')}</a>
     case 'email': return <a href={'mailto:' + v} onClick={e => e.stopPropagation()}>{v}</a>
     case 'phone': return <a href={'tel:' + v} onClick={e => e.stopPropagation()}>{v}</a>
+    case 'text': return <span className="db-text"><Linked text={String(v)} /></span>
     default: return <span className="db-text">{display(prop, v)}</span>
   }
 }
