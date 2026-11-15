@@ -21,7 +21,7 @@ function lcs<T>(a: T[], b: T[], eq: (x: T, y: T) => boolean = (x, y) => x === y)
   return out
 }
 
-const TOKEN = /[㐀-鿿豈-﫿　-〿＀-￯]|[A-Za-z0-9_]+|\s+|[^\sA-Za-z0-9_㐀-鿿]/g
+const TOKEN = /[㐀-鿿豈-﫿　-〿＀-￯]|[A-Za-z0-9_]+|\s+|[^\sA-Za-z0-9_㐀-鿿]/g   // i18n-ignore：切词用的字符范围
 
 /** 一段里改了哪些字。太长（两边的词数相乘超过一百万）就整段算换掉。 */
 export function inline(a: string, b: string): Seg[] {
