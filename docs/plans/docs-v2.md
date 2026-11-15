@@ -14,20 +14,16 @@
 
 ## 还没做的（新会话从这里挑）
 
-三步都上线了。下面是做的时候留下的，按大概的轻重排；细节在各步的结果和“顺手可做的小事”里。
+三步和后面两批（见文末“后续两批”）都做完了，剩下这些：
 
-- **数据库**（第 3 步）：
-  - 一个库超过 1000 行时要分页、虚拟滚动（现在 `MAX_ROWS = 1000`，接口一次给全部）。
-  - 没做的属性类型：公式、关联、汇总、文件、自动编号、按钮。
-  - 视图的改动（筛选、排序、列宽）不进历史；表结构历史每个库只留最近 50 条。
-  - 看板在手机上还是不能拖（改成了卡片的“⋯”菜单换列、调顺序）。真要拖得用触摸事件自己做（长按起拖、边缘自动滚动）。
-- **外部 Agent**（第 2 步）：lsp 上有一条验收时留下的“Claude Code（验收）”，上线后可以在设置里从列表删掉。
+- **嵌套的子项单独成段**（没做，有意留着）：现在嵌套的子项跟着上一级算一段。要改就得服务器的切法（`blocks.split` / `join` 的不变式）
+  和编辑器（`markdown.ts` 按缩进重建嵌套、`blockIds` 给嵌套项编号、按项写回时的缩进、作者条）一起改，
+  而且上线后所有带嵌套列表的老页面会按新切法重切一遍（编号按指纹对齐，被拆开的那几段作者会清空）。出错就是改坏用户的文档，单独开一次做、先在 lsp 的数据副本上演练。
+- **App 桥接按路径**：代码做完了（`4b204f3`），要发新版桌面 App 和 iPhone App 才生效（iOS 的 `cargo check` 在本机跑不了，插件要 Xcode 的环境，发版脚本里会编）。
 - **真机**（第 1 步）：模拟器上两次看到按一下回车出了两个空段（驱动点按很慢的时候），要在真机上留意。
   lsp 上的 Bot 交接还走 Notion（用户定的，别去改 Bot 的说明）。
-- **顺手可做的小事**：见文末那一节（段的上移下移菜单、回收站、评论里 @ 自动补全、图片上传、App 桥接只认域名……）。
-
-**后续做了的（2026-11-15）**：行页面的“历史”里看得到属性的差别、能只恢复一个属性；手机上看板卡片的“⋯”换列、调顺序；
-撤销了的外部 Agent 收起来、能从列表里删掉（名字留着）。细节见第 3 步末尾的“后续”。
+- **数据库可以再做的**：看板按列分页（现在整个看板一起往下滚着加载）；表格真正的虚拟滚动（现在一万行全滚出来会有一万个 DOM 行）；
+  公式里引用别的库（现在只能沿关联用汇总）；按钮能新建一行、打开链接（现在只能改属性、写评论）。
 
 ## 现在有什么（代码地图）
 
@@ -36,7 +32,7 @@
 | `osa/blocks.py` | 切段：Markdown 正文切成段，只切行区间不改文字；列表每项、表格每行各一段；段之间的 gap；`split(join(parts)) == parts` |
 | `osa/pagedoc.py` | 按段读写：`load`（段 + 编号/作者，指纹对不上就重建）、`apply`（按段改，冲突只看要改的段）、`rewrite`（整页重写保住没变的段）、版本历史、`render`（read_page 的样子）、`edit_page` 工具 |
 | `osa/pagecomments.py` | 评论：挂在段上的评论串、叫醒 Bot（`post` → `dm.wake`）、自动回帖（`after_turn` / `after_task`）、`comment_page` 工具 |
-| `osa/library.py` | 页面存储、`save_page` / `read_page` 工具、子页面（`move`、`family`、删除时子页面上移） |
+| `osa/library.py` | 页面存储、`save_page` / `read_page` 工具、子页面（`move`、`family`、删除时子页面上移）、回收站（`page_trash`）、每轮附上的页面摘要（`recent_pages`） |
 | `osa/agentapi.py` | 外部 Agent：`/mcp` 端点（无状态、JSON 响应）、`agent_tokens` 表、8 个工具（复用 search / library / pagedoc / pagecomments） |
 | `osa/server.py` | `/api/pages/{id}/blocks`、`/versions`、`/comments`、`/move`；事件 `page_changed`（只这一页的段变了）、`pages_changed`（列表要刷新）、`page_comments` |
 | `osa/router.py`、`osa/memory.py` | `COMMENT_TURN`、批注通知的渲染（`kind=page_comment`）、`Task.comment` |
@@ -44,7 +40,8 @@
 | `web/src/authors.ts` | 段、评论、历史的作者名（user / bot:N / agent:N），编辑器、评论、历史、页面列表共用 |
 | `web/src/components/AgentTokens.tsx` | 设置 → 外部 Agent：建 token、各家接法、撤销 |
 | `web/src/components/PageTree.tsx` | 资料库的页面树、挪到哪里的对话框 |
-| `osa/dbs.py` | 数据库：表结构、值的写法（工具写名字、网页写 id）、筛选排序、加行改行（按键查冲突）、视图、表结构历史和撤销、`db_*` 工具、`read_page` 的样子 |
+| `osa/dbs.py` | 数据库：表结构、值的写法（工具写名字、网页写 id）、筛选排序、加行改行（按键查冲突）、视图、库的历史（表结构、视图）和撤销、`db_*` 工具、`read_page` 的样子、分页（`public` 的 limit / include） |
+| `osa/dbcalc.py` | 数据库里算出来的：公式（解析、算）、汇总的算法；`dbs._Calc` 读行时算公式、汇总、双向关联的反向那一半 |
 | `web/src/components/db/` | 数据库页面：`DbView`（视图标签、表格、看板）、`cells`（每种属性的格子）、`menus`（表头、筛选、排序、视图、历史）、`PropsBar`（行页面的属性栏）、`Popover` |
 | `tests/test_blocks.py`、`test_pages.py`、`test_page_comments.py`、`test_agentapi.py`、`test_dbs.py` | 后端测试 |
 | `tests/browser/` | 浏览器回归脚本（手动跑，见里面的 README） |
@@ -249,3 +246,34 @@ claude mcp add --transport http osa https://osa.cclsp.top/mcp --header "Authoriz
 - 前端：`cd web && npm run build`（`tsc --noEmit` 加构建）。
 - 浏览器：数据副本上起服务，跑 `tests/browser/` 里相关的脚本（见 README）。新功能照着加脚本。测完停掉服务。
 - 上线：`deploy/lsp/README.md`。换版前存数据库快照、确认没有正在跑的任务。换版后检查容器 healthy、应用都连上、`problem` 为空、新的前端包。
+
+## 后续两批（2026-11-15）
+
+**第一批**（`87b9084`…`ad91252`，已上线 21:14）：行页面的历史看得到属性的差别、能只恢复一个属性；看板卡片的“⋯”换列、上下挪；撤销了的外部 Agent 能从列表删掉。
+细节见第 3 步末尾的“后续”。
+
+**第二批**（`12e1b10`、`4b204f3`、`5e6dd8f`）：
+
+- 数据库的新属性类型：
+  - 公式（`osa/dbcalc.py`：自己写的小解析器，写法参考 Notion）。存的是带属性名的原文，改名时 `_rename_refs` 跟着改；
+    互相引用成环在改表结构时就报错（`_formula_cycle`），算的时候再按栈防一次。
+  - 关联存对方库的行号列表；双向的在对方库加一个 `mirror_of` 属性，值不存、读的时候从这边反查（`_backlinks`），在那边改改的是这边的行（`_set_mirror`）。
+    删了这边的关联，对方那一半也去掉（`_drop_pair`）。
+  - 汇总沿关联取对方行，对方的行带着算好的公式（`rows_of` 按层数递归，最多 `MAX_CHAIN` 层）。
+  - 自动编号存数、表结构里记 `next`；文件存 `{name, url}`，`/api/media?file=1` 收任何文件（不是图片、视频、PDF 的只能下载），`media.used` 认属性和回收站里的引用。
+  - 按钮：`POST /api/dbs/…/rows/…/press/<key>`，改属性走 `update_row`，评论走 `pagecomments.post`（叫醒 Bot）。
+  - 关联着的库一起发 `db_changed`（`related_dbs`）。
+- 大库：`MAX_ROWS = 10000`；网页一次要 200 行（`limit`），滚到底再要；刚加的行用 `include` 带上；看板的列数服务器数（`groups`）。
+- 视图改动进库的历史（`set_views` 记一条 `kind=views`，同一个人 10 分钟内并成一条）；撤销按视图换回（`_undo_views`）。历史留 200 条。
+- 手机看板长按拖：原生的 touch 事件（非 passive，拖的时候不滚页面），按横向位置找列（列只有卡片那么高），自动滚动时也重算落点。
+- 回收站：删的时候把页面行、版本、评论、小应用数据整个打包进 `page_trash`，`pages` 里照旧删掉（别的查询都不用加“没删”的条件）；
+  放回去时编号被占了就换新的，评论的 parent 跟着换；原来的上级不在了放到最上层。`media.gc_loop` 每天先清 30 天前的。
+- 编辑器：传图片（`insertImages`，和对话里一样先缩）、粘贴和拖进来的图片；评论框的 @ 补全；手机上的段菜单（`BlockHandle`，挪的是节点本身，段编号跟着走）。
+- 原文块整组改：`replace` 带 `group`，服务器按内容对齐（`blocks.align`）保住编号。顺手修了 `sync.saved`：发出去的段服务器原样留着时（不在 blocks 里）也算存上了，
+  不然原文块的第一行没变时，它一直算没存，离开或刷新时整张表又被追加一遍（老的“删掉其余的段”做法也有这个问题）。
+- Bot 回复了用户起头的评论：`page_comments` 事件带 `reply`，没开着网页时 `push.message_for` 推到手机。
+- 每轮状态附上对话最近 30 条消息里提到的页面（链接和评论通知里的页面编号），至多 3 个。
+- 测过：`uv run pytest`（新加 test_formula / relation_rollup / files_unique_id_button / press_and_related_events / paging / view_history / trash / recent_pages / replace_group_keeps_ids，
+  推送的断言加在评论的测试里）；浏览器 `db_types.py` 20 项、`docs_more.py` 11 项，老的 `database` / `db_more` / `editor` / `editor_more` / `history` / `tree` / `agent_live` 都过；
+  桌面 `cargo test`（`ui_paths`）、手机 `cargo check`（本机）。
+
