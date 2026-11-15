@@ -236,6 +236,7 @@ function Board({ data, view, save, addRow, fresh, setFresh, failed, reload }: {
   const group = data.schema.find(p => p.key === view.group_by)
   const [drag, setDrag] = useState<number | null>(null)
   const [over, setOver] = useState<{ col: string; index: number } | null>(null)
+  const [menu, setMenu] = useState<{ row: number; anchor: HTMLElement } | null>(null)
   const shownProps = data.schema.filter(p => p.type !== 'title' && p.key !== group?.key && !(view.hidden || []).includes(p.key))
   const columns = useMemo(() => {
     if (!group) return []
@@ -255,23 +256,32 @@ function Board({ data, view, save, addRow, fresh, setFresh, failed, reload }: {
     const k = cards.findIndex(c => { const r = c.getBoundingClientRect(); return y < r.top + r.height / 2 })
     return k < 0 ? cards.length : k
   }
-  const drop = async (colId: string, index: number) => {
-    const r = data.rows.find(x => x.id === drag)
-    setDrag(null)
-    setOver(null)
-    if (!r) return
-    const col = columns.find(c => c.id === colId)!
-    const rest = col.rows.filter(x => x.id !== r.id)
+  // 放到某一列的第 index 张（不算它自己）：拖动和卡片菜单的“挪到…”“往上挪”都走这里
+  const place = async (r: DbRow, colId: string, index: number) => {
+    const col = columns.find(c => c.id === colId)
+    const rest = (col?.rows || []).filter(x => x.id !== r.id)
     try {
       if ((valueOf(r, group) || '') !== colId) save(r, group, colId || null)
       if (!sorted && rest.length) {   // 手动顺序：排在这一列里前一张卡片后面；放在最前就排在这一列第一张的前面
         const all = data.rows.filter(x => x.id !== r.id)
-        const after = index > 0 ? rest[index - 1].id : (all[all.indexOf(rest[0]) - 1]?.id ?? 0)
+        const after = index > 0 ? rest[Math.min(index, rest.length) - 1].id : (all[all.indexOf(rest[0]) - 1]?.id ?? 0)
         await dbApi.move(data.id, r.id, after)
         reload()
       }
     } catch (e: any) { failed(e) }
   }
+  const drop = (colId: string, index: number) => {
+    const r = data.rows.find(x => x.id === drag)
+    setDrag(null)
+    setOver(null)
+    if (r) place(r, colId, index)
+  }
+  // 手机上 HTML5 拖放不灵：卡片右上角的“⋯”里换列、调顺序（桌面上悬停时也有）
+  const colOf = (r: DbRow) => { const v = valueOf(r, group); return v && group.options?.some(o => o.id === v) ? v : '' }
+  const menuRow = menu && data.rows.find(x => x.id === menu.row)
+  const menuAt = menuRow ? (columns.find(c => c.id === colOf(menuRow))?.rows || []).indexOf(menuRow) : -1
+  const menuLen = menuRow ? (columns.find(c => c.id === colOf(menuRow))?.rows.length || 0) : 0
+  const pick = (fn: () => void) => { setMenu(null); fn() }
   return (
     <div className="db-board">
       {columns.map(c => (
@@ -289,6 +299,8 @@ function Board({ data, view, save, addRow, fresh, setFresh, failed, reload }: {
                 onDragStart={e => { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', String(r.id)); setDrag(r.id) }}
                 onDragEnd={() => { setDrag(null); setOver(null) }}
                 onClick={() => fresh !== r.id && openLibrary(r.id)}>
+                {fresh !== r.id && <button className="db-card-more" title={t('挪到…')}
+                  onClick={e => { e.stopPropagation(); setMenu(menu?.row === r.id ? null : { row: r.id, anchor: e.currentTarget }) }}>⋯</button>}
                 {fresh === r.id
                   ? <TitleInput value={r.title} onDone={v => { setFresh(null); if (v !== undefined) save(r, data.schema[0], v) }} />
                   : <b className="db-card-title">{r.title || <span className="muted">{t('无标题')}</span>}</b>}
@@ -299,6 +311,21 @@ function Board({ data, view, save, addRow, fresh, setFresh, failed, reload }: {
           {over?.col === c.id && over.index >= c.rows.filter(x => x.id !== drag).length && <div className="db-drop-line" />}
           <button className="db-col-add" onClick={() => addRow({ [group.key]: c.id || null })}>＋ {t('新建')}</button>{/* i18n-ignore */}
         </div>))}
+      {menu && menuRow && <Popover anchor={menu.anchor} onClose={() => setMenu(null)} width={220}>
+        <div className="db-menu db-card-menu">
+          <div className="muted small">{t('挪到')}</div>
+          {[...(group.options || []).map(o => ({ id: o.id, o })), { id: '', o: undefined }].map(c => (
+            <button key={c.id || 'none'} className="db-card-to" onClick={() => pick(() => colOf(menuRow) !== c.id && place(menuRow, c.id, Infinity))}>
+              {c.o ? <Chip o={c.o} /> : <span className="db-chip">{t('没有{name}', { name: group.name })}</span>}
+              {colOf(menuRow) === c.id && <span className="muted">✓</span>}
+            </button>))}
+          {!sorted && <>
+            <div className="db-menu-sep" />
+            <button disabled={menuAt <= 0} onClick={() => pick(() => place(menuRow, colOf(menuRow), menuAt - 1))}>↑ {t('往上挪')}</button>
+            <button disabled={menuAt < 0 || menuAt >= menuLen - 1} onClick={() => pick(() => place(menuRow, colOf(menuRow), menuAt + 1))}>↓ {t('往下挪')}</button>
+          </>}
+        </div>
+      </Popover>}
     </div>
   )
 }

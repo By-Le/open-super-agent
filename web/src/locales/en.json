@@ -1729,5 +1729,8 @@
   "已撤销": "Undone",
   "表结构后来改过，{names}当时的值不显示。": "The schema changed since then; the old values of {names} can't be shown.",
   "正文没变。": "The body didn't change.",
-  "这一版和上一版看不出差别。": "No visible difference from the previous version."
+  "这一版和上一版看不出差别。": "No visible difference from the previous version.",
+  "挪到": "Move to",
+  "往上挪": "Move up",
+  "往下挪": "Move down"
 }
