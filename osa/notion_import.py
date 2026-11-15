@@ -22,7 +22,7 @@ from .memory import conn
 
 APP = "notion"
 READ_TOOLS = {"notion-search", "notion-fetch", "notion-query-data-sources", "notion-get-users", "notion-get-self",
-              "notion-get-comments", "notion-list-shared-pages", "notion-list-recent-pages", "notion-get-file-download-urls"}
+              "notion-get-comments", "notion-list-shared-pages", "notion-list-recent-pages"}
 TIMEOUT = 60
 MAX_NODES = 600        # 一次最多导多少页面和库（不算行）
 PAGE_ROWS = 100        # 查行时一次取多少
@@ -437,18 +437,25 @@ class Import:
                 break
             d = parse_fetch(await call("notion-fetch", {"id": n}))
             d["id"], d["parent"] = n, parent
-            if d["type"] == "database":
-                src = (d["sources"] or [{}])[0].get("url")
-                if src and src in self.sources:
-                    self.alias[n] = self.sources[src]
-                    continue
-                if src:
-                    self.sources[src] = n
             self.nodes[n] = d
             self.order.append(n)
             if d["type"] == "page":
                 kids = [k for _, k, _ in children(d["content"])]
                 todo[0:0] = [(k, n) for k in kids]   # 先序：子页面紧跟着上级，顺序和正文里一样
+        # 几个库用同一份数据（Notion 的“View of …”是链到原库的视图，常带着筛选）：只建原库，别的当成指向它的链接
+        by_src: dict[str, list[str]] = {}
+        for n in self.order:
+            d = self.nodes[n]
+            if d["type"] == "database" and d["sources"]:
+                by_src.setdefault(d["sources"][0]["url"], []).append(n)
+        for src, ns in by_src.items():
+            real = min(ns, key=lambda k: (self.nodes[k]["title"].startswith("View of "), self.order.index(k)))
+            self.sources[src] = real
+            for k in ns:
+                if k != real:
+                    self.alias[k] = real
+                    del self.nodes[k]
+        self.order = [n for n in self.order if n in self.nodes]
 
     async def load_rows(self):
         self.step = "rows"
@@ -473,7 +480,9 @@ class Import:
 
     async def _query(self, d: dict) -> list[dict]:
         """一个库的所有行：先按它的视图查（Notion 免费版的 SQL 查询每小时有限额，按视图查不算），没有视图再用 SQL。"""
-        view = next((v["url"] for v in d["views"] if str(v.get("url", "")).startswith("view://")), None)
+        views = [v for v in d["views"] if str(v.get("url", "")).startswith("view://")]
+        plain = [v for v in views if not v.get("filter") and not v.get("filters")]   # 带筛选的视图查不全
+        view = (plain or views or [{}])[0].get("url")
         if view:
             got = json.loads(await call("notion-query-data-sources", {"data": {"mode": "view", "view_url": view}}))
             if got.get("has_more"):
@@ -584,8 +593,8 @@ class Import:
                 v = row_value(name, nt, r, self.users)
                 if prop["type"] in ("text", "url") and isinstance(v, str):
                     v = _inline(v, self.link)[:dbs.MAX_TEXT] or None
-                if prop["type"] == "files":
-                    v = await self._files(_json_list(r.get(name)), rid)
+                if prop["type"] == "files":   # 行页面的属性里是临时的下载地址（几分钟就失效），马上下载
+                    v = await self._files([u for u in _json_list(page["props"].get(name)) if str(u).startswith("http")])
                 props[prop["key"]] = v
             row_id = entry["page_id"]
             try:
@@ -626,22 +635,15 @@ class Import:
                     p["prefix"] = prefix
                 dbs._touch(db["id"], schema=db["schema"])
 
-    async def _files(self, ids: list, row_nid: str) -> list | None:
-        """Notion 里存的文件（文件属性里的编号）：要下载地址，下载下来存进资料库。拿不到的跳过。"""
-        if not ids:
+    async def _files(self, urls: list) -> list | None:
+        """Notion 里存的文件：下载下来存进资料库（任何文件都收）。下载不了的跳过，说一声。"""
+        if not urls:
             return None
-        out = []
-        try:
-            got = json.loads(await call("notion-get-file-download-urls", {"page_id": row_nid, "file_ids": [str(x) for x in ids]}))
-        except Exception as e:
-            self.note(f"文件没下载：{str(e)[:120]}")
-            return None
-        urls = got.get("urls") or got.get("results") or got.get("files") or []
         import httpx
+        out = []
         async with httpx.AsyncClient(timeout=60, follow_redirects=True) as h:
-            for u in urls:
-                url = u.get("url") if isinstance(u, dict) else u
-                name = (u.get("name") if isinstance(u, dict) else None) or str(url).split("?")[0].rsplit("/", 1)[-1]
+            for url in urls:
+                name = str(url).split("?")[0].rstrip("/").rsplit("/", 1)[-1] or "file"
                 try:
                     r = await h.get(url)
                     r.raise_for_status()

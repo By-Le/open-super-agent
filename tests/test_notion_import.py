@@ -87,18 +87,20 @@ def page(i, title, content, props=None):
                       ensure_ascii=False)
 
 
-def database(i, title, src):
+def database(i, title, src, views=None):
     schema = {"标题": {"type": "title", "name": "标题"}, "编号": {"type": "auto_increment_id", "name": "编号"},
               "状态": {"type": "status", "name": "状态", "groups": {"to_do": [{"name": "待办", "color": "gray"}],
                                                                   "in_progress": [{"name": "进行中", "color": "blue"}],
                                                                   "complete": [{"name": "已发布", "color": "green"}]}},
               "接手人": {"type": "select", "name": "接手人", "options": [{"name": "Nova", "color": "blue"}, {"name": "Forge", "color": "orange_background"}]},
               "截止日期": {"type": "date", "name": "截止日期"}, "要": {"type": "checkbox", "name": "要"}, "分": {"type": "number", "name": "分"},
-              "产出位置": {"type": "text", "name": "产出位置"}, "人": {"type": "person", "name": "人"}}
+              "产出位置": {"type": "text", "name": "产出位置"}, "人": {"type": "person", "name": "人"}, "封面": {"type": "file", "name": "封面"}}
     state = json.dumps({"name": title, "schema": schema}, ensure_ascii=False)
     text = (f'<database url="{{{{https://app.notion.com/p/{i}}}}}" inline="false">\nThe title of this Database is: {title}\n<data-sources>\n'
             f'<data-source url="{{{{{src}}}}}">\n<data-source-state>\n{state}\n</data-source-state>\n</data-source>\n</data-sources>\n'
-            f'<views>\n<view url="{{{{view://x}}}}">\n{json.dumps({"displayProperties": ["标题", "编号", "状态", "接手人", "截止日期"], "type": "table"}, ensure_ascii=False)}\n</view>\n</views>\n</database>')
+            '<views>\n' + "".join(f'<view url="{{{{{u}}}}}">\n{json.dumps(v, ensure_ascii=False)}\n</view>\n' for u, v in views or [
+                ("view://f", {"type": "table", "filter": {"property": "状态", "exact": "待办"}}),   # 带筛选的不能用来查全部的行
+                ("view://x", {"displayProperties": ["标题", "编号", "状态", "接手人", "截止日期"], "type": "table"})]) + '</views>\n</database>')
     return json.dumps({"metadata": {"type": "database"}, "title": title, "url": f"https://app.notion.com/p/{i}", "text": text}, ensure_ascii=False)
 
 
@@ -122,19 +124,19 @@ class FakeNotion:
         if i == ROOT:
             return page(ROOT, "🏢 总部", f"账本是 <mention url=\"https://app.notion.com/p/{DB}\" type=\"database\">任务卡</mention>，看 <mention url=\"https://app.notion.com/p/{R1}\">做设计</mention>\n\n"
                                        f'<page url="https://app.notion.com/p/{CHILD}">\n驾驶舱\n</page>{self.root_extra}')
-        if i == CHILD:
-            return page(CHILD, "驾驶舱", f'<database url="{{{{https://app.notion.com/p/{DB}}}}}" inline="true">\n任务卡\n</database>\n'
-                                       f'<database url="{{{{https://app.notion.com/p/{VIEW}}}}}" inline="true">\nView of 任务卡\n</database>')
+        if i == CHILD:   # 先遇到“View of”（带筛选的视图），原库在后面
+            return page(CHILD, "驾驶舱", f'<database url="{{{{https://app.notion.com/p/{VIEW}}}}}" inline="true">\nView of 任务卡\n</database>\n'
+                                       f'<database url="{{{{https://app.notion.com/p/{DB}}}}}" inline="true">\n任务卡\n</database>')
         if i == DB:
             return database(DB, "任务卡", SRC)
         if i == VIEW:
-            return database(VIEW, "View of 任务卡", SRC)
+            return database(VIEW, "View of 任务卡", SRC, [("view://f", {"type": "gallery", "filter": {"property": "状态", "exact": "待办"}})])
         if i == ARCH:
             return page(ARCH, "归档", "旧的")
         if i == R1:
             return page(R1, "做设计", f"正文，回到 <mention url=\"https://app.notion.com/p/{ROOT}\">总部</mention>", {"编号": "TASK-3"})
         if i == R2:
-            return page(R2, "写周报", "周报正文", {"编号": "TASK-7"})
+            return page(R2, "写周报", "周报正文", {"编号": "TASK-7", "封面": ["https://files.example/x/cover.webp?sig=1"]})
         raise RuntimeError(f"没有 {i}")
 
 
@@ -151,6 +153,12 @@ async def test_import_and_sync(monkeypatch, events):
     from osa import dbs, library
     fake = FakeNotion()
     monkeypatch.setattr(notion_import, "call", fake)
+    got_files = []
+
+    async def files(self, urls):
+        got_files.append(urls)
+        return [{"name": "cover.webp", "url": "https://files.example/kept"}] if urls else None
+    monkeypatch.setattr(notion_import.Import, "_files", files)
     monkeypatch.setattr(mcp_hub, "_sessions", {"notion": object()})
     created = []
     try:
@@ -184,6 +192,7 @@ async def test_import_and_sync(monkeypatch, events):
         assert w["props"][P["人"]["key"]] == "Kada" and P["人"]["type"] == "text"
         assert w["props"][P["产出位置"]["key"]] == f"见 [做设计](/library/pages/{r1['id']})"   # 属性里的提及也换成资料库的链接
         assert r1["props"][P["产出位置"]["key"]] == f"接着看 [写周报](/library/pages/{w['id']})"   # 提到后面的行也对得上
+        assert ["https://files.example/x/cover.webp?sig=1"] in got_files and w["props"][P["封面"]["key"]] == [{"name": "cover.webp", "url": "https://files.example/kept"}]
         assert library.get_page(w["id"], False)["created"] < library.get_page(db_id, False)["created"]   # 留着 Notion 里的创建时间
         # 再导一次：不重复建，改了的跟着变，没改的段编号不变
         before = [b["id"] for b in __import__("osa").pagedoc.load(root)[1]]
