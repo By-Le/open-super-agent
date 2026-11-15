@@ -95,6 +95,7 @@ OSA_CONFIG=/tmp/osa-test/config.yaml uv run uvicorn osa.server:app --port 8766
 
 - **对话**：通过 WebSocket 发送 `{"type":"send","chat_id":1,"text":"..."}`，观察 `message`、`task`、`stream_*` 事件。
 - **界面**：用 Playwright 驱动系统 Chrome（`channel="chrome"`）截图检查，这样不用另外下载浏览器。
+  资料库编辑器、评论、子页面、版本历史有现成的回归脚本，见 [tests/browser](../tests/browser/README.md)。
 - **电脑**：在 Python 里调用 `osa.computer.get()`，可以直接测试 `start / screenshot / shell`；浏览器工具不给 `key` 时用最前面的标签页：
   `await c.browser("open", url=...)`、`c.browser("snapshot")`。
 - **几个任务同时用电脑**：用 `computer.tools.call` 模拟任务——先 `CLAIM.set("201:")`，再 `await call(SimpleNamespace(id=201, bot_id=1, chat_id=1), "browser_open", {...}, progress)`；

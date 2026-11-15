@@ -1,0 +1,164 @@
+# 资料库文档 v2：真机检查、给外面的 Agent 用、数据库
+
+[v1](docs.md)（按段编辑、块编辑器、评论叫醒 Bot、子页面、版本历史）2026-11-15 做完并上线（`6366a90`，CI 修复 `ad108fe`）。
+这份是接着做的计划：先在真机上把 v1 过一遍，再把文档开放给 OSA 外面的 Agent（Claude Code、Codex……），最后做数据库（多维表）。
+
+## 进度
+
+| 步 | 内容 | 状态 |
+|---|---|---|
+| 1 | 真机检查（iPhone App、桌面 App）和 lsp 上的真实数据 | 未开始 |
+| 2 | 对外的 MCP 端点：外面的 Agent 读写资料库 | 未开始 |
+| 3 | 数据库：带属性的表（任务看板、会议列表） | 未开始，开工前先和用户定三件事（见下） |
+| — | 顺手可做的小事 | 按需 |
+
+## 现在有什么（v1 的代码地图）
+
+| 地方 | 做什么 |
+|---|---|
+| `osa/blocks.py` | 切段：Markdown 正文切成段，只切行区间不改文字；列表每项、表格每行各一段；段之间的 gap；`split(join(parts)) == parts` |
+| `osa/pagedoc.py` | 按段读写：`load`（段 + 编号/作者，指纹对不上就重建）、`apply`（按段改，冲突只看要改的段）、`rewrite`（整页重写保住没变的段）、版本历史、`render`（read_page 的样子）、`edit_page` 工具 |
+| `osa/pagecomments.py` | 评论：挂在段上的评论串、叫醒 Bot（`post` → `dm.wake`）、自动回帖（`after_turn` / `after_task`）、`comment_page` 工具 |
+| `osa/library.py` | 页面存储、`save_page` / `read_page` 工具、子页面（`move`、`family`、删除时子页面上移） |
+| `osa/server.py` | `/api/pages/{id}/blocks`、`/versions`、`/comments`、`/move`；事件 `page_changed`（只这一页的段变了）、`pages_changed`（列表要刷新）、`page_comments` |
+| `osa/router.py`、`osa/memory.py` | `COMMENT_TURN`、批注通知的渲染（`kind=page_comment`）、`Task.comment` |
+| `web/src/components/doc/` | 编辑器（懒加载）：`markdown.ts` 段 ↔ 文档、`blockIds.ts` 段编号、`sync.ts` 保存/冲突/合并、`gutter.ts` 作者条、`nodes.tsx` 提示框/折叠块/原文块/软换行、`menus.tsx`、`comments.tsx`、`history.tsx` + `diff.ts` |
+| `web/src/components/PageTree.tsx` | 资料库的页面树、挪到哪里的对话框 |
+| `tests/test_blocks.py`、`test_pages.py`、`test_page_comments.py` | 后端测试 |
+| `tests/browser/` | 浏览器回归脚本（手动跑，见里面的 README） |
+
+## 接手前要知道的
+
+- **正文以 Markdown 为准，只有 `pages.content` 一份。** `block_meta` 只记编号、作者、版本、指纹，按位置对应切出来的段。
+  服务器的切法是唯一标准：网页编辑器保存后按返回的段校正，别在前端另搞一套边界。
+- **没改过的段一个字都不能动。** 后端只切行；前端只有节点真变了、而且写回的 Markdown 和“原节点写回的样子”不同才发。
+  新加功能（比如数据库的属性）也要守这一条：Bot 写的原文不能被编辑器、序列化“顺手”改样。
+- **冲突按段：** 要改的段 `v > base` 才算冲突，整批不写，把那几段现在的内容和改的人告诉调用方。
+- **事件别乱发：** 用户在网页上保存只发 `page_changed`；`pages_changed` 会让列表、页面卡片整个重拉。
+- **评论只有用户写的会叫醒 Bot**（Bot 写的、以后外面 Agent 写的都不叫醒），不然 Bot 之间会来回停不下来。
+  `woke.from` 是那串评论的第一条，不是 Bot 编号。自动回帖从“这一轮开始”算有没有回过。
+- **编辑器的坑：**
+  - `useEditor` 要 `immediatelyRender: false`。否则 effect 拿到的是被 Tiptap 一毫秒后销毁的那个实例。
+  - 段落里的软换行要转成带 `soft` 标记的换行节点。否则一编辑就被 ProseMirror 读成硬换行，写回成 `"  \n"`。
+  - Tiptap 的 marked 实例会切出 `taskList` / `taskItem` / `orderedList` 这几种 token，加白名单时记得看全。
+  - 表格按行写回、不补空格；格子里只放一段文字。
+- **改表结构时**，`python -m osa.i18n` 和 `python -c "import osa.server"` 会对真的 `data/osa.db` 跑迁移，一律带临时的 `OSA_DATA_DIR` / `OSA_CONFIG`。
+  多语言检查看退出码，而且要看“还有 N 行中文没包进 t()”那一行，只看缺几句不够（v1 上线时 CI 就是卡在这里）。
+- **部署：** 见 `deploy/lsp/README.md`。前端有新依赖时镜像会重新 `npm ci`（v1 那次构建约 1 分钟，没有想象的久）。
+
+## 第 1 步：真机检查（先做，半天）
+
+v1 只在 Chrome（Playwright）里测过，iPhone App 和桌面 App 用的是 WKWebView（Safari 内核），还没在真机上点过。
+
+- **iPhone App（模拟器或真机）**：
+  - 打开页面，用中文输入法打字，打到一半时让 Bot 改另一段，看组字会不会被打断。
+  - 段首打 `、` 出斜杠菜单；长按选字出格式菜单，看会不会和系统的复制/粘贴菜单打架。
+  - 从左边缘右滑返回会不会误触编辑器；键盘弹起时光标会不会被挡住。
+  - 评论面板全屏打开、关掉；切到后台再回来，没存的会不会补存（`visibilitychange` / `pagehide`）。
+- **桌面 App**：页面地址 `/library/pages/<id>` 刷新（Cmd+R）以后，系统通知、角标这些桥接（IPC）还能不能用。
+- **lsp 上的真实数据**：
+  - 老页面第一次打开时会补上段编号，看作者是否都记成了建它的 Bot。
+  - 打开几个模型写的长报告，看“Markdown 原文”块多不多。多的话，看是哪种写法没认出来，补进 `markdown.ts` 的白名单或者新写节点。
+  - 让 Nova 在群里交接一次真实工作。
+- 发现的问题直接修，每个问题一个提交。
+
+## 第 2 步：对外的 MCP 端点
+
+**为什么**：用户最初想要的是“给 Agent 用的文档系统”。现在只有 OSA 里的 Bot 能写资料库，接上 MCP 以后，Claude Code、Codex 也能把产出写进来，
+和 OSA 的 Bot 在同一份文档上接着改，人在网页上看、批注。
+
+**设计**
+
+- **挂载**：
+  - `mcp` 2.3.0 里 FastMCP 改名叫 `MCPServer`（`from mcp.server.mcpserver import MCPServer`），有 `streamable_http_app()`，可以挂在 FastAPI 的 `/mcp` 下。
+  - 它的 `session_manager` 要在应用的生命周期里跑起来（放进 `server.py` 现有的 lifespan）。
+  - 新模块 `osa/agentapi.py`。
+- **鉴权**：
+  - 新表 `agent_tokens(id, name, hash, scope, created, last_used, revoked)`。`scope` 是 `read` 或 `write`；token 只在创建时显示一次，库里只存 sha256。
+  - `auth.py` 的中间件对 `/mcp` 不看登录 cookie，只认 `Authorization: Bearer`，同时照样检查 Host。
+  - 演示服务器（`security.demo`）上整个关掉。
+  - 设置里加一页“外部 Agent”：新建（填名字、选只读还是可写）、列表（最后用过的时间）、撤销。
+- **身份**：作者记成 `agent:<id>`。下面几处要认这种作者：
+  - `pagedoc.name_of`；
+  - 前端 `DocEditor` 的 `nameOf` 和 `gutter` 的 `who`、`comments.tsx` 的 `name`；
+  - 名字放进 bootstrap 的 `agents` 列表。
+  - 外面 Agent 的评论不叫醒 Bot（走 `pagecomments.add`，不走 `post`）。锁定的页面它只能读。
+- **工具**（都复用现有函数，别另写一套）：
+  - `search_pages(query)` → `search.search(kinds=("page",))`
+  - `list_pages(parent_id?)` → 标题树（`library.list_pages` + `family`）
+  - `read_page(page_id, start?)` → `pagedoc.render`
+  - `create_page(title, content, parent_id?)` → `library.save_page(None, …, by="agent:N", parent_id=…)`
+  - `edit_page(page_id, version, ops)` → `pagedoc.apply`，ops 写法和 Bot 的 `edit_page` 一样（`_bot_ops`）
+  - `rewrite_page(page_id, version, content)` → `library.save_page(…, base=version)`
+  - `list_comments(page_id)` / `comment_page(…)` → `pagecomments`
+  - 写操作照样 `registry.emit("page_changed" / "pages_changed" / "page_comments")`，网页上实时看到。
+- **工具说明**要写清楚：先 `read_page` 拿版本号和段落编号；冲突时会告诉你现在的内容，按新版本重提。
+
+**测试**
+
+- `tests/test_agentapi.py`：
+  - token 的建、查、撤销；
+  - 没 token、错 token、只读 token 去写，都被拒；
+  - 用 MCP 客户端（或者直接发 JSON-RPC，经 `httpx.ASGITransport`）调一遍每个工具；
+  - 作者记成 `agent:N`，事件发出去了，锁定页面不能写。
+- 浏览器：照 `tests/browser/bot_edit_live.py` 写一个，用 MCP 客户端改页面，看开着的编辑器实时出现、作者条显示 token 的名字。
+
+**验收**：在 Mac 上执行
+
+```sh
+claude mcp add --transport http osa https://osa.cclsp.top/mcp --header "Authorization: Bearer <token>"
+```
+
+让 Claude Code 读一个页面、改一段、在某段写评论，网页上实时看到；撤销 token 以后再调就被拒。
+
+**文档**：`docs/configuration.md` 加“让外面的 Agent 读写资料库”一节（Claude Code、Codex 怎么接），CHANGELOG、features 中英两份。
+
+## 第 3 步：数据库（带属性的表）
+
+**为什么**：用户的 Bot 在 Notion 里也用数据库（应用市场里 Notion 的说明就是“往数据库里加条目、改属性”），
+比如任务看板、会议列表。没有它，交接时的“状态表”还得回 Notion。
+
+**开工前先和用户定的三件事**（用 AskUserQuestion 问）：
+
+1. 要哪些属性类型。建议 v1 先做：文本、数字、单选、多选、日期、勾选、负责人（Bot 或你）、链接。
+2. 看板视图（按单选属性分列、拖动换列）v1 要不要。
+3. Bot 能不能改表结构（加、删列），还是只让用户改。
+
+**设计草案**（按上面的答案调整）：
+
+- **数据库是一个页面**：`pages.kind = 'db'`（新列，默认 `page`）。
+  - 表结构存在 `pages.schema`（JSON：`[{key, name, type, options}]`），视图存在 `pages.views`（JSON：筛选、排序、看板按哪列分组）。
+- **每一行是它的子页面**：`parent_id` 指向数据库页。
+  - 属性存在新列 `pages.props`（JSON），正文还是 Markdown，按 v1 的方式按段编辑、评论、记历史。
+  - 属性的改动也进版本历史：快照里带上 `props`。
+- **冲突**：属性按键检查。每个键记最后改动的版本（`props_meta`，和 `block_meta` 一个思路），只在要改的那个键被别人先改过时才冲突。
+- **Bot 工具**（结果写成紧凑的表格文字，别整页倒给模型）：
+  - `db_query(db_id, filter?, sort?, limit?)`
+  - `db_add(db_id, props, content?)`
+  - `db_update(row_id, props, version?)`
+  - 按第 3 问决定要不要 `db_schema`。
+- **前端**：
+  - 数据库页显示成表格，每种属性一个格子编辑器；新增一行；点行打开成页面（就是 v1 的编辑器，顶上多一块属性栏）。
+  - 看板视图按第 2 问决定。
+  - 先不做虚拟滚动：一个库 1000 行以内。
+- **搜索**：属性的文字也进索引（`search.sync` 拼进去）。
+- **测试**照 v1 的三份后端测试补，浏览器脚本加一个 `database.py`。
+
+## 顺手可做的小事
+
+- **段的上移、下移、删除菜单**（手机上需要）。拖拽手柄：先查 `@tiptap/extension-drag-handle` 会不会拉进 yjs。
+- **交接时每轮附上页面摘要**：每轮状态里列出最近提到的至多 3 个页面，一行一个，写版本号、未处理评论数、最后改的人，每个约 30 个 token。
+- **评论框里 @ 的自动补全**：复用 `Composer.tsx` 的 `.mention-list`。
+- **Bot 在评论里回复时推送到手机**：频道和推送都没接这类消息。
+- **回收站**：现在删页面是真删，版本历史也跟着没了。可以先改成软删除，30 天后再清。
+- **嵌套的子项单独成段**：现在嵌套子项跟着上一级算一段。
+- **含 HTML 的表格**：整张表放进一个原文块，改过以后每行的编号会重新生成。
+- **图片**：现在只能填网址，可以接上传（复用 `media` 的上传）。
+
+## 怎么验收（每一步都要）
+
+- 后端：`uv run pytest -q`。
+- 多语言：`OSA_DATA_DIR=<临时目录> OSA_CONFIG=<临时目录>/config.yaml uv run python -m osa.i18n; echo $?`。退出码要是 0，“没包进 t()”要是 0 行。
+- 前端：`cd web && npm run build`（`tsc --noEmit` 加构建）。
+- 浏览器：数据副本上起服务，跑 `tests/browser/` 里相关的脚本（见 README）。新功能照着加脚本。测完停掉服务。
+- 上线：`deploy/lsp/README.md`。换版前存数据库快照、确认没有正在跑的任务。换版后检查容器 healthy、应用都连上、`problem` 为空、新的前端包。
