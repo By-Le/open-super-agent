@@ -8,7 +8,7 @@
 | 步 | 内容 | 状态 |
 |---|---|---|
 | 1 | 真机检查（iPhone App、桌面 App）和 lsp 上的真实数据 | 完成（2026-11-15，结果见第 1 步末尾） |
-| 2 | 对外的 MCP 端点：外面的 Agent 读写资料库 | 未开始 |
+| 2 | 对外的 MCP 端点：外面的 Agent 读写资料库 | 完成（2026-11-15，本机验收过，还没部署；结果见第 2 步末尾） |
 | 3 | 数据库：带属性的表（任务看板、会议列表） | 未开始，开工前先和用户定三件事（见下） |
 | — | 顺手可做的小事 | 按需 |
 
@@ -20,9 +20,12 @@
 | `osa/pagedoc.py` | 按段读写：`load`（段 + 编号/作者，指纹对不上就重建）、`apply`（按段改，冲突只看要改的段）、`rewrite`（整页重写保住没变的段）、版本历史、`render`（read_page 的样子）、`edit_page` 工具 |
 | `osa/pagecomments.py` | 评论：挂在段上的评论串、叫醒 Bot（`post` → `dm.wake`）、自动回帖（`after_turn` / `after_task`）、`comment_page` 工具 |
 | `osa/library.py` | 页面存储、`save_page` / `read_page` 工具、子页面（`move`、`family`、删除时子页面上移） |
+| `osa/agentapi.py` | 外部 Agent：`/mcp` 端点（无状态、JSON 响应）、`agent_tokens` 表、8 个工具（复用 search / library / pagedoc / pagecomments） |
 | `osa/server.py` | `/api/pages/{id}/blocks`、`/versions`、`/comments`、`/move`；事件 `page_changed`（只这一页的段变了）、`pages_changed`（列表要刷新）、`page_comments` |
 | `osa/router.py`、`osa/memory.py` | `COMMENT_TURN`、批注通知的渲染（`kind=page_comment`）、`Task.comment` |
 | `web/src/components/doc/` | 编辑器（懒加载）：`markdown.ts` 段 ↔ 文档、`blockIds.ts` 段编号、`sync.ts` 保存/冲突/合并、`gutter.ts` 作者条、`nodes.tsx` 提示框/折叠块/原文块/软换行、`menus.tsx`、`comments.tsx`、`history.tsx` + `diff.ts` |
+| `web/src/authors.ts` | 段、评论、历史的作者名（user / bot:N / agent:N），编辑器、评论、历史、页面列表共用 |
+| `web/src/components/AgentTokens.tsx` | 设置 → 外部 Agent：建 token、各家接法、撤销 |
 | `web/src/components/PageTree.tsx` | 资料库的页面树、挪到哪里的对话框 |
 | `tests/test_blocks.py`、`test_pages.py`、`test_page_comments.py` | 后端测试 |
 | `tests/browser/` | 浏览器回归脚本（手动跑，见里面的 README） |
@@ -124,6 +127,21 @@ claude mcp add --transport http osa https://osa.cclsp.top/mcp --header "Authoriz
 让 Claude Code 读一个页面、改一段、在某段写评论，网页上实时看到；撤销 token 以后再调就被拒。
 
 **文档**：`docs/configuration.md` 加“让外面的 Agent 读写资料库”一节（Claude Code、Codex 怎么接），CHANGELOG、features 中英两份。
+
+**结果（2026-11-15）**：
+
+- 做法和设计稿的出入：
+  - 会话管理每个请求起一个、处理完就收（无状态模式本来每个请求就独立），不进 lifespan：常驻的任务会让测试的 `settle()` 每次等满 5 秒。
+  - `MCPServer` 建的时候会 `logging.basicConfig(INFO)`，建完把根日志器还原，不然所有库（httpx 会记下每个出站地址）的 INFO 都打出来。
+  - 工具结果只给文字（`structured_output=False`），不然同样的内容在 `structuredContent` 里再发一遍。
+  - 只读的 token 在 `tools/list` 里看不到写的工具（重写了 `_handle_list_tools`，私有方法，升级 mcp 时 `test_read_only` 会抓到）。
+  - 页面多了 `agent_id`（外部 Agent 建的，`bot_id` 是空的），`read_page` 顶上、资料库列表写着是它建的。
+  - `/mcp` 的 401 是 JSON；SDK 客户端只报“Server returned an error response”，看不到状态码。
+- 测过：`tests/test_agentapi.py`（11 个，SDK 客户端经 ASGI 调全部工具）；浏览器 `tests/browser/agent_live.py` 全过；
+  真的 Claude Code（`claude -p --mcp-config`）读页面、改一段、在某段写评论，只动了那一段、作者是 `agent:N`、没叫醒 Bot；
+  真的 Codex（`url` + `bearer_token_env_var`）能读。
+- 顺手修的：页面最后自动补的空段在合并别人的改动时没留在最后，Bot / 外部 Agent 往列表末尾加的项被它隔成另一个列表（只在开着的编辑器里，刷新就好）。
+- 还没做：部署到 lsp 后按上面的验收命令接 `https://osa.cclsp.top/mcp` 再走一遍（反代是整站转发，返回普通 JSON，应该不用改）。
 
 ## 第 3 步：数据库（带属性的表）
 
