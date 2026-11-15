@@ -17,8 +17,10 @@ conn.execute("""create table if not exists pages(
   id integer primary key, bot_id integer, title text, format text default 'markdown', content text,
   share_token text, pinned integer default 0, task_id integer, created real, updated real, app text)""")
 conn.execute("create unique index if not exists pages_token on pages(share_token)")
-if "app" not in {r[1] for r in conn.execute("pragma table_info(pages)")}:
-    conn.execute("alter table pages add column app text")
+_have = {r[1] for r in conn.execute("pragma table_info(pages)")}
+for _col, _type in (("app", "text"), ("block_meta", "text"), ("version", "integer default 0"), ("locked", "integer default 0")):
+    if _col not in _have:   # block_meta / version / locked：按段编辑（pagedoc.py）
+        conn.execute(f"alter table pages add column {_col} {_type}")
 conn.execute("""create table if not exists page_data(
   page_id integer, key text, value text, updated real, primary key(page_id, key))""")
 conn.execute("create table if not exists file_pins(path text primary key, ts real)")
@@ -33,15 +35,15 @@ RAW_CSP = ("sandbox allow-scripts allow-popups; default-src 'none'; script-src '
            "style-src 'unsafe-inline' https:; img-src https: data:; font-src https: data:; media-src https: data:; "
            "connect-src 'none'; frame-src 'none'; form-action 'none'")
 
-_COLS = "id, bot_id, title, format, share_token, pinned, task_id, created, updated, length(content), app"
+_COLS = "id, bot_id, title, format, share_token, pinned, task_id, created, updated, length(content), app, version, locked"
 
 
 # ---------- 页面 ----------
 def _page(r, content: str | None = None) -> dict:
-    i, bot_id, title, fmt, token, pinned, task_id, created, updated, size, app = r
+    i, bot_id, title, fmt, token, pinned, task_id, created, updated, size, app, version, locked = r
     p = {"id": i, "bot_id": bot_id, "title": title, "format": fmt, "share_token": token, "pinned": bool(pinned),
          "task_id": task_id, "created": created, "updated": updated, "size": size or 0,
-         "app": json.loads(app) if app else None}
+         "app": json.loads(app) if app else None, "version": version or 0, "locked": bool(locked)}
     if content is not None:
         p["content"] = content
     return p
@@ -64,42 +66,62 @@ def by_token(token: str) -> dict | None:
 
 
 def save_page(bot_id: int | None, title: str, content: str, fmt: str = "markdown",
-              pid: int | None = None, task_id: int | None = None, app=None) -> dict:
-    """新建，或者给 pid 时更新内容。app 是小应用的清单（见 applets.manifest），只对 html 有效；更新时不给就保留原来的。"""
-    from . import applets
+              pid: int | None = None, task_id: int | None = None, app=None, by: str | None = None,
+              base: int | None = None, allow_empty: bool = False) -> dict:
+    """新建，或者给 pid 时更新内容。app 是小应用的清单（见 applets.manifest），只对 html 有效；更新时不给就保留原来的。
+    by 是谁改的（默认 bot_id 对应的 Bot，没有就是用户）。markdown 页面更新时按段对齐（pagedoc.rewrite），没变的段保留编号和作者；
+    给了 base（调用方读到的版本号），会覆盖掉 base 之后别人改过的段就抛 pagedoc.Conflict。allow_empty：用户新建的空白页面。"""
+    from . import applets, pagedoc
     title = " ".join((title or "").split())[:120] or i18n.t("未命名页面")
     fmt = fmt if fmt in FORMATS else "markdown"
     app = applets.manifest(app) if fmt == "html" else None
-    if not (content or "").strip():
+    by = by if by is not None else (f"bot:{bot_id}" if bot_id else "user")
+    content = content or ""
+    if not content.strip() and not allow_empty:
         raise ValueError(i18n.t("页面内容不能为空"))
     if len(content) > MAX_PAGE:
         raise ValueError(i18n.t("页面太大（最多 {n}K 字）", n=MAX_PAGE // 1000))
+    if base is not None and (not isinstance(base, int) or isinstance(base, bool)):
+        raise ValueError(i18n.t("版本号要是整数"))
     now = time.time()
     if pid is not None:
         if not (old := get_page(pid, False)):
             raise ValueError(i18n.t("没有页面 #{id}", id=pid))
         if app is None and fmt == "html":
             app = old["app"]
-        conn.execute("update pages set title=?, format=?, content=?, updated=?, app=? where id=?",
-                     (title, fmt, content, now, json.dumps(app, ensure_ascii=False) if app else None, pid))
+        if fmt == "markdown" and old["format"] == "markdown":
+            pagedoc.rewrite(pid, title, content, by, base)
+        else:   # html 页面，或者换了格式：整页换掉，段的编号以后按需重建
+            conn.execute("update pages set format=?, app=?, block_meta=null where id=?",
+                         (fmt, json.dumps(app, ensure_ascii=False) if app else None, pid))
+            pagedoc.snapshot_html(pid, by, title=title, content=content)
     else:
         if conn.execute("select count(*) from pages").fetchone()[0] >= MAX_PAGES:
             raise ValueError(i18n.t("资料库最多 {n} 个页面，先删掉一些", n=MAX_PAGES))
         pid = conn.execute("insert into pages(bot_id, title, format, content, task_id, created, updated, app) "
                            "values(?,?,?,?,?,?,?,?)", (bot_id, title, fmt, content, task_id, now, now,
                                                        json.dumps(app, ensure_ascii=False) if app else None)).lastrowid
+        conn.commit()
+        if fmt == "markdown":
+            pagedoc.init(pid, by)
+        else:
+            pagedoc.snapshot_html(pid, by, created=True)
     conn.commit()
     return get_page(pid, False)
 
 
-def update_page(pid: int, title: str | None = None, pinned: bool | None = None) -> dict:
+def update_page(pid: int, title: str | None = None, pinned: bool | None = None, locked: bool | None = None,
+                by: str = "user") -> dict:
+    """改标题（记一版历史）、置顶、锁定（锁定后 Bot 只能读，用户照样能改）。"""
+    from . import pagedoc
     if not get_page(pid, False):
         raise ValueError(i18n.t("没有页面 #{id}", id=pid))
     if title is not None:
-        conn.execute("update pages set title=?, updated=? where id=?",
-                     (" ".join(title.split())[:120] or i18n.t("未命名页面"), time.time(), pid))
+        pagedoc.set_title(pid, " ".join(title.split())[:120] or i18n.t("未命名页面"), by)
     if pinned is not None:
         conn.execute("update pages set pinned=? where id=?", (int(pinned), pid))
+    if locked is not None:
+        conn.execute("update pages set locked=? where id=?", (int(locked), pid))
     conn.commit()
     return get_page(pid, False)
 
@@ -112,8 +134,10 @@ def share(pid: int, on: bool) -> dict:
 
 
 def delete_page(pid: int):
+    from . import pagedoc   # noqa: F401  确保版本历史的表已经建好
     conn.execute("delete from pages where id=?", (pid,))
     conn.execute("delete from page_data where page_id=?", (pid,))
+    conn.execute("delete from page_versions where page_id=?", (pid,))
     conn.commit()
 
 
@@ -146,7 +170,8 @@ def link(pid: int) -> str:
 SAVE_PAGE = {"type": "function", "function": {
     "name": "save_page",
     "description": "把成品（报告、清单、对比表、网页等）保存成资料库里的页面，返回页面链接。"
-                   "用户要“做成页面/报告/可以分享的页面”，或结果很长、以后还要看时用。给 page_id 就是更新那个页面。"
+                   "用户要“做成页面/报告/可以分享的页面”，或结果很长、以后还要看时用。给 page_id 就是整页更新那个页面"
+                   "（markdown 页面别的 Bot 建的也能更新，要带上 read_page 显示的 version；只改几处用 edit_page）。"
                    "要做成可交互的小应用（表单、看板、计算器、能点按钮查东西的面板）时 format=html 并填 app，"
                    "页面里用 window.osa 调工具、读写数据、给你发消息（见系统提示词里的说明）。",
     "parameters": {"type": "object", "properties": {
@@ -154,6 +179,7 @@ SAVE_PAGE = {"type": "function", "function": {
         "content": {"type": "string", "description": "页面全文。markdown 用 Markdown；html 是完整的 HTML（可以带内联 CSS 和脚本）"},
         "format": {"type": "string", "enum": list(FORMATS)},
         "page_id": {"type": "integer", "description": "可选：要更新的页面编号"},
+        "version": {"type": "integer", "description": "更新时：read_page 显示的版本号（页面最近是别人改的就必须带）"},
         "app": {"type": "object", "description": "可选，只对 html 有效：填了就是小应用。tools 是页面里允许调用的工具名（只能是你现在有的工具）；"
                                                  "chat 为 true 时页面能替用户给你发消息",
                 "properties": {"tools": {"type": "array", "items": {"type": "string"}}, "chat": {"type": "boolean"}}}},
@@ -196,15 +222,21 @@ async def tool_page_data(bot_id: int, args: dict) -> str:
 
 READ_PAGE = {"type": "function", "function": {
     "name": "read_page",
-    "description": "读资料库里一个页面的全文（html 页面只给文字）。页面编号可以用 search_memory 查到",
-    "parameters": {"type": "object", "properties": {"page_id": {"type": "integer"}}, "required": ["page_id"]}}}
+    "description": "读资料库里一个页面（html 页面只给文字）。markdown 页面带版本号，每段前面有段落编号，改的时候给 edit_page 用。"
+                   "页面编号可以用 search_memory 查到",
+    "parameters": {"type": "object", "properties": {
+        "page_id": {"type": "integer"},
+        "start": {"type": "string", "description": "可选：从这个段落编号开始读（页面太长、上次没读完时）"}},
+        "required": ["page_id"]}}}
 
 
 def tool_read_page(args: dict, limit: int = 12000) -> str:
-    from . import search
+    from . import pagedoc, search
     p = get_page(args.get("page_id")) if isinstance(args.get("page_id"), int) else None
     if not p:
         return f"没有页面 #{args.get('page_id')}"
+    if p["format"] == "markdown":
+        return pagedoc.render(p["id"], args.get("start"), limit)
     text = search._plain(p["content"] or "", p["format"])
     if p["format"] == "html":
         text = re.sub(r"[ \t]+", " ", re.sub(r"\n\s*\n+", "\n\n", text)).strip()
@@ -212,22 +244,40 @@ def tool_read_page(args: dict, limit: int = 12000) -> str:
     return f"《{p['title']}》{link(p['id'])}，{time.strftime('%Y-%m-%d', time.localtime(p['updated']))} 更新\n\n{text[:limit]}{more}"
 
 
-def tool_save_page(bot_id: int, args: dict, task_id: int | None = None) -> str:
+def tool_save_page(bot_id: int, args: dict, task_id: int | None = None, saved: list | None = None) -> str:
+    """saved：传一个列表进来，保存成功的页面会放进去（调用方据此发页面改动的事件）。"""
+    from . import pagedoc
     pid = args.get("page_id")
-    if pid is not None and (not (old := get_page(pid, False)) or old["bot_id"] != bot_id):
-        return f"没保存：页面 #{pid} 不存在或不是你建的，只能更新自己的页面"
+    fmt = args.get("format")
+    if pid is not None:
+        if not (old := get_page(pid, False)):
+            return f"没保存：页面 #{pid} 不存在"
+        fmt = fmt or old["format"]
+        if "html" in (fmt, old["format"]):
+            if old["bot_id"] != bot_id:
+                return f"没保存：页面 #{pid} 是 html 页面 / 小应用，只有建它的 Bot 能更新"
+        elif old["locked"]:
+            return f"没保存：页面 #{pid}「{old['title']}」被用户锁定了，只能读"
+        elif args.get("version") is None and (who := pagedoc.last_by(pid)) != f"bot:{bot_id}":
+            return (f"没保存：页面 #{pid} 最近是「{pagedoc.name_of(who)}」改的。先用 read_page 看现在的内容，"
+                    f"再带上 version 更新；只改几处用 edit_page 更省事")
     app = args.get("app")
     if app and (unknown := [t for t in (app.get("tools") or []) if isinstance(t, str) and not applets_known(t)]):
         return f"没保存：app.tools 里有现在没有的工具 {', '.join(unknown)}，只能列你这一轮能用的工具"
     try:
-        p = save_page(bot_id, args.get("title", ""), args.get("content", ""), args.get("format") or "markdown",
-                      args.get("page_id"), task_id, app)
+        p = save_page(bot_id, args.get("title", ""), args.get("content", ""), fmt or "markdown",
+                      pid, task_id, app, by=f"bot:{bot_id}", base=args.get("version"))
+    except pagedoc.Conflict as e:
+        return pagedoc.conflict_text(e, "没保存")
     except (ValueError, TypeError) as e:
         return f"没保存：{e}"
+    if saved is not None:
+        saved.append(p)
     if p["app"]:
         return (f"已保存小应用 #{p['id']}「{p['title']}」，链接 {link(p['id'])}。回复里用 Markdown 链接附上它，对话里会直接显示这个小应用，"
                 f"用户能在里面操作。用 page_data 能读写它的数据（page_id={p['id']}）。")
-    return f"已保存页面 #{p['id']}「{p['title']}」，链接 {link(p['id'])}（用户在资料库里也能看到）。回复里用 Markdown 链接附上它。"
+    return (f"已保存页面 #{p['id']}「{p['title']}」（版本 {p['version']}），链接 {link(p['id'])}（用户在资料库里也能看到）。"
+            "回复里用 Markdown 链接附上它。")
 
 
 def applets_known(tool: str) -> bool:

@@ -68,6 +68,9 @@ The README lists the highlights; this is the full list. For setup see [Configura
 ## Library, images and links
 
 - **Library**: finished reports and web pages are saved as pages you can pin and share by link; browse, upload and download files on the shared computer.
+- **Edit the same page together**: markdown pages are stored block by block (each list item and each table row is its own block). Any Bot can use `edit_page` to change just the blocks it needs, and each block remembers who wrote it.
+  Edits only conflict when two of them touch the same block; the Bot then sees what the other one wrote and resubmits. Bots hand work over by linking the page, so no Notion account is needed.
+  Every change is kept in the page's history (edits by the same author within 10 minutes count as one version), and any version can be restored. Locked pages are read-only for Bots.
 - **Each Bot's library**: the Library tab in the side panel lists everything that Bot has handed you, newest first: pages, files it sent, images it drew and links in its replies. Filter by kind, search, open the original, and jump to the task that made it.
 - **Images and files**:
   - Attach files in chat: images show as thumbnails, other files as cards.

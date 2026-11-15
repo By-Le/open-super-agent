@@ -4,7 +4,7 @@
 每个工具只在这里写一次，Router 和 Worker 都从注册表（registry.py）找；在哪些场合给模型用、要不要走确认规则，都在 Tool 上写明。
 电脑工具、Router 自己的几个、botadmin 还没迁过来（见 registry.py 开头）。
 """
-from . import i18n, images, library, media, registry, routines, sandbox, search, skills, tools, videos
+from . import i18n, images, library, media, pagedoc, registry, routines, sandbox, search, skills, tools, videos
 from .registry import APPLET, ROUTER, WORKER, Call, Tool
 
 ctx = registry.Context("builtin")
@@ -33,8 +33,20 @@ async def _generate_video(call: Call) -> str:
 
 
 async def _save_page(call: Call) -> str:
-    out = library.tool_save_page(call.bot_id, call.args, call.task.id if call.task else None)
+    saved: list = []
+    out = library.tool_save_page(call.bot_id, call.args, call.task.id if call.task else None, saved)
+    for p in saved:   # changed 为空：网页上开着这个页面的要整页重新拉
+        await registry.emit("page_changed", page_id=p["id"], version=p["version"], by=f"bot:{call.bot_id}",
+                            title=p["title"], updated=p["updated"], changed=[])
     await registry.emit("pages_changed")
+    return out
+
+
+async def _edit_page(call: Call) -> str:
+    out, event = pagedoc.tool_edit(call.bot_id, call.args)
+    if event:
+        await registry.emit("page_changed", **event)
+        await registry.emit("pages_changed")
     return out
 
 
@@ -96,7 +108,8 @@ def load():
                   progress=lambda a: i18n.t("读取网页：{what}", what=str(a.get("url") or "")[:60])))
     ctx.tool(Tool("save_page", library.SAVE_PAGE, _save_page, when=_not_draft,
                   progress=lambda a: i18n.t("保存页面：{title}", title=str(a.get("title", ""))[:40])))
-    ctx.tool(Tool("read_page", library.READ_PAGE, lambda c: _sync(library.tool_read_page(c.args)), parallel=3,
+    # Worker 会把工具结果截到 8000 字，页面读多了后面的“接着读”就丢了
+    ctx.tool(Tool("read_page", library.READ_PAGE, lambda c: _sync(library.tool_read_page(c.args, 7000 if c.scope == WORKER else 12000)), parallel=3,
                   progress=lambda a: i18n.t("读页面 #{id}", id=a.get("page_id"))))
     ctx.tool(Tool("page_data", library.PAGE_DATA, lambda c: library.tool_page_data(c.bot_id, c.args),
                   progress=lambda a: i18n.t("小应用 #{id} 的数据", id=a.get("page_id"))))
@@ -121,6 +134,10 @@ def load():
     ctx.tool(Tool("run_code", sandbox.RUN_CODE, sandbox.tool_run, where=frozenset({WORKER}), when=lambda env: bool(sandbox.place()),
                   progress=sandbox.progress, describe="在沙箱里跑 Python / bash / node 代码：算数、处理表格和数据、画图表、转换格式"))
     ctx.tool(Tool("quick_code", sandbox.QUICK_CODE, sandbox.tool_quick, where=router, when=lambda env: bool(sandbox.place(quick=True))))
+    # 按段改资料库页面（pagedoc.py）：和 save_page 一样，对话里随时能用，后台任务只有正式的才能用
+    ctx.tool(Tool("edit_page", pagedoc.EDIT_PAGE, _edit_page, when=_not_draft,
+                  describe="按段改资料库里的 markdown 页面（别的 Bot 建的也能改，只动要改的段）",
+                  progress=lambda a: i18n.t("改页面 #{id}", id=a.get("page_id"))))
     from . import sources
     sources.register(ctx)
 

@@ -20,7 +20,7 @@ from starlette.background import BackgroundTask
 from . import backup
 backup.apply_pending()   # 确认过的恢复：在打开数据库之前换上
 from . import applets, approvals, auth, avatars, botadmin, bots, catalog, channels, computer, dm, events, groups, i18n, library, mcp_hub, media, memories, memory, push, router as rt, routines
-from . import generation, mcpapps, observe, outputs, prices, providers, search, security, settings, skills, tasklog, teach, templates, unfurl, vault, videos, websearch
+from . import generation, mcpapps, observe, outputs, pagedoc, prices, providers, search, security, settings, skills, tasklog, teach, templates, unfurl, vault, videos, websearch
 from .computer import link
 from .computer.base import HOSTS
 from . import builtin, registry  # noqa: F401  builtin：导入即注册内置工具
@@ -66,6 +66,7 @@ tasklog.notify = broadcast
 _events = registry.Context("server")
 _events.on("pages_changed", lambda: broadcast({"type": "pages_changed"}))
 _events.on("page_data", lambda page_id, data: broadcast({"type": "page_data", "page_id": page_id, "data": data}))
+_events.on("page_changed", lambda **kw: broadcast({"type": "page_changed", **kw}))
 
 
 async def parent_watch(pid: int, every: float = 2):
@@ -916,9 +917,11 @@ async def list_pages():
 
 @app.post("/api/pages")
 async def create_page(data: dict = Body(...)):
+    """新建页面。bot_id 是内容的作者（把 Bot 的回复存成页面时）；用户自己新建的空白页面不带 bot_id、allow_empty=true。"""
     try:
         p = library.save_page(data.get("bot_id"), data.get("title", ""), data.get("content", ""),
-                              data.get("format") or "markdown", task_id=data.get("task_id"), app=data.get("app"))
+                              data.get("format") or "markdown", task_id=data.get("task_id"), app=data.get("app"),
+                              allow_empty=bool(data.get("allow_empty")) and not data.get("bot_id"))
     except (ValueError, TypeError) as e:
         _err(e)
     await broadcast({"type": "pages_changed"})
@@ -937,8 +940,74 @@ async def page_raw(pid: int):
 
 @app.patch("/api/pages/{pid}")
 async def update_page(pid: int, data: dict = Body(...)):
+    old = _page_or_404(pid)
+    p = library.update_page(pid, data.get("title"), data.get("pinned"), data.get("locked"))
+    if p["version"] != old["version"]:   # 改了标题
+        await broadcast({"type": "page_changed", "page_id": pid, "version": p["version"], "by": "user",
+                         "title": p["title"], "updated": p["updated"], "changed": []})
+    await broadcast({"type": "pages_changed"})
+    return p
+
+
+# ---------- 资料库：按段读写、版本历史（pagedoc.py）。网页编辑器用；用户改的不受锁定限制 ----------
+def _markdown_or_400(pid: int) -> dict:
+    p = _page_or_404(pid)
+    if p["format"] != "markdown":
+        raise HTTPException(400, i18n.t("只有 markdown 页面能按段改"))
+    return p
+
+
+@app.get("/api/pages/{pid}/blocks")
+async def page_blocks(pid: int, since: int | None = None):
+    """页面的段：{version, order, blocks}。给了 since 就只给那个版本之后改过的段（order 总是全的）。"""
+    _markdown_or_400(pid)
+    p, blks = pagedoc.load(pid)
+    assert p
+    return {**{k: p[k] for k in ("id", "title", "version", "locked", "bot_id", "updated")},
+            "order": [b["id"] for b in blks],
+            "blocks": [pagedoc.public(b) for b in blks if since is None or b["v"] > since]}
+
+
+@app.post("/api/pages/{pid}/blocks")
+async def edit_blocks(pid: int, data: dict = Body(...)):
+    """按段改：{version, ops}。冲突时 409，detail 是 {version, conflicts}。"""
+    _markdown_or_400(pid)
+    try:
+        res = pagedoc.apply(pid, data.get("version"), data.get("ops"), "user")
+    except pagedoc.Conflict as e:
+        raise HTTPException(409, {"version": e.version, "conflicts": e.items})
+    except (ValueError, TypeError, LookupError) as e:
+        _err(e)
+    # 只发这一页的改动：pages_changed 会让列表、页面卡片都整个重拉，自动保存一次一次地发太浪费
+    await broadcast({"type": "page_changed", **pagedoc.event(pid, res, "user")})
+    return res
+
+
+@app.get("/api/pages/{pid}/versions")
+async def page_versions(pid: int, before: int | None = None, limit: int = 30):
     _page_or_404(pid)
-    p = library.update_page(pid, data.get("title"), data.get("pinned"))
+    return pagedoc.versions(pid, before, limit)
+
+
+@app.get("/api/pages/{pid}/versions/{vid}")
+async def page_version(pid: int, vid: int):
+    _page_or_404(pid)
+    if not (v := pagedoc.version(pid, vid)):
+        raise HTTPException(404, i18n.t("没有这一版"))
+    return v
+
+
+@app.post("/api/pages/{pid}/versions/{vid}/restore")
+async def restore_page(pid: int, vid: int):
+    _page_or_404(pid)
+    try:
+        p = pagedoc.restore(pid, vid)
+    except LookupError as e:
+        raise HTTPException(404, str(e))
+    except ValueError as e:
+        _err(e)
+    await broadcast({"type": "page_changed", "page_id": pid, "version": p["version"], "by": "user",
+                     "title": p["title"], "updated": p["updated"], "changed": []})
     await broadcast({"type": "pages_changed"})
     return p
 

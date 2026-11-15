@@ -56,6 +56,8 @@ osa/
   memory.py        SQLite 表、对话记录、Inline & Spill 上下文、新话题、用量和费用
   memories.py      长期记忆：每个 Bot 的记忆、共享的用户事实、做过的事、从其他助手导入
   library.py       资料库：页面（存储、分享链接、save_page 工具）、小应用的清单和数据（page_data 工具）、电脑里的文件（列目录、删除、置顶）
+  blocks.py        资料库页面的切段：把 Markdown 正文切成一段一段（只切行区间、不改文字）、段之间的 gap、对齐新旧两版的段
+  pagedoc.py       资料库页面按段读写：段的编号和作者、按段修改和冲突检查（edit_page 工具）、整页重写时保住没变的段、版本历史、read_page 的样子
   mcpapps.py       应用自带的界面（MCP Apps）：工具上的 _meta.ui、拼 CSP、取界面、替界面调工具 / 读资源、和小应用共用的确认
   applets.py       小应用：清单校验、页面里的 SDK（window.osa，返回原文时内联）、从界面调工具（走确认规则）和替用户发消息
   bots.py          Bot 和对话的增删改查、旧数据迁移
@@ -124,7 +126,8 @@ web/src/
 | `llm_usage` | 旧版本的调用记录，原样留着不加列（旧版本按位置插 8 个值，加列后退回旧版本会出错）。启动时把新出现的行搬进 `llm_calls`，搬到哪儿记在 `settings` 的 `llm_usage_moved` |
 | `task_steps` | 后台任务的过程：每一步的类型（思考 / 工具 / 结果……）、Heavy 里是哪个研究员、标题、内容、状态、用时。`task_id` 是“任务已派发”那条消息的 id；工具那一步的工具名在 `name`（标题会被进度说明盖掉）；只留最近 `memory.task_log_days` 天 |
 | `memories` | 长期记忆。`bot_id` 为空的是共享的用户事实；`kind=work` 是自动记的“做过的事” |
-| `pages`、`file_pins` | 资料库的页面（`share_token` 不为空表示已分享）和置顶的文件路径 |
+| `pages`、`file_pins` | 资料库的页面（`share_token` 不为空表示已分享）和置顶的文件路径。`block_meta`（JSON）是 markdown 页面每段的编号、作者（`by`：user / bot:<id> / 空）、最后改动的版本（`v`）和指纹（`h`），按位置对应从 `content` 切出来的段；`version` 每次提交 +1；`locked` 为 1 时 Bot 只能读 |
+| `page_versions` | 页面的版本历史：每版的标题、正文、段的元数据、谁改的、起止时间；同一个人 10 分钟内接着改并进同一版；`label` 是 `base`（旧页面第一次被改前的原样）或 `restore:<版本>`；每页最多 50 版、总共 4 MB |
 | `push_subs` | 开启了推送的设备（推送服务地址和密钥）；VAPID 私钥存在 `settings` 的 `vapid` 里 |
 | `channels` | 聊天软件连接：平台、绑定的对话（`chat_id`）、配对的私聊（`peer`）、配对码；token / App Secret 在保险库的 `channel_<id>` |
 | `settings` | 界面里改过的设置；`language` 是界面语言（zh / en）；`image_model` 是画图用的模型（以前叫 `avatar_model`）；`image_edit_model` 是照着图片画用的模型；`video_model` 是生成视频用的模型；`media_link_secret` 是签参考素材临时地址的密钥；`vision_tests` 是设置里“测试”测出来的哪些模型能看图 |
@@ -406,6 +409,14 @@ web/src/
 - 文件都在共用电脑的 `/data/workspace` 里，经 `exec` 读写，所以两个后端一样；路径一律先过 `library.norm`，跑出这个目录就拒绝。
   电脑没开时列目录不会自动开机，由用户点“开机查看”。
 - Heavy 模式下并行的几个 Worker 拿不到 `save_page`，免得每个都存一份页面。
+- **页面正文只有 `pages.content` 一份**。段从正文切出来（`blocks.split`，服务器的切法是唯一标准，网页编辑器保存后按返回的结果校正），
+  `block_meta` 只记编号和作者。指纹对不上（旧版本改过正文、恢复了旧备份）就按指纹对齐重建，没变的段编号不变；重建不涨版本号、不改 `updated`。
+- 列表的每个顶层项目、表格的每一行各是一段，所以每段带着和上一段之间的 gap（紧挨着还是隔一个空行）；拼回去时按 gap 拼，`split(join(parts)) == parts`。
+  新加的段的 gap 由 `blocks.fix_gaps` 算：列表项和非列表段之间一定隔空行，免得后面的段落被当成懒续行吞进列表项。
+- 按段改的冲突只看要改的段：它在调用方读过之后（`v > base`）被别人改过才拒绝，整批都不写，并把那几段现在的内容和改的人告诉调用方。
+  markdown 页面谁都能改（锁定的除外），html 页面和小应用的数据仍然只有建它的 Bot 能改；`save_page` 更新最近是别人改的页面必须带 `version`。
+- 用户在网页上按段保存只广播 `page_changed`（带改动的段编号），不发 `pages_changed`：后者会让列表、页面卡片整个重拉。
+- 搜索索引：页面改了一段，其余没变的块沿用原来的向量（`search._vectors`），编辑器几秒存一次也不会每次都把整页重算。
 
 ### 图片和附件
 - 你发的附件照旧传到电脑的 `uploads` 目录（任务靠路径处理），正文后面由服务端接上“[附件] 路径”（`media.with_marks`），这一行存进数据库、不翻译；
