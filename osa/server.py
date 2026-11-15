@@ -1081,6 +1081,21 @@ async def share_page(pid: int, data: dict = Body(...)):
     return p
 
 
+# ---------- 从 Notion 导入（notion_import.py）：只读 Notion，用服务器连着的那个会话 ----------
+@app.post("/api/notion/read")
+async def notion_read(data: dict = Body(...)):
+    """调一个只读的 Notion 工具（搜索、读页面、查数据库），原样返回它给的文字：导入前看看要导入的是什么。"""
+    from . import notion_import
+    try:
+        return {"text": await notion_import.call(str(data.get("tool") or ""), data.get("args") or {})}
+    except notion_import.NotConnected as e:
+        raise HTTPException(409, str(e))
+    except ValueError as e:
+        _err(e)
+    except (RuntimeError, asyncio.TimeoutError) as e:
+        raise HTTPException(502, str(e) or i18n.t("Notion 没有回应"))
+
+
 @app.get("/api/trash")
 async def list_trash():
     """回收站：删掉的页面、数据库、行，30 天后自动清掉。"""

@@ -1266,5 +1266,9 @@
   "没有这个按钮": "No such button",
   "回收站里没有这一项": "That item is not in the trash",
   "这一行所在的数据库已经不在了，恢复不了": "This row's database no longer exists, so it can't be restored",
-  "{who} 回复了你在「{title}」的评论": "{who} replied to your comment on \"{title}\""
+  "{who} 回复了你在「{title}」的评论": "{who} replied to your comment on \"{title}\"",
+  "只能用 Notion 读的工具": "Only Notion's read-only tools are allowed",
+  "Notion 没连上：先到应用市场连上 Notion": "Notion isn't connected: connect it in the app market first",
+  "Notion 报错：{error}": "Notion returned an error: {error}",
+  "Notion 没有回应": "Notion didn't respond"
 }
