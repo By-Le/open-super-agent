@@ -112,7 +112,9 @@ web/src/
   components/      Chat、Thread（讨论串面板）、Composer、Sidebar、BotEditor、Computer、Settings、Routines（技能和定时任务面板）、
                    Memories（记忆面板）、Library（资料库和分享页）、Groups（新建群聊和群聊面板）、Tasks（任务列表和过程）、Markdown
   components/doc/  资料库 markdown 页面的块编辑器（Tiptap，懒加载）：lazy.tsx 是主包唯一的入口；markdown.ts 段和文档互转；
-                   blockIds.ts 段的编号；sync.ts 自动保存、冲突、合进别人的改动；gutter.ts 作者条；nodes.tsx 提示框、折叠块、原文块；menus.tsx 菜单
+                   blockIds.ts 段的编号；sync.ts 自动保存、冲突、合进别人的改动；gutter.ts 作者条；nodes.tsx 提示框、折叠块、原文块；menus.tsx 菜单；
+                   comments.tsx 评论面板；history.tsx 和 diff.ts 版本历史（按段编号对齐、段内按字对比）
+  components/PageTree.tsx  资料库的页面树、挪到哪里的对话框
 ```
 
 ## 数据

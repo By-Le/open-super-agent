@@ -317,6 +317,28 @@ export class DocSync {
     this.bind(new Set([...edits.values()].map(d => d.id)))
   }
 
+  // ---------- 版本历史 ----------
+  /** 直接改服务器上的段（恢复某一段时用）：先把手头没存的存掉，再发，再把结果合进来。冲突照样抛出去（409）。 */
+  async push(ops: Op[]) {
+    await this.save()
+    while (this.inflight) await this.inflight
+    await api(`/api/pages/${this.pageId}/blocks`, { method: 'POST', body: { version: this.version, ops } })
+    await this.refetch()
+  }
+
+  /** 回到某一版（服务器把它作为新的一版提交，段的编号回来，评论重新挂上）。 */
+  async restore(versionId: number) {
+    await this.save()
+    while (this.inflight) await this.inflight
+    await api(`/api/pages/${this.pageId}/versions/${versionId}/restore`, { method: 'POST' })
+    await this.refetch()
+  }
+
+  /** 服务器上现在的段（版本历史拿来和旧版比）。 */
+  current(): { id: string; md: string }[] {
+    return this.order.map(id => ({ id, md: this.base.get(id)?.md ?? '' }))
+  }
+
   // ---------- 冲突 ----------
   /** 用我的：下次保存照样发出去（盖掉别人的）。 */
   keepMine(id: string) {

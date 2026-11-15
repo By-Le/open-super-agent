@@ -3,12 +3,14 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { EditorContent, useEditor } from '@tiptap/react'
 import { api, useStore } from '../../store'
 import { locale, t } from '../../i18n'
-import { notice } from '../Dialog'
+import { ask, notice } from '../Dialog'
 import Markdown from '../Markdown'
 import { extensions } from './schema'
 import { DocSync, REMOTE, type Conflict, type PageBlocks, type Status } from './sync'
 import { ImageBox, SlashMenu, Toolbar, safeHref, slashItems } from './menus'
 import { CommentsPanel, countOpen, type Draft, type PageComment } from './comments'
+import { HistoryPanel, HistoryView, type Version } from './history'
+import type { Row } from './diff'
 import { blocksOf } from './markdown'
 
 const when = (ts: number) => new Date(ts * 1000).toLocaleString(locale, { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
@@ -25,7 +27,9 @@ export default function DocEditor({ id, fallback }: { id: number; fallback: stri
   const [err, setErr] = useState('')
   const [imageBox, setImageBox] = useState(false)
   const [comments, setComments] = useState<PageComment[]>([])
-  const [panel, setPanel] = useState(false)
+  const [side, setSide] = useState<'comments' | 'history' | null>(null)   // 右边开着评论还是历史
+  const [viewing, setViewing] = useState<{ v: Version; list: Version[] } | null>(null)   // 正在看的那一版（正文的位置换成对比）
+  const [stamp, setStamp] = useState(0)   // 恢复以后让历史列表重新取
   const [draft, setDraft] = useState<Draft | null>(null)
   const [focus, setFocus] = useState<string | null>(null)
   const [owner, setOwner] = useState<number | null>(null)
@@ -148,7 +152,7 @@ export default function DocEditor({ id, fallback }: { id: number; fallback: stri
     const l = blocksOf(editor.state.doc).find(b => from >= b.pos && from <= b.pos + b.node.nodeSize)
     const known = l?.id && sync.current?.base.has(l.id) ? l.id : null   // 还没存上的新段先挂整页
     setDraft({ block: known, quote: editor.state.doc.textBetween(from, to, ' ').slice(0, 200) })
-    setPanel(true)
+    setSide('comments')
   }
   const jumpTo = (bid: string) => {
     document.querySelector(`.doc-body [data-bid="${bid}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' })
@@ -157,17 +161,41 @@ export default function DocEditor({ id, fallback }: { id: number; fallback: stri
   }
   const open = comments.filter(c => !c.parent_id && !c.resolved).length
 
+  // 版本历史：恢复一段（改过的换回旧内容，删掉的用原来的编号插回去）、回到某一版
+  const restoreBlock = async (r: Row) => {
+    const s = sync.current
+    if (!s || (r.kind !== 'change' && r.kind !== 'del')) return
+    const ops = r.kind === 'change' ? [{ op: 'replace', block: r.id, markdown: r.old }]
+      : [{ op: 'insert', ...(r.after && s.base.has(r.after) ? { after: r.after } : { end: true }), new_id: r.id, markdown: r.md }]
+    try {
+      await s.push(ops)
+      setStamp(x => x + 1)
+    } catch (e: any) {
+      notice(e?.status === 409 ? t('这一段刚又被改过，先看看现在的内容再决定。') : e.message)
+    }
+  }
+  const restorePage = async (v: Version) => {
+    if (!(await ask(t('回到版本 {n}？现在的内容会作为新的一版留在历史里，随时能再回来。', { n: v.version }), { ok: t('回到这一版') }))) return
+    try {
+      await sync.current?.restore(v.id)
+      setStamp(x => x + 1)
+      setViewing(null)
+    } catch (e: any) { notice(e.message) }
+  }
+
   const STATUS: Record<Status, string> = {
     saved: t('已保存'), saving: t('保存中…'), offline: t('离线，连上以后自动保存'), conflict: t('有冲突'), error: t('保存失败'),
   }
   const jump = (bid: string) => document.querySelector(`.doc-body [data-bid="${bid}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' })
   return (
-    <div className={'doc' + (panel ? ' with-comments' : '')}>
+    <div className={'doc' + (side ? ' with-comments' : '')}>
       <div className="doc-status muted small">
         <span className={'doc-dot ' + status} />{status === 'error' && sync.current?.error ? `${STATUS.error}：${sync.current.error}` : STATUS[status]}
         {editing && <span className="doc-editing"> · {t('{name} 正在编辑', { name: nameOf(editing) })}</span>}
         <span className="grow" />
-        {ready && <button className={'doc-cbtn' + (panel ? ' on' : '')} onClick={() => setPanel(!panel)} title={t('评论')}>
+        {ready && <button className={'doc-cbtn' + (side === 'history' ? ' on' : '')} title={t('历史')}
+          onClick={() => { sync.current?.save(); setSide(side === 'history' ? null : 'history'); if (side === 'history') setViewing(null) }}>🕘 {t('历史')}</button>}
+        {ready && <button className={'doc-cbtn' + (side === 'comments' ? ' on' : '')} onClick={() => { setSide(side === 'comments' ? null : 'comments'); setViewing(null) }} title={t('评论')}>
           💬 {open ? t('{n} 条评论', { n: open }) : t('评论')}</button>}
       </div>
       {conflicts.map(c => (
@@ -181,12 +209,19 @@ export default function DocEditor({ id, fallback }: { id: number; fallback: stri
       ))}
       {err && <div className="error-line">{err}</div>}
       {!ready && <div className="page-md"><Markdown text={fallback} /></div>}
-      <div className="page-md doc-wrap" style={ready ? undefined : { display: 'none' }}>
+      {/* 看历史时编辑器藏起来但不卸掉：没存的修改和撤销记录都还在 */}
+      <div className="page-md doc-wrap" style={ready && !viewing ? undefined : { display: 'none' }}>
         <EditorContent editor={editor} />
       </div>
-      {panel && <CommentsPanel pageId={id} comments={comments} order={sync.current?.order || []} ownerBot={owner}
+      {viewing && sync.current && <div className="page-md">
+        <HistoryView key={viewing.v.id} pageId={id} version={viewing.v} list={viewing.list} current={sync.current.current()}
+          onRestorePage={restorePage} onRestoreBlock={restoreBlock} onClose={() => setViewing(null)} />
+      </div>}
+      {side === 'history' && <HistoryPanel pageId={id} picked={viewing?.v || null} stamp={stamp} onPick={(v, list) => setViewing({ v, list })}
+        onClose={() => { setSide(null); setViewing(null) }} />}
+      {side === 'comments' && <CommentsPanel pageId={id} comments={comments} order={sync.current?.order || []} ownerBot={owner}
         blockMd={b => sync.current?.base.get(b)?.md ?? null} authorOf={b => sync.current?.base.get(b)?.by || ''}
-        draft={draft} setDraft={setDraft} focus={focus} onJump={jumpTo} onClose={() => { setPanel(false); setDraft(null) }} reload={loadComments} />}
+        draft={draft} setDraft={setDraft} focus={focus} onJump={jumpTo} onClose={() => { setSide(null); setDraft(null) }} reload={loadComments} />}
       {editor && !editor.isDestroyed && <>
         <SlashMenu editor={editor} />
         <Toolbar editor={editor} onComment={startComment} />
