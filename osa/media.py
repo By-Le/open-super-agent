@@ -132,15 +132,40 @@ def url(mid: str) -> str:
     return f"/api/media/{mid}"
 
 
+# ---------- 资料库页面里的图片 ----------
+# 页面正文用 ![说明](/api/media/编号) 引用对话里的图片（Bot 画的、用户发的）。网页上登录了能看；分享出去的页面经
+# /api/shared/<token>/media/<编号> 看（只给正文里引用着的）。被页面（含历史版本）引用着的图片不会被 gc 清掉。
+EMBED = re.compile(r"/api/media/([0-9a-f]{24})")
+_BARE = re.compile(r"(!\[[^\]\n]*\]\()\s*(?:media:)?([0-9a-f]{24})\s*\)")
+
+
+def embed(md: str) -> str:
+    """Bot 写进页面的 Markdown：图片地址只写了编号的（![说明](编号)）补成 /api/media/编号；引用的图片不存在时报 ValueError。"""
+    md = _BARE.sub(lambda m: f"{m.group(1)}/api/media/{m.group(2)})", md or "")
+    for mid in dict.fromkeys(EMBED.findall(md)):
+        if not info(mid):
+            raise ValueError(f"图片 {mid} 不存在（可能已经被清理了），换一张或者重新画")
+    return md
+
+
+def image_md(mid: str, alt: str = "") -> str:
+    alt = re.sub(r"[\[\]\n\r]+", " ", alt or "").strip()[:60]
+    return f"![{alt}](/api/media/{mid})"
+
+
 def used() -> set[str]:
-    """消息里引用着的图片。"""
-    return {r[0] for r in conn.execute("""select distinct json_extract(a.value, '$.media')
+    """消息里引用着的图片，加上资料库页面（现在的和历史版本）里引用着的。"""
+    out = {r[0] for r in conn.execute("""select distinct json_extract(a.value, '$.media')
         from messages m, json_each(m.meta, '$.attachments') a
         where m.meta like '%"attachments"%' and json_extract(a.value, '$.media') is not null""")}
+    for (c,) in conn.execute("""select content from pages where content like '%/api/media/%'
+                                union all select content from page_versions where content like '%/api/media/%'"""):
+        out.update(EMBED.findall(c or ""))
+    return out
 
 
 def gc():
-    """清掉一天前存的、现在没有消息在用的图片。"""
+    """清掉一天前存的、现在没有消息和页面在用的图片。"""
     keep = used()
     old = [r[0] for r in conn.execute("select id from media where created < ?", (time.time() - KEEP_S,)) if r[0] not in keep]
     if old:

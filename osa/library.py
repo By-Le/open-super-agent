@@ -259,6 +259,7 @@ SAVE_PAGE = {"type": "function", "function": {
     "description": "把成品（报告、清单、对比表、网页等）保存成资料库里的页面，返回页面链接。"
                    "用户要“做成页面/报告/可以分享的页面”，或结果很长、以后还要看时用。给 page_id 就是整页更新那个页面"
                    "（markdown 页面别的 Bot 建的也能更新，要带上 read_page 显示的 version；只改几处用 edit_page）。"
+                   "markdown 里放对话里的图片（上下文里“[图片]”后面的编号，包括你画的）写成 ![说明](/api/media/编号)。"
                    "要做成可交互的小应用（表单、看板、计算器、能点按钮查东西的面板）时 format=html 并填 app，"
                    "页面里用 window.osa 调工具、读写数据、给你发消息（见系统提示词里的说明）。",
     "parameters": {"type": "object", "properties": {
@@ -353,7 +354,11 @@ def tool_save_page(bot_id: int, args: dict, task_id: int | None = None, saved: l
     if app and (unknown := [t for t in (app.get("tools") or []) if isinstance(t, str) and not applets_known(t)]):
         return f"没保存：app.tools 里有现在没有的工具 {', '.join(unknown)}，只能列你这一轮能用的工具"
     try:
-        p = save_page(bot_id, args.get("title", ""), args.get("content", ""), fmt or "markdown",
+        from . import media
+        content = args.get("content", "")
+        if (fmt or "markdown") == "markdown" and isinstance(content, str):
+            content = media.embed(content)
+        p = save_page(bot_id, args.get("title", ""), content, fmt or "markdown",
                       pid, task_id, app, by=f"bot:{bot_id}", base=args.get("version"),
                       parent_id=args.get("parent_id") if pid is None else None)
     except pagedoc.Conflict as e:

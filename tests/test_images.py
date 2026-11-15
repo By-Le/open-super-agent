@@ -5,7 +5,7 @@ import httpx
 import pytest
 from conftest import find, settle, until
 from fakellm import Call
-from osa import approvals, avatars, bots, generation, images, library, media, memory, prices, providers, server
+from osa import approvals, avatars, bots, generation, images, library, media, memory, pagedoc, prices, providers, server
 from osa.config import CFG
 
 PNG = providers._png(8, 8, (10, 200, 30))
@@ -99,6 +99,38 @@ async def test_ask_then_draw_then_always(llm, events, make_bot, sf):
     await until(lambda: len(find(cid, role="assistant")) == 3, what="第三轮")
     ctx = [m["content"] for m in llm.bodies("router", "Painter")[-1]["messages"] if isinstance(m["content"], str)]
     assert any("画好了一张图" in c and "再来一只" in c for c in ctx)
+
+
+async def test_draw_into_page(llm, events, make_bot, sf):
+    """在页面的评论里要图：generate_image 带 page_id / after，等确认、画好以后自动插在那段后面，Bot 不用回来。"""
+    a = make_bot("Painter")
+    cid = a["chat_id"]
+    pid = library.save_page(a["id"], "报告", "# 报告\n\n第一段。\n\n第二段。")["id"]
+    first = pagedoc.load(pid)[1][1]["id"]
+    try:
+        llm.script("router:Painter", Call("generate_image", {"prompt": "第一段的配图", "page_id": pid, "after": f"⟦{first}⟧"}), "请确认")
+        await server.safe_handle(bots.chat(cid), "给第一段配个图")
+        tool = [m for m in llm.bodies("router", "Painter")[-1]["messages"] if m["role"] == "tool"][0]
+        assert "放进页面 #" in tool["content"]
+        card = await until(lambda: next((x for x in approvals.pending.values() if x["tool"] == "generate_image"), None), what="确认卡片")
+        approvals.resolve(card["id"], True)
+        await until(lambda: "/api/media/" in library.get_page(pid)["content"], what="图插进页面")
+        blks = pagedoc.load(pid)[1]
+        assert [b["md"][:2] for b in blks] == ["# ", "第一", "![", "第二"]
+        mid = find(cid, kind="image")[0]["meta"]["attachments"][0]["media"]
+        assert blks[2]["md"] == f"![第一段的配图](/api/media/{mid})" and blks[2]["by"] == f"bot:{a['id']}"
+        assert any(e["page_id"] == pid and blks[2]["id"] in e["changed"] for e in events.of("page_changed"))
+        await settle()
+
+        # 页面不对：不画；段落不对：也不画
+        for args, want in (({"page_id": 999999}, "没有页面 #999999"), ({"page_id": pid, "after": "zzzz"}, "没有段落")):
+            llm.script("router:Painter", Call("generate_image", {"prompt": "x", **args}), "好")
+            await server.safe_handle(bots.chat(cid), "再画")
+            tool = [m for m in llm.bodies("router", "Painter")[-1]["messages"] if m["role"] == "tool"][0]
+            assert tool["content"].startswith("没画") and want in tool["content"]
+        assert not [x for x in approvals.pending.values() if x["tool"] == "generate_image"]
+    finally:
+        library.delete_page(pid)
 
 
 async def test_reject_draws_nothing(llm, events, make_bot, sf):

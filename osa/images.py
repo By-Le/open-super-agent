@@ -5,6 +5,8 @@
 - 要问的时候不让 Router 干等：工具马上返回“等用户确认”，卡片和画图在后台进行，Router 这一轮照常说完，
   用户也能在对话里说“画吧”（Router 用 resolve_approval 处理）。不用问的直接画，几秒后返回“已画好”。
 - 画好的原图存进 media，对话里记一条 role=task、kind=image 的消息（带描述、模型、价格和附件），显示成 Bot 发的图片。
+- 放进资料库页面（page_id、after 参数，比如用户在页面评论里要图）：画好后插在那段后面（builtin 传进来的 put），
+  要等确认的也是画好就插，Bot 不用回来。返回给模型的话里带图片编号和 ![说明](/api/media/编号) 的写法，以后也能自己放进页面。
 - 参考图（images 参数）：照着改、照着画。写对话里图片的编号（上下文里“[图片] 编号”，见 memory.context）或电脑里的路径
   （“[附件] 路径”）。路径先在消息的附件里找存好的那份，找不到再去电脑里读。带了参考图就用“照着图片画”的模型
   （avatars.current(refs)），各家怎么传按配方（generation.yaml）。参考了哪几张记在消息的 meta.refs 里。
@@ -23,11 +25,14 @@ GENERATE_IMAGE = {"type": "function", "function": {
     "description": "按描述画一张图，画好直接显示在对话里。默认会先弹卡片请用户确认（上面写着模型和价格）。"
                    "描述写具体：主体、风格、构图、颜色、光线；图里要有文字就写清楚是哪几个字。"
                    "用户要照着图片改、照着画（换风格、换背景、加减东西、照这个人物或商品画）时，把那几张图放进 images，"
-                   "描述里写清楚怎么改、每张图是干什么用的。",
+                   "描述里写清楚怎么改、每张图是干什么用的。"
+                   "要放进资料库页面（比如用户在页面的评论里要图）就填 page_id 和 after，画好会自动插在那段后面，不用再 edit_page。",
     "parameters": {"type": "object", "properties": {
         "prompt": {"type": "string", "description": "画面描述，最多 1000 字"},
         "images": {"type": "array", "items": {"type": "string"}, "maxItems": MAX_REFS,
-                   "description": "参考图（可选）：对话里图片的编号（“[图片]”后面那串）或者电脑里图片的路径（“[附件]”后面那个）"}},
+                   "description": "参考图（可选）：对话里图片的编号（“[图片]”后面那串）或者电脑里图片的路径（“[附件]”后面那个）"},
+        "page_id": {"type": "integer", "description": "可选：画好后放进这个资料库页面（markdown 页面）"},
+        "after": {"type": "string", "description": "可选，和 page_id 一起：放在这个段落编号后面（评论挂的那段、read_page 里的 ⟦xxxx⟧）；不填放最后"}},
         "required": ["prompt"]}}}
 
 NO_MODEL = ("没画：还没有能画图的模型。照实告诉用户：去 设置 → 模型 添加有画图模型的服务（硅基流动的 Kolors 免费，"
@@ -101,20 +106,29 @@ def _load(refs: list[dict]) -> list[generation.Ref]:
     return out
 
 
-async def _make(chat_id: int, prompt: str, m: dict, post, refs: list[dict]) -> str:
-    """真的画，画好发进对话。返回给模型的话；失败时报 ValueError。"""
+async def _make(chat_id: int, prompt: str, m: dict, post, refs: list[dict], put=None) -> str:
+    """真的画，画好发进对话（给了 put 再放进页面）。返回给模型的话；画失败时报 ValueError。"""
     data, _ = await avatars.draw(prompt, m["provider"], m["model"], _load(refs))
     item = media.save(data, _name(prompt), limit=generation.MAX_IMAGE)
     price = prices.image_price(m["provider"], m["model"])
     att = {"name": item["name"], "size": item["size"], "media": item["id"], "mime": item["mime"], "w": item["w"], "h": item["h"]}
     await post("task", f"[画图] {prompt}", chat_id, kind="image", prompt=prompt, model=m["model"], provider=m["provider"],
                price=price, attachments=[att], **({"refs": [{"media": r["id"], "name": r["name"]} for r in refs]} if refs else {}))
-    return "已画好，图片已经显示在对话里，用户看得到。不用描述画面，简短说一句就行。"
+    text = "已画好，图片已经显示在对话里，用户看得到。"
+    if put:
+        try:
+            text += await put(item["id"], prompt)
+        except Exception as e:
+            await post("task", i18n.t("[图片没能放进页面 #{page}：{error}]", page=put.page, error=e), chat_id, kind="note")
+            text += f"但没能放进页面 #{put.page}：{e}。"
+    return text + (f"图片编号 {item['id']}，放进资料库页面写 {media.image_md(item['id'], '说明')}。"
+                   "不用描述画面，简短说一句就行。")
 
 
-async def generate(bot: dict, chat_id: int, private_chat_id: int, prompt: str, post, images=None) -> str:
+async def generate(bot: dict, chat_id: int, private_chat_id: int, prompt: str, post, images=None, put=None) -> str:
     """generate_image 工具。bot：谁在画；chat_id：图片发到哪个对话；private_chat_id：确认卡片发到哪（Bot 的私聊）。
-    post 是 Router.add：(role, content, chat_id, **meta)。images：参考图（编号或路径）。"""
+    post 是 Router.add：(role, content, chat_id, **meta)。images：参考图（编号或路径）。
+    put：画好后把图放进资料库页面的协程 put(编号, 描述) -> 给模型的话，带 .page（页面编号）；不放就是 None。"""
     prompt = (prompt or "").strip()[:1000]
     if not prompt:
         return "没画：描述是空的"
@@ -133,7 +147,7 @@ async def generate(bot: dict, chat_id: int, private_chat_id: int, prompt: str, p
     price = prices.image_price(m["provider"], m["model"])
     if not approvals.decide(TOOL)[0]:
         try:
-            return await _make(chat_id, prompt, m, post, refs)
+            return await _make(chat_id, prompt, m, post, refs, put)
         except ValueError as e:
             return f"没画成：{e}"
 
@@ -148,12 +162,13 @@ async def generate(bot: dict, chat_id: int, private_chat_id: int, prompt: str, p
         if not ok:
             return
         try:
-            await _make(chat_id, prompt, m, post, refs)
+            await _make(chat_id, prompt, m, post, refs, put)
         except Exception as e:
             await post("task", i18n.t("[没画成：{error}]", error=e), chat_id, kind="note")
 
     t = asyncio.create_task(wait_and_draw())
     _running.add(t)
     t.add_done_callback(_running.discard)
-    return (f"已弹出确认卡片（模型 {m['model']}，{price_text(price)}），用户同意后会自动画好、显示在对话里，你不用再回来。"
+    where = f"、放进页面 #{put.page}" if put else ""
+    return (f"已弹出确认卡片（模型 {m['model']}，{price_text(price)}），用户同意后会自动画好、显示在对话里{where}，你不用再回来。"
             "简短告诉用户确认一下就行，不要说已经画好。")

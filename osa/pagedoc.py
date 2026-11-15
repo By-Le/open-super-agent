@@ -10,7 +10,7 @@
 """
 import json
 import time
-from . import blocks, bots, i18n, library
+from . import blocks, bots, i18n, library, media
 from .memory import conn
 
 conn.execute("""create table if not exists page_versions(
@@ -471,7 +471,8 @@ EDIT_PAGE = {"type": "function", "function": {
     "name": "edit_page",
     "description": "按段改资料库里的 markdown 页面（别的 Bot 建的也能改）：只动要改的段，不会冲掉别人刚改的地方，比 save_page 整页重写省事。"
                    "先用 read_page 读，拿到版本号和每段前面的段落编号 ⟦xxxx⟧。一次可以改好几处，全部生效或者都不生效；"
-                   "要改的段在你读过之后被别人改了，会告诉你它现在的内容，按新版本号再提交就行。",
+                   "要改的段在你读过之后被别人改了，会告诉你它现在的内容，按新版本号再提交就行。"
+                   "放对话里的图片（上下文里“[图片]”后面的编号，包括你画的）写成 ![说明](/api/media/编号)。",
     "parameters": {"type": "object", "properties": {
         "page_id": {"type": "integer"},
         "version": {"type": "integer", "description": "read_page 显示的版本号"},
@@ -504,7 +505,38 @@ def _bot_ops(raw) -> list[dict]:
             out.append({"op": "insert", _BOT_OPS[t]: o.get("block") or "", "markdown": md})
         if t != "delete" and not md.strip():
             raise ValueError(f"{t} 要给 markdown（删掉一段用 delete）")
+        if md:
+            out[-1]["markdown"] = media.embed(md)
     return out
+
+
+# ---------- 画好的图放进页面（generate_image 的 page_id / after） ----------
+def image_place(pid, after) -> tuple[str | None, dict | None]:
+    """画图前先看放得进去：返回 (不行的原因, {page, after, title})。after 是段落编号，不给就放最后。"""
+    p, blks = load(pid) if isinstance(pid, int) and not isinstance(pid, bool) else (None, [])
+    if not p:
+        return f"没有页面 #{pid}", None
+    if p["format"] != "markdown":
+        return f"页面 #{pid} 是 html 页面，放不进图片", None
+    if p.get("locked"):
+        return f"页面 #{pid}「{p['title']}」被用户锁定了，只能读", None
+    bid = blocks.clean_id(after) if after else None
+    if bid and bid not in {b["id"] for b in blks}:
+        return f"页面 #{pid} 里没有段落 ⟦{bid}⟧（read_page 看段落编号；不填 after 就放在最后）", None
+    return None, {"page": p["id"], "after": bid, "title": p["title"]}
+
+
+def put_image(place: dict, mid: str, alt: str, by: str) -> dict:
+    """把图片插在 place["after"] 那段后面（那段已经不在了、或者没给就放最后）。按页面现在的版本插，不会冲突。
+    返回 apply 的结果；页面没了、被锁了报错。"""
+    p, blks = load(place["page"])
+    if not p:
+        raise LookupError(i18n.t("没有页面 #{id}", id=place["page"]))
+    if p.get("locked"):
+        raise ValueError(i18n.t("页面 #{id} 被锁定了，Bot 只能读", id=p["id"]))
+    after = place.get("after")
+    op = {"op": "insert", "after": after} if after and any(b["id"] == after for b in blks) else {"op": "insert", "end": True}
+    return apply(p["id"], p["version"], [op | {"markdown": media.image_md(mid, alt)}], by)
 
 
 def conflict_text(e: Conflict, head: str = "没改") -> str:

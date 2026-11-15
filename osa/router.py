@@ -134,7 +134,8 @@ DM_TURN = """
 COMMENT_TURN = """
 
 这一轮是因为用户在资料库页面 #{page}《{title}》上写了评论 #{comment}（见最近的消息），要你处理。
-按评论的意思做：要改页面就先 read_page 再用 edit_page 改；处理完用 comment_page 回复（reply_to={root}），说清楚改了什么，办完了加 resolve=true。
+按评论的意思做：要改页面就先 read_page 再用 edit_page 改；要配图就用 generate_image 并填 page_id={page}、after=评论挂的那段，
+画好会自动插进页面（对话里已有的图用 edit_page 写 ![说明](/api/media/编号)）；处理完用 comment_page 回复（reply_to={root}），说清楚改了什么，办完了加 resolve=true。
 意思不清楚就在评论里问。你这一轮没用 comment_page 回复的话，这一轮的回复会自动贴进这串评论；要查证、多步的就 dispatch，任务结果也会贴回来。"""
 
 # 管理 Bot（见 botadmin.py）：主 Bot 能查看、新建、修改、删除所有 Bot；别的 Bot 只能改自己，其余找主 Bot。

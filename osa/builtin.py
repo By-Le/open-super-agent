@@ -68,8 +68,21 @@ async def _search_posts(call: Call) -> str:
 
 
 async def _generate_image(call: Call) -> str:
+    put = None
+    if call.args.get("page_id") is not None:   # 画好放进资料库页面：先看放得进去，再画
+        why, place = pagedoc.image_place(call.args.get("page_id"), call.args.get("after"))
+        if why:
+            return f"没画：{why}"
+        by = f"bot:{call.bot_id}"
+
+        async def put(mid: str, alt: str) -> str:
+            res = pagedoc.put_image(place, mid, alt, by)
+            await registry.emit("page_changed", **pagedoc.event(place["page"], res, by))
+            await registry.emit("pages_changed")
+            return f"也放进了页面 #{place['page']}「{place['title']}」（现在是版本 {res['version']}）。"
+        put.page = place["page"]
     return await images.generate(call.bot, call.chat_id, call.private_chat_id, str(call.args.get("prompt") or ""), call.post,
-                                 call.args.get("images"))
+                                 call.args.get("images"), put)
 
 
 WEB_SEARCH = {"type": "function", "function": {

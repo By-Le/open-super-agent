@@ -1213,6 +1213,15 @@ async def shared_raw(token: str):
     return _raw(p)
 
 
+@app.get("/api/shared/{token}/media/{mid}")
+async def shared_media(request: Request, token: str, mid: str):
+    """分享出去的页面里的图片（/api/media 要登录）：只给这个页面正文里引用着的。"""
+    p = library.by_token(token)
+    if not p or p["format"] != "markdown" or mid not in media.EMBED.findall(p.get("content") or ""):
+        raise HTTPException(404)
+    return _media_response(mid, rng=request.headers.get("range"))
+
+
 # ---------- 资料库：电脑里的文件 ----------
 async def _files_pc(start: bool):
     """文件都在共用电脑里。start=False 时电脑没开就返回 None，不替用户开机。"""

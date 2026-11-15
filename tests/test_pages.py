@@ -1,12 +1,13 @@
 """资料库页面按段读写（osa/pagedoc.py）：段的编号和作者、按段修改和冲突、整页重写、锁定、版本历史、给 Bot 读的样子、接口。"""
 import json
+import os
 import time
 
 import httpx
 import pytest
 from conftest import until
 from fakellm import Call
-from osa import bots, library, memory, pagedoc, search, server
+from osa import bots, library, media, memory, pagedoc, providers, search, server
 
 conn = memory.conn
 
@@ -221,6 +222,55 @@ def test_tool_edit(bot, pages):
         out, ev = pagedoc.tool_edit(b["id"], {"page_id": pid, "version": 3, "ops": bad})
         assert out.startswith("没改") and ev is None
     assert pagedoc.tool_edit(b["id"], {"page_id": 999999, "version": 1, "ops": []})[0] == "没有页面 #999999"
+
+
+def test_chat_images_in_pages(bot, pages):
+    """对话里的图片放进页面：只写了编号的补成 /api/media/编号；不存在的图片不让写；页面（含历史版本）引用着的不会被清掉。"""
+    b = bot("写手")
+    pid = new(pages, b)
+    i = ids(pid)
+    img = media.save(providers._png(6, 6, (200, 10, 10)), "信息图.png")
+    out, ev = pagedoc.tool_edit(b["id"], {"page_id": pid, "version": 1, "ops": [
+        {"op": "insert_after", "block": i[1], "markdown": f"![信息图]({img['id']})"}]})
+    assert "已改页面" in out and ev
+    assert md_of(pid)[2] == f"![信息图](/api/media/{img['id']})"
+    gone = "0" * 24
+    out, ev = pagedoc.tool_edit(b["id"], {"page_id": pid, "version": 2, "ops": [{"op": "append", "markdown": f"![x](/api/media/{gone})"}]})
+    assert out.startswith("没改") and gone in out and "不存在" in out and ev is None
+    # save_page 也一样
+    out = library.tool_save_page(b["id"], {"title": "配图", "content": f"# 配图\n\n![图](media:{img['id']})"})
+    new_id = int(out.split("#", 1)[1].split("「", 1)[0])
+    pages.append(new_id)
+    assert f"![图](/api/media/{img['id']})" in library.get_page(new_id)["content"]
+    assert library.tool_save_page(b["id"], {"title": "坏", "content": f"![x]({gone})"}).startswith("没保存")
+    # 一天前存的、对话里没用到的图片会被清掉；页面里用着的留着，只剩历史版本里用着的也留着
+    stray = media.save(providers._png(5, 9, tuple(os.urandom(3))), "没人用.png")   # 编号是内容的哈希：别和别的测试的图撞上
+    conn.execute("update media set created=0 where id in (?, ?)", (img["id"], stray["id"]))
+    conn.commit()
+    media.gc()
+    assert media.info(img["id"]) and not media.info(stray["id"])
+    pagedoc.apply(pid, 2, [{"op": "delete", "block": ids(pid)[2]}], "user")
+    library.delete_page(new_id)
+    pages.remove(new_id)
+    media.gc()
+    assert media.info(img["id"])   # 页面 pid 的历史版本里还有它（能恢复回来）
+
+
+async def test_shared_page_images(bot, pages):
+    """分享出去的页面里的图片：从分享链接下面取，只给正文里引用着的。"""
+    b = bot("写手")
+    img = media.save(providers._png(7, 7, (9, 9, 200)), "图.png")
+    other = media.save(providers._png(7, 7, (9, 200, 9)), "别的.png")
+    pid = new(pages, b, f"看图\n\n![图](/api/media/{img['id']})")
+    token = library.share(pid, True)["share_token"]
+    async with http() as c:
+        r = await c.get(f"/api/shared/{token}/media/{img['id']}")
+        assert r.status_code == 200 and r.content == media.get(img["id"])[1]
+        assert (await c.get(f"/api/shared/{token}/media/{other['id']}")).status_code == 404
+        assert (await c.get(f"/api/shared/nope/media/{img['id']}")).status_code == 404
+    library.share(pid, False)
+    async with http() as c:
+        assert (await c.get(f"/api/shared/{token}/media/{img['id']}")).status_code == 404
 
 
 def test_render(bot, pages):

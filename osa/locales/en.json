@@ -342,6 +342,8 @@
   "没有这种电脑：{name}": "Unknown computer type: {name}",
   "没有连上": "Couldn't connect",
   "没有页面 #{id}": "No page #{id}",
+  "页面 #{id} 被锁定了，Bot 只能读": "Page #{id} is locked: bots can only read it",
+  "[图片没能放进页面 #{page}：{error}]": "[Couldn't put the image into page #{page}: {error}]",
   "没法连接": "Can't connect",
   "没连上": "Couldn't connect",
   "浏览器控制脚本运行失败": "The browser control script failed",

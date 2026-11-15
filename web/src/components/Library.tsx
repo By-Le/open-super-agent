@@ -207,7 +207,9 @@ export function SharedPage({ token }: { token: string }) {
         <b>{p.title}</b>
         <span className="muted small">{p.bot ? `${p.bot.name} · ` : ''}{when(p.updated)}</span>
       </header>
-      <PageBody format={p.format} content={p.content} rawUrl={`/api/shared/${token}/raw`} />
+      {/* 页面里引用的对话图片（/api/media/编号）要登录才能看：分享页从这个分享链接下面取 */}
+      <PageBody format={p.format} content={p.format === 'markdown' ? p.content.replaceAll('/api/media/', `/api/shared/${token}/media/`) : p.content}
+        rawUrl={`/api/shared/${token}/raw`} />
     </div>
   )
 }
