@@ -542,6 +542,9 @@ function handle(d: any) {
     case 'pages_changed':
       window.dispatchEvent(new CustomEvent('osa-pages'))
       break
+    case 'db_changed':   // 数据库改了（行、属性、表结构、视图）：开着的库、行页面的属性栏重新取
+      window.dispatchEvent(new CustomEvent('osa-db', { detail: d }))
+      break
     case 'page_comments':   // 某个页面的评论变了：打开着的评论面板去取
       window.dispatchEvent(new CustomEvent('osa-page-comments', { detail: d }))
       break

@@ -12,6 +12,11 @@ import { FileLink, fileUrl } from './Media'
 import { PC_NAMES } from './Computer'
 import { DocPage, prefetchDoc } from './doc/lazy'
 import { MoveDialog, PageTree, deletePage, newPage } from './PageTree'
+import DbView from './db/DbView'
+import PropsBar from './db/PropsBar'
+import { newDb } from './db/db'
+
+const icon = (p: Page) => (p.kind === 'db' ? '▦' : p.app ? '▣' : p.format === 'html' ? '◧' : '▤')
 
 const when = (ts: number) => new Date(ts * 1000).toLocaleString(locale, { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
 export const size = (n: number) => n < 1024 ? `${n} B` : n < 1 << 20 ? `${(n / 1024).toFixed(1)} KB` : `${(n / (1 << 20)).toFixed(1)} MB`
@@ -81,7 +86,10 @@ function Pages() {
     return () => window.removeEventListener('osa-pages', load)
   }, [])
   if (!list) return <div className="muted">{t('加载中…')}</div>
-  const add = <button className="btn" onClick={() => newPage()}>＋ {t('新建页面')}</button>   // i18n-ignore
+  const add = <>
+    <button className="btn" onClick={() => newPage()}>＋ {t('新建页面')}</button>{/* i18n-ignore */}
+    <button className="btn" onClick={() => newDb()}>＋ {t('新建数据库')}</button>{/* i18n-ignore */}
+  </>
   if (!list.length) return (
     <div className="lib-empty">
       <p>{t('还没有页面。')}</p>
@@ -103,7 +111,7 @@ function Pages() {
         </button>
       )) : <div className="muted small">{t('没找到相关的页面')}</div>)}
       {!hits && <PageTree list={list} onMove={setMoving} row={p => <>
-        <span className="lib-icon">{p.app ? '▣' : p.format === 'html' ? '◧' : '▤'}</span>
+        <span className="lib-icon">{icon(p)}</span>
         <span className="lib-main">
           <b>{p.pinned && <span className="pin-mark">📌 </span>}{p.title}</b>
           <span className="lib-meta"><BotTag id={p.bot_id} agent={p.agent_id} /> · {when(p.updated)}{p.app && <span className="tag">{t('小应用')}</span>}{p.share_token && <span className="tag">{t('已分享')}</span>}</span>
@@ -163,31 +171,35 @@ function PageView({ id }: { id: number }) {
             <button className="btn" title={t('更多')} onClick={() => setMore(!more)}>⋯</button>
             {more && <div className="menu">
               <button onClick={() => patch({ pinned: !p.pinned })}>{p.pinned ? t('取消置顶') : t('置顶')}</button>
-              {p.format === 'markdown' && <button title={t('锁定后 Bot 只能读，你照样能改')} onClick={() => patch({ locked: !p.locked })}>
+              {p.format === 'markdown' && p.kind !== 'row' && <button title={t('锁定后 Bot 只能读，你照样能改')} onClick={() => patch({ locked: !p.locked })}>
                 {p.locked ? t('解锁') : t('锁定（Bot 只能读）')}</button>}
               {p.format === 'html' && <button onClick={() => window.open(`/api/pages/${id}/raw`, '_blank', 'noreferrer')}>{t('新窗口打开')}</button>}
-              <button onClick={() => api('/api/pages').then(setMoving)}>{t('挪到…')}</button>
+              {p.kind !== 'row' && <button onClick={() => api('/api/pages').then(setMoving)}>{t('挪到…')}</button>}
               <button className="danger-text" onClick={del}>{t('删除')}</button>
             </div>}
           </div>
         </div>}
       </header>
       {moving && p && <MoveDialog page={p} list={moving} onClose={() => { setMoving(null); load() }} />}
-      {err ? <div className="lib-body"><div className="error-line">{err}</div></div> : !p ? <div className="lib-body muted">{t('加载中…')}</div> : (
-        <div className={'scroller' + (p.format === 'html' ? ' frame-wrap' : '')}>
+      {err ? <div className="lib-body"><div className="error-line">{err}</div></div> : !p || p.id !== id ? <div className="lib-body muted">{t('加载中…')}</div> : (
+        <div className={'scroller' + (p.format === 'html' ? ' frame-wrap' : '') + (p.kind === 'db' ? ' db-page' : '')}>
           {!!p.ancestors?.length && <div className="page-path small">
             <button className="link-btn" onClick={() => openLibrary()}>{t('资料库')}</button>
             {p.ancestors.map(a => <span key={a.id}> / <button className="link-btn" onClick={() => openLibrary(a.id)}>{a.title}</button></span>)}
           </div>}
           {p.format !== 'html' && <div className="page-info muted small"><BotTag id={p.bot_id} agent={p.agent_id} /> · {t('更新于 {time}', { time: when(p.updated) })}{p.task_id ? ' · ' + t('来自任务 #{id}', { id: p.task_id }) : ''}
             {p.share_token && <> · {t('任何拿到链接的人都能看')}</>}{p.locked && <> · {t('已锁定：Bot 只能读')}</>}</div>}
-          {p.format === 'markdown'
-            ? <DocPage id={id} content={p.content || ''} />
+          {p.kind === 'db' ? <DbView id={id} />
+            : p.format === 'markdown' ? <>
+              {p.kind === 'row' && p.parent_id != null && <PropsBar dbId={p.parent_id} rowId={id} />}
+              <DocPage id={id} content={p.content || ''} />
+            </>
             : <PageBody format={p.format} content={p.content || ''} rawUrl={`/api/pages/${id}/raw`} applet={p.app ? id : undefined} />}
-          {p.format === 'markdown' && <div className="page-kids">
+          {p.format === 'markdown' && p.kind === 'page' && <div className="page-kids">
             {!!p.children?.length && <div className="muted small">{t('子页面')}</div>}
-            {p.children?.map(c => <button key={c.id} className="page-kid" onClick={() => openLibrary(c.id)}>{c.format === 'html' ? '◧' : '▤'} {c.title}</button>)}
-            <button className="link-btn small" onClick={() => newPage(id)}>＋ {t('子页面')}</button>{/* i18n-ignore */}
+            {p.children?.map(c => <button key={c.id} className="page-kid" onClick={() => openLibrary(c.id)}>{c.kind === 'db' ? '▦' : c.format === 'html' ? '◧' : '▤'} {c.title}</button>)}
+            <span><button className="link-btn small" onClick={() => newPage(id)}>＋ {t('子页面')}</button>{/* i18n-ignore */}
+              <button className="link-btn small" onClick={() => newDb(id)}>＋ {t('数据库')}</button></span>{/* i18n-ignore */}
           </div>}
         </div>
       )}

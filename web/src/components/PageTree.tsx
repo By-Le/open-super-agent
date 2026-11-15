@@ -40,7 +40,7 @@ export async function newPage(parent: number | null = null) {
 }
 
 export async function deletePage(p: Page, kids: number) {
-  const msg = kids ? t('删除页面「{title}」？它下面的 {n} 个子页面会挪到上一级，分享链接也会失效。', { title: p.title, n: kids })
+  const msg = p.kind === 'db' ? t('删除数据库「{title}」？里面所有的行（连同正文和历史）都会删掉，分享链接也会失效。', { title: p.title }) : kids ? t('删除页面「{title}」？它下面的 {n} 个子页面会挪到上一级，分享链接也会失效。', { title: p.title, n: kids })
     : t('删除页面「{title}」？分享链接也会失效。', { title: p.title })
   if (!(await ask(msg, { ok: t('删除'), danger: true }))) return false
   await api(`/api/pages/${p.id}`, { method: 'DELETE' })
@@ -59,7 +59,7 @@ export function PageTree({ list, row, onMove }: { list: Page[]; row: (p: Page) =
           title={n.kids.length ? t('展开或收起子页面') : undefined}>{n.kids.length ? (open.has(n.page.id) ? '▾' : '▸') : ''}</button>
         <button className="lib-row" onClick={() => openLibrary(n.page.id)}>{row(n.page)}</button>
         <div className="tree-acts">
-          {n.page.format === 'markdown' && <button className="icon-btn" title={t('新建子页面')} onClick={() => newPage(n.page.id)}>＋</button>}{/* i18n-ignore */}
+          {n.page.format === 'markdown' && n.page.kind === 'page' && <button className="icon-btn" title={t('新建子页面')} onClick={() => newPage(n.page.id)}>＋</button>}{/* i18n-ignore */}
           <div className="page-more">
             <button className="icon-btn" title={t('更多')} onClick={() => setMenu(menu === n.page.id ? null : n.page.id)}>⋯</button>
             {menu === n.page.id && <div className="menu" onMouseLeave={() => setMenu(null)}>
@@ -93,7 +93,7 @@ export function MoveDialog({ page, list, onClose }: { page: Page; list: Page[]; 
   const flat: Node[] = []
   const walk = (n: Node) => { flat.push(n); n.kids.forEach(walk) }
   buildTree(list).forEach(walk)
-  const shown = flat.filter(n => !banned.has(n.page.id) && n.page.format === 'markdown' && (!q || n.page.title.toLowerCase().includes(q.toLowerCase())))
+  const shown = flat.filter(n => !banned.has(n.page.id) && n.page.format === 'markdown' && n.page.kind === 'page' && (!q || n.page.title.toLowerCase().includes(q.toLowerCase())))
   const go = async (parent: number | null) => {
     try {
       await api(`/api/pages/${page.id}/move`, { method: 'POST', body: { parent_id: parent } })

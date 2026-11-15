@@ -207,7 +207,8 @@ export type Page = {
   version: number; locked: boolean   // version：每次修改 +1（osa/pagedoc.py）；locked：Bot 只能读
   parent_id: number | null; pos: number   // 子页面：挂在哪个页面下面、同一层里的顺序
   agent_id: number | null   // 外部 Agent 建的页面（经 /mcp，见 osa/agentapi.py），这时 bot_id 是空的
-  ancestors?: { id: number; title: string }[]; children?: { id: number; title: string; format: string }[]   // 只有打开单个页面时给
+  kind: 'page' | 'db' | 'row'   // db：数据库（见 osa/dbs.py）；row：数据库的一行（资料库列表里没有）
+  ancestors?: { id: number; title: string }[]; children?: { id: number; title: string; format: string; kind?: string }[]   // 只有打开单个页面时给
   app?: { tools: string[]; chat: boolean } | null   // 小应用的清单（见 osa/applets.py），普通页面没有
 }
 export type Teach = { bot_id: number; started: number; note: string; max_s: number }
