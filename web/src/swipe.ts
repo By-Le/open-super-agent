@@ -15,6 +15,8 @@ const EDGE = 24      // 离左边缘多近起手才算
 const SLOP = 10      // 动了这么多才判断方向
 const MS = 200       // 松手后滑走或弹回的时间
 const phone = typeof matchMedia === 'undefined' ? null : matchMedia('(max-width: 760px)')
+/** 现在是不是手机布局（和 styles.css 里 max-width: 760px 的那套一致）。 */
+export const isPhone = () => !!phone?.matches
 
 function push(layer: Layer) {
   layers.push(layer)

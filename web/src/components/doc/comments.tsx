@@ -5,6 +5,7 @@ import { api, useStore } from '../../store'
 import { locale, t } from '../../i18n'
 import { ask } from '../Dialog'
 import Markdown from '../Markdown'
+import { useBack } from '../../swipe'
 
 export type PageComment = {
   id: number; page_id: number; block_id: string | null; parent_id: number | null; by: string; text: string; quote: string
@@ -60,6 +61,8 @@ export function CommentsPanel({ pageId, comments, order, blockMd, authorOf, owne
   focus: string | null; onJump: (block: string) => void; onClose: () => void; reload: () => void
 }) {
   const bots = useStore(s => s.bots)
+  const root = useRef<HTMLElement>(null)
+  useBack(onClose, root)   // 手机上整屏盖着页面：左边缘右滑关掉
   const [tab, setTab] = useState<'open' | 'done'>('open')
   const list = useRef<HTMLDivElement>(null)
   const name = (by: string) => {
@@ -99,7 +102,7 @@ export function CommentsPanel({ pageId, comments, order, blockMd, authorOf, owne
     return c.quote || (md === null ? '' : md.slice(0, 140))
   }
   return (
-    <aside className="doc-comments" data-no-swipe="">
+    <aside className="doc-comments" ref={root}>
       <header className="dc-head">
         <b>{t('评论')}</b>
         <div className="panel-tabs">

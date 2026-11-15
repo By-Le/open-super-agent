@@ -1,4 +1,4 @@
-"""版本历史：列出各版、和现在比（改过的段按字标出、删掉的段）、恢复一段（用回原来的编号）、只看这一版、回到这一版。"""
+"""版本历史：列出各版、和现在比（改过的段按字标出、删掉的段）、恢复一段（用回原来的编号）、只看这一版、回到这一版；手机宽度下点开一版、回列表、关掉。"""
 import json
 import os
 import tempfile
@@ -78,6 +78,20 @@ with sync_playwright() as pw:
     vs = api(f"/api/pages/{PID}/versions")
     check(vs[0]["label"].startswith("restore:"), f"回到某一版也记成新的一版：{[v['label'] for v in vs]}")
     page.screenshot(path=str(HERE / "51-restored.png"))
+    # 手机宽度：历史是整屏的。点开一版时列表要让开（不然对比被盖在底下，像是点了没反应）；“← 历史”回列表；× 关掉
+    m = browser.new_page(viewport={"width": 402, "height": 874}, has_touch=True)
+    m.on("pageerror", lambda e: errors.append(str(e)))
+    m.goto(f"{BASE}/library/pages/{PID}")
+    m.wait_for_selector(".doc-body")
+    m.locator(".doc-cbtn", has_text="历史").click()
+    m.locator(".dh-row").nth(1).click()
+    m.wait_for_selector(".doc-hview")
+    check(m.locator(".doc-history").is_hidden() and m.locator(".doc-hview").is_visible(), "手机上点开一版：列表让开，看得见对比")
+    m.screenshot(path=str(HERE / "52-phone-version.png"))
+    m.locator(".dhv-back").click()
+    check(m.locator(".doc-history").is_visible() and m.locator(".doc-hview").count() == 0, "手机上“← 历史”回到列表")
+    m.locator(".doc-history .dc-head .icon-btn").click()
+    check(m.locator(".doc-history").count() == 0 and m.locator(".doc-wrap").is_visible(), "手机上 × 关掉历史，回到编辑")
     check(not errors, f"没有脚本错误：{errors[:3]}")
     browser.close()
 sys.exit(1 if failed else 0)

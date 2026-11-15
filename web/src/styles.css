@@ -578,6 +578,7 @@ a { color: var(--link); text-decoration: none; } a:hover { text-decoration: unde
 .dhv-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 6px 0 12px; border-bottom: 1px solid var(--line); margin-bottom: 12px; }
 .dhv-head .panel-tabs button { padding: 4px 8px; font-size: 13px; } .dhv-head .panel-tabs button:disabled { opacity: .4; }
 .dhv-head .btn { padding: 4px 10px; font-size: 13px; }
+.dhv-head .dhv-back { display: none; }   /* 只在手机上有（见下面 max-width: 760px） */
 .dhv-rows { display: flex; flex-direction: column; gap: 6px; }
 .dhv-row { border-left: 3px solid var(--line); padding: 2px 0 4px 12px; }
 .dhv-row.add { border-left-color: var(--good); background: color-mix(in srgb, var(--good) 7%, transparent); }
@@ -592,7 +593,9 @@ a { color: var(--link); text-decoration: none; } a:hover { text-decoration: unde
 .dhv-fold { padding: 4px 12px; text-align: left; } .dhv-fold:hover { color: var(--fg); }
 @media (max-width: 1100px) { .doc.with-comments { padding-right: 0; } .doc-comments { box-shadow: -8px 0 24px rgba(0,0,0,.25); } }
 @media (max-width: 760px) {
-  .doc-comments { top: 0; width: 100%; z-index: 70; }
+  .doc-comments { top: 0; width: 100%; z-index: 70; padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom); }   /* 整屏：标题栏别钻到状态栏底下 */
+  .doc-history.picked { display: none; }   /* 点开了一版：让出位置给正文处的对比 */
+  .dhv-head .dhv-back { display: inline-flex; }
   .doc-body .blk-c::after { right: auto; left: auto; position: static; margin-left: 6px; display: inline-block; }
 }
 @media (max-width: 760px) {

@@ -1,10 +1,12 @@
 // 版本历史：右边列出每一版（同一个人 10 分钟内接着改的服务器已经并成一版，见 osa/pagedoc.py），
 // 点开一版在正文的位置显示和现在 / 和上一版的差别，或者只看这一版；能回到这一版，也能只恢复其中一段。
-import { useEffect, useMemo, useState } from 'react'
+// 手机上列表是整屏的：点开一版时列表收起来（不然对比被它盖在底下），对比上面有“← 历史”回到列表；左边缘右滑也是返回。
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { api, useStore } from '../../store'
 import { locale, t } from '../../i18n'
 import Markdown from '../Markdown'
 import { diffBlocks, type Row } from './diff'
+import { useBack } from '../../swipe'
 
 export type Version = { id: number; version: number; title: string; by: string; ts_start: number; ts: number; label: string; size: number }
 type Snap = Version & { content: string; blocks?: { id: string; md: string }[] }
@@ -26,6 +28,8 @@ export function HistoryPanel({ pageId, picked, onPick, onClose, stamp }: {
   pageId: number; picked: Version | null; onPick: (v: Version, list: Version[]) => void; onClose: () => void; stamp: number
 }) {
   const name = useName()
+  const root = useRef<HTMLElement>(null)
+  useBack(onClose, root)
   const [list, setList] = useState<Version[] | null>(null)
   const [more, setMore] = useState(true)
   useEffect(() => { api(`/api/pages/${pageId}/versions?limit=50`).then(v => { setList(v); setMore(v.length === 50) }) }, [pageId, stamp])
@@ -35,7 +39,7 @@ export function HistoryPanel({ pageId, picked, onPick, onClose, stamp }: {
     setMore(v.length === 50)
   }
   return (
-    <aside className="doc-comments doc-history" data-no-swipe="">
+    <aside className={'doc-comments doc-history' + (picked ? ' picked' : '')} ref={root}>
       <header className="dc-head"><b>{t('历史')}</b><span className="grow" /><button className="icon-btn" title={t('关闭')} onClick={onClose}>×</button></header>
       <div className="dc-list">
         {!list ? <p className="muted small">{t('加载中…')}</p> : list.map((v, k) => (
@@ -53,11 +57,14 @@ export function HistoryPanel({ pageId, picked, onPick, onClose, stamp }: {
 
 type Mode = 'now' | 'prev' | 'only'
 
-export function HistoryView({ pageId, version, list, current, onRestorePage, onRestoreBlock, onClose }: {
+export function HistoryView({ pageId, version, list, current, onRestorePage, onRestoreBlock, onClose, onBack }: {
   pageId: number; version: Version; list: Version[]; current: { id: string; md: string }[]
   onRestorePage: (v: Version) => Promise<void>; onRestoreBlock: (row: Row) => Promise<void>; onClose: () => void
+  onBack: () => void   // 回到版本列表（手机上）
 }) {
   const name = useName()
+  const root = useRef<HTMLDivElement>(null)
+  useBack(onBack, root)
   const [mode, setMode] = useState<Mode>('now')
   const [snap, setSnap] = useState<Snap | null>(null)
   const [prev, setPrev] = useState<Snap | null>(null)
@@ -86,8 +93,9 @@ export function HistoryView({ pageId, version, list, current, onRestorePage, onR
   // 两种对比的恢复都一样：改过的段换回旧的内容（r.old），删掉的段用原来的编号插回去；只是按钮上的话不同
   const backLabel = mode === 'now' ? t('恢复成这一版的样子') : t('改回改之前')
   return (
-    <div className="doc-hview">
+    <div className="doc-hview" ref={root}>
       <div className="dhv-head">
+        <button className="btn dhv-back" onClick={onBack}>← {t('历史')}</button>
         <div>
           <b>{t('版本 {n}', { n: version.version })}</b> <span className="muted small">{name(version.by)} · {when(version.ts)}{labelOf(version) ? ' · ' + labelOf(version) : ''}</span>
         </div>
