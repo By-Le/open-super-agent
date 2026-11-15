@@ -11,19 +11,26 @@
 - 改表结构不算冲突，按属性后写的为准；改类型时能转的值转过去（先变成文字再按新类型认），转不了的清空。
   每次改表结构记一条历史（谁、改了什么、清掉或转换了哪些格子的旧值），能撤销：删掉的列和值都放得回来。
 - 筛选、排序在这里做，工具和网页用同一套。
+- 算出来的属性（dbcalc.py）：公式、汇总、双向关联在对方库里的那一半（mirror_of）不存，读行的时候算好放在 row["calc"]。
+  关联存对方库的行号列表；自动编号存数，加行时发号（表结构里记着下一个号 next）；按钮不存值，点了按配置改属性、写评论叫醒 Bot。
 """
 import json
 import re
 import secrets
 import time
 from datetime import date, timedelta
-from . import bots, i18n, library, pagedoc
+from . import bots, dbcalc, i18n, library, media, pagedoc
 from .memory import conn
 
 TYPES = {"title": "名称", "text": "文本", "number": "数字", "select": "单选", "multi_select": "多选", "status": "状态",
          "date": "日期", "person": "人员", "checkbox": "勾选", "url": "网址", "email": "邮箱", "phone": "电话",
-         "created_time": "创建时间", "updated_time": "最后编辑时间", "created_by": "创建人", "updated_by": "最后编辑人"}
+         "created_time": "创建时间", "updated_time": "最后编辑时间", "created_by": "创建人", "updated_by": "最后编辑人",
+         "relation": "关联", "rollup": "汇总", "formula": "公式", "files": "文件", "unique_id": "自动编号", "button": "按钮"}
 COMPUTED = {"created_time", "updated_time", "created_by", "updated_by"}
+CALCULATED = {"formula", "rollup"}            # 读的时候算，不存
+READONLY = COMPUTED | CALCULATED | {"unique_id", "button"}   # 不能直接写值
+MAX_LINKS = 100      # 一格最多关联几行
+MAX_FILES = 20
 OPTIONED = {"select", "multi_select", "status"}
 TEXTUAL = {"title", "text", "url", "email", "phone"}
 COLORS = ("default", "gray", "brown", "orange", "yellow", "green", "blue", "purple", "pink", "red")
@@ -31,7 +38,7 @@ GROUPS = ("todo", "doing", "done")
 GROUP_NAMES = {"todo": "未开始", "doing": "进行中", "done": "已完成"}
 FORMATS = ("number", "comma", "percent", "cny", "usd")
 OPS = ("eq", "neq", "contains", "not_contains", "gt", "gte", "lt", "lte", "empty", "not_empty")
-MAX_ROWS = 1000
+MAX_ROWS = 10000
 MAX_PROPS = 50
 MAX_OPTIONS = 100
 MAX_VIEWS = 20
@@ -88,11 +95,13 @@ def _last_by(ids: list[int]) -> dict:
     return out
 
 
-def rows(db_id: int) -> list[dict]:
-    """库里的所有行，按手动排的顺序。"""
+def rows(db_id: int, db: dict | None = None, depth: int = 0) -> list[dict]:
+    """库里的所有行，按手动排的顺序；算出来的属性（公式、汇总、反向关联）在 row["calc"]。"""
     rs = conn.execute(f"select {_ROW_COLS} from pages where parent_id=? and kind='row' order by coalesce(pos, 0), id", (db_id,)).fetchall()
     last = _last_by([r[0] for r in rs])
-    return [_row_of(r, last) for r in rs]
+    items = [_row_of(r, last) for r in rs]
+    db = db or get_db(db_id)
+    return _calc(db, items, depth) if db else items
 
 
 def get_row(row_id) -> dict | None:
@@ -101,7 +110,9 @@ def get_row(row_id) -> dict | None:
     r = conn.execute(f"select {_ROW_COLS}, parent_id from pages where id=? and kind='row'", (row_id,)).fetchone()
     if not r:
         return None
-    return {**_row_of(r[:-1], _last_by([r[0]])), "db_id": r[-1]}
+    row = {**_row_of(r[:-1], _last_by([r[0]])), "db_id": r[-1]}
+    db = get_db(r[-1])
+    return _calc(db, [row])[0] if db else row
 
 
 def prop_of(db: dict, ref) -> dict | None:
@@ -114,9 +125,18 @@ def prop_of(db: dict, ref) -> dict | None:
     return next((p for p in db["schema"] if p["name"].lower() == low), None)
 
 
+def is_mirror(prop: dict) -> bool:
+    """双向关联在对方库里的那一半：值不存，从另一个库的关联反查。"""
+    return prop["type"] == "relation" and bool(prop.get("mirror_of"))
+
+
 def value_of(row: dict, prop: dict):
-    """行在这一列的值（存的样子）。名称、自动算的从页面取。"""
+    """行在这一列的值（存的样子）。名称、自动算的从页面取，公式、汇总、反向关联从 calc 取。"""
     t = prop["type"]
+    if t in CALCULATED or is_mirror(prop):
+        return (row.get("calc") or {}).get(prop["key"])
+    if t == "button":
+        return None
     if t == "title":
         return row["title"]
     if t in ("created_time", "updated_time"):
@@ -124,6 +144,166 @@ def value_of(row: dict, prop: dict):
     if t in ("created_by", "updated_by"):
         return row[t]
     return row["props"].get(prop["key"])
+
+
+# ---------- 算出来的属性：公式、汇总、反向关联（dbcalc.py） ----------
+def titles(ids) -> dict[int, str]:
+    """行号 → 标题（只给还在的行）。"""
+    ids = [i for i in dict.fromkeys(ids) if isinstance(i, int) and not isinstance(i, bool)]
+    out = {}
+    for k in range(0, len(ids), 500):
+        part = ids[k:k + 500]
+        out |= {r[0]: r[1] or "" for r in conn.execute(
+            f"select id, title from pages where kind='row' and id in ({','.join('?' * len(part))})", part)}
+    return out
+
+
+def _backlinks(src_db: int, key: str) -> dict[int, list[int]]:
+    """另一个库（src_db）里关联属性 key 指向的行 → 哪几行指着它（按那边的顺序）。"""
+    out: dict[int, list[int]] = {}
+    for rid, props in conn.execute("select id, props from pages where parent_id=? and kind='row' order by coalesce(pos, 0), id", (src_db,)):
+        for t in json.loads(props or "{}").get(key) or []:
+            out.setdefault(t, []).append(rid)
+    return out
+
+
+class _Calc:
+    """一次读行时算公式、汇总、反向关联：对方库的行、反查表、标题都只取一次。"""
+
+    def __init__(self, db: dict, items: list[dict], depth: int):
+        self.db, self.items, self.depth = db, items, depth
+        self.by_name = {p["name"].lower(): p for p in db["schema"]}
+        self.parsed: dict[str, object] = {}
+        self.back: dict[str, dict] = {}
+        self.other: dict[int, tuple[dict | None, dict[int, dict], "_Calc | None"]] = {}
+        self.names: dict[int, str] = {}
+
+    def links(self, r: dict, p: dict) -> list[int]:
+        """一个关联属性（存的或反向的）在这一行指着哪些行。"""
+        if is_mirror(p):
+            if p["key"] not in self.back:
+                self.back[p["key"]] = _backlinks(p["db"], p["mirror_of"])
+            return list(self.back[p["key"]].get(r["id"], []))
+        return [x for x in r["props"].get(p["key"]) or [] if isinstance(x, int)]
+
+    def rows_of(self, db_id: int) -> tuple[dict | None, dict[int, dict], "_Calc | None"]:
+        """关联到的库：它的表结构、所有行（算好了的）、在那些行上接着算的上下文。"""
+        if db_id not in self.other:
+            if db_id == self.db["id"] and len(self.items) == conn.execute(
+                    "select count(*) from pages where parent_id=? and kind='row'", (db_id,)).fetchone()[0]:
+                self.other[db_id] = (self.db, {r["id"]: r for r in self.items}, self)
+            elif self.depth >= dbcalc.MAX_CHAIN:
+                self.other[db_id] = (None, {}, None)
+            else:
+                odb = get_db(db_id)
+                items = rows(db_id, odb, self.depth + 1) if odb else []
+                self.other[db_id] = (odb, {r["id"]: r for r in items}, _Calc(odb, items, self.depth + 1) if odb else None)
+        return self.other[db_id]
+
+    def title_of(self, ids: list[int]) -> list[str]:
+        missing = [i for i in ids if i not in self.names]
+        if missing:
+            self.names |= titles(missing)
+        return [self.names[i] for i in ids if i in self.names]
+
+    def value(self, r: dict, p: dict, stack: tuple = ()):
+        calc = r.setdefault("calc", {})
+        if p["key"] in calc:
+            return calc[p["key"]]
+        if p["key"] in stack:
+            raise dbcalc.FormulaError("公式互相引用成了环")
+        stack = stack + (p["key"],)
+        v = None
+        if is_mirror(p):
+            v = self.links(r, p) or None
+        elif p["type"] == "formula":
+            src = p.get("formula") or ""
+            if src:
+                if p["key"] not in self.parsed:
+                    try:
+                        self.parsed[p["key"]] = dbcalc.parse(src)
+                    except dbcalc.FormulaError:
+                        self.parsed[p["key"]] = None
+                node = self.parsed[p["key"]]
+
+                def get(name: str, r=r, stack=stack):
+                    q = self.by_name.get(str(name).strip().lower())
+                    if not q:
+                        raise dbcalc.FormulaError(f"没有属性「{name}」")
+                    return self.formula_value(r, q, stack)
+                v = dbcalc.run(node, get) if node else None
+        elif p["type"] == "rollup":
+            v = self.rollup(r, p, stack)
+        calc[p["key"]] = v
+        return v
+
+    def rollup(self, r: dict, p: dict, stack: tuple):
+        rel = next((q for q in self.db["schema"] if q["key"] == p.get("relation") and q["type"] == "relation"), None)
+        if not rel or not p.get("target"):
+            return None
+        ids = self.links(r, rel)
+        odb, others, sub = self.rows_of(rel["db"])
+        tgt = next((q for q in (odb or {}).get("schema") or [] if q["key"] == p["target"]), None)
+        if not tgt or not sub:
+            return None
+        got = [others[i] for i in ids if i in others]
+        vals = [sub.formula_value(x, tgt, stack if sub is self else ()) for x in got]
+        return dbcalc.rollup(p.get("fn") or "count", vals, len(got))
+
+    def formula_value(self, r: dict, p: dict, stack: tuple = ()):
+        """一个属性在公式、汇总里的样子：数、文字、true/false、datetime、文字的列表。"""
+        t = p["type"]
+        if t in CALCULATED or is_mirror(p):
+            v = self.value(r, p, stack)
+            if is_mirror(p):
+                return self.title_of(v or [])
+            if isinstance(v, dict):
+                return dbcalc.to_dt(v)
+            return v
+        v = value_of(r, p)
+        if t == "relation":
+            return self.title_of([x for x in v or [] if isinstance(x, int)])
+        if t in ("date", "created_time", "updated_time"):
+            return dbcalc.to_dt(v)
+        if t == "checkbox":
+            return bool(v)
+        if t == "number" or t == "unique_id":
+            return v
+        if t in ("multi_select", "person"):
+            return [display(p, [x]) for x in v or []]
+        if t == "files":
+            return [f.get("name", "") for f in v or []]
+        if v is None:
+            return ""
+        return display(p, v)
+
+
+def _calc(db: dict, items: list[dict], depth: int = 0) -> list[dict]:
+    props = [p for p in db["schema"] if p["type"] in CALCULATED or is_mirror(p)]
+    for r in items:
+        r.setdefault("calc", {})
+    if props and items:
+        ctx = _Calc(db, items, depth)
+        for r in items:
+            for p in props:
+                try:
+                    ctx.value(r, p)
+                except dbcalc.FormulaError:
+                    r["calc"][p["key"]] = None
+    return items
+
+
+def related_dbs(db_id: int) -> set[int]:
+    """和这个库有关联的库（指向它的、它指向的）：这边的行变了，那边的汇总、反向关联也要重新取。"""
+    out = set()
+    for i, sch in conn.execute("select id, schema from pages where kind='db' and schema like '%\"relation\"%'"):
+        for p in json.loads(sch or "[]"):
+            if p.get("type") == "relation":
+                if i == db_id and p.get("db") != db_id:
+                    out.add(p.get("db"))
+                elif p.get("db") == db_id and i != db_id:
+                    out.add(i)
+    return {x for x in out if isinstance(x, int)}
 
 
 # ---------- 值：认、显示 ----------
@@ -202,8 +382,14 @@ def normalize(prop: dict, v, create: bool = True):
     t, name = prop["type"], prop["name"]
     if v is None or v == "" or v == []:
         return None
-    if t in COMPUTED:
+    if t in COMPUTED or t in CALCULATED or t == "unique_id":
         raise ValueError(f"「{name}」是自动算的，不能改")
+    if t == "button":
+        raise ValueError(f"「{name}」是按钮，没有值")
+    if t == "relation":
+        return _links(prop, v)
+    if t == "files":
+        return _files(prop, v)
     if t in ("title", "text", "url", "email", "phone"):
         if isinstance(v, (dict, list)):
             raise ValueError(f"「{name}」要写一段文字")
@@ -288,6 +474,83 @@ def normalize(prop: dict, v, create: bool = True):
     raise ValueError(f"不认识的类型：{t}")
 
 
+def _links(prop: dict, v) -> list[int] | None:
+    """关联：行号（12、"#12"）或者对方库里行的名称，列表或逗号分开。只认对方库里的行。"""
+    target, name = prop.get("db"), prop["name"]
+    items = v if isinstance(v, list) else [x for x in re.split(r"[,，、;；]", str(v))]
+    named, out = None, []
+    for x in items:
+        if isinstance(x, bool) or isinstance(x, (dict, list, float)):
+            raise ValueError(f"「{name}」写行号或者那一行的名称")
+        if isinstance(x, int):
+            rid = x
+        else:
+            s = str(x).strip()
+            if not s:
+                continue
+            if re.fullmatch(r"#?\d+", s):
+                rid = int(s.lstrip("#"))
+            else:
+                if named is None:
+                    named = {}
+                    for i, title in conn.execute("select id, title from pages where parent_id=? and kind='row' order by coalesce(pos, 0), id", (target,)):
+                        named.setdefault((title or "").strip().lower(), i)
+                rid = named.get(s.lower())
+                if rid is None:
+                    raise ValueError(f"「{name}」关联的库里没有叫「{s}」的行")
+        if rid not in out:
+            out.append(rid)
+    if len(out) > MAX_LINKS:
+        raise ValueError(f"「{name}」最多关联 {MAX_LINKS} 行")
+    if out:
+        have = {r[0] for r in conn.execute(f"select id from pages where parent_id=? and kind='row' and id in ({','.join('?' * len(out))})",
+                                           (target, *out))}
+        if bad := [x for x in out if x not in have]:
+            raise ValueError(f"「{name}」关联的库里没有行 #{bad[0]}")
+    return out or None
+
+
+def _files(prop: dict, v) -> list[dict] | None:
+    """文件：网址，或者传上来的文件（/api/media/编号、编号），可以写成 {name, url}。"""
+    name = prop["name"]
+    out = []
+    for x in v if isinstance(v, list) else [v]:
+        url, nm = (x.get("url"), x.get("name")) if isinstance(x, dict) else (x, None)
+        url = str(url or "").strip()
+        if not url:
+            continue
+        if re.fullmatch(r"[0-9a-f]{24}", url):
+            url = media.url(url)
+        if m := media.EMBED.fullmatch(url):
+            got = media.info(m.group(1))
+            if not got:
+                raise ValueError(f"「{name}」的文件 {m.group(1)} 不存在（可能被清理了）")
+            nm = nm or got["name"]
+        elif re.match(r"https?://[^\s]+$", url, re.I):
+            nm = nm or (url.split("?")[0].rstrip("/").rsplit("/", 1)[-1] or url)
+        else:
+            raise ValueError(f"「{name}」要写网址（https://…）或者传上来的文件")
+        out.append({"name": " ".join(str(nm).split())[:200] or url[:200], "url": url[:2000]})
+    if len(out) > MAX_FILES:
+        raise ValueError(f"「{name}」最多 {MAX_FILES} 个文件")
+    return out or None
+
+
+def _calc_text(prop: dict, v) -> str:
+    """公式、汇总算出来的值给人看的样子。"""
+    if v is None or v == "" or v == []:
+        return ""
+    if isinstance(v, bool):
+        return "是" if v else "否"
+    if isinstance(v, (int, float)):
+        return _num(prop, v)
+    if isinstance(v, dict):
+        return v.get("start", "") + (f" → {v['end']}" if v.get("end") else "")
+    if isinstance(v, list):
+        return ", ".join(str(x) for x in v)
+    return str(v)
+
+
 def _num(prop: dict, n) -> str:
     f = prop.get("format") or "number"
     if f == "comma":
@@ -306,6 +569,17 @@ def display(prop: dict, v) -> str:
     if v is None or v == "" or v == []:
         return ""
     t = prop["type"]
+    if t in CALCULATED:
+        return _calc_text(prop, v)
+    if t == "relation":
+        names = titles(v)
+        return ", ".join(names[i] or "无标题" for i in v if i in names)
+    if t == "files":
+        return ", ".join(f.get("name", "") for f in v)
+    if t == "unique_id":
+        return f"{prop.get('prefix') or ''}{v}"
+    if t == "button":
+        return ""
     if t == "number":
         return _num(prop, v)
     if t in ("select", "status", "multi_select"):
@@ -364,7 +638,7 @@ def _type(v) -> str:
     return t
 
 
-def _new_prop(schema: list[dict], spec: dict) -> dict:
+def _new_prop(schema: list[dict], spec: dict, db_id: int | None = None) -> dict:
     name = " ".join(str(spec.get("name") or "").split())[:NAME_LEN]
     if not name:
         raise ValueError("属性要有名字")
@@ -376,7 +650,155 @@ def _new_prop(schema: list[dict], spec: dict) -> dict:
         p["options"] = _clean_options(p, spec["options"], []) if spec.get("options") is not None else (_status_default() if t == "status" else [])
     if t == "number":
         p["format"] = spec.get("format") if spec.get("format") in FORMATS else "number"
+    _config(p, spec, schema, db_id)
     return p
+
+
+# 每种类型自己的设置（改类型时别的类型的设置去掉）
+CONFIG = {"number": ("format",), "formula": ("formula", "format"), "relation": ("db", "mirror_of", "pair"),
+          "rollup": ("relation", "target", "fn", "format"), "unique_id": ("prefix", "next"), "button": ("label", "set", "comment", "bot")}
+_ALL_CONFIG = {k for v in CONFIG.values() for k in v}
+_FN_BY_ZH = {v: k for k, v in dbcalc.ROLLUPS.items()}
+
+
+def _db_ref(v, db_id) -> int | str:
+    """关联指向哪个库：库的编号、名字，或者 self（自己）。"""
+    if v in (None, "", "self", "自己") or v == db_id:
+        return db_id if db_id is not None else "self"
+    if isinstance(v, str) and re.fullmatch(r"#?\d+", v.strip()):
+        v = int(v.strip().lstrip("#"))
+    if isinstance(v, int) and not isinstance(v, bool):
+        if get_db(v):
+            return v
+        raise ValueError(f"#{v} 不是数据库")
+    found = [r[0] for r in conn.execute("select id from pages where kind='db' and lower(title)=lower(?)", (str(v).strip(),))]
+    if len(found) == 1:
+        return found[0]
+    raise ValueError(f"找不到数据库「{v}」（写库的编号）" if not found else f"有 {len(found)} 个叫「{v}」的库，写库的编号")
+
+
+def _check_formula(schema: list[dict], prop: dict, src) -> str:
+    src = str(src or "").strip()
+    if not src:
+        return ""
+    node = dbcalc.parse(src)
+    names = {p["name"].lower(): p for p in schema}
+    for n in dbcalc.refs(node):
+        if n.strip().lower() == prop["name"].lower():
+            raise ValueError("公式不能用到它自己")
+        q = names.get(n.strip().lower())
+        if not q:
+            raise ValueError(f"公式里的属性「{n}」不存在，现在有：{'、'.join(p['name'] for p in schema)}")
+        if q["key"] == prop["key"] or q is prop:
+            raise ValueError("公式不能用到它自己")
+    return src
+
+
+def _formula_cycle(schema: list[dict]):
+    """公式之间互相引用成环就报错。"""
+    names = {p["name"].lower(): p for p in schema}
+    graph = {}
+    for p in schema:
+        if p["type"] == "formula" and p.get("formula"):
+            try:
+                graph[p["key"]] = {names[n.lower()]["key"] for n in dbcalc.refs(dbcalc.parse(p["formula"])) if n.lower() in names}
+            except dbcalc.FormulaError:
+                graph[p["key"]] = set()
+    state: dict = {}
+
+    def visit(k):
+        if state.get(k) == 1:
+            raise ValueError(f"公式「{next(p['name'] for p in schema if p['key'] == k)}」和别的公式互相引用成了环")
+        if state.get(k) == 2:
+            return
+        state[k] = 1
+        for x in graph.get(k, ()):
+            if x in graph:
+                visit(x)
+        state[k] = 2
+    for k in graph:
+        visit(k)
+
+
+def _config(prop: dict, spec: dict, schema: list[dict], db_id) -> None:
+    """按类型设好属性自己的设置：spec 里给了的才改（新建时补上默认的）。"""
+    t = prop["type"]
+    for k in _ALL_CONFIG - set(CONFIG.get(t, ())):
+        prop.pop(k, None)
+    if t in ("formula", "rollup") and "format" in spec:
+        if spec["format"] not in FORMATS:
+            raise ValueError(f"数字的格式只能是：{'、'.join(FORMATS)}")
+        prop["format"] = spec["format"]
+    if t == "formula":
+        if "formula" in spec or "formula" not in prop:
+            prop["formula"] = _check_formula(schema, prop, spec.get("formula"))
+    elif t == "relation":
+        if prop.get("mirror_of"):
+            return
+        if "db" in spec or "db" not in prop:
+            target = _db_ref(spec.get("db"), db_id)
+            if "db" in prop and prop["db"] != target:
+                raise ValueError(f"「{prop['name']}」关联的库建好以后不能换：删了重建一个")
+            prop["db"] = target
+    elif t == "rollup":
+        if "relation" in spec or "relation" not in prop:
+            rel = prop_of({"schema": schema}, spec.get("relation"))
+            if not rel or rel["type"] != "relation":
+                rels = "、".join(p["name"] for p in schema if p["type"] == "relation")
+                raise ValueError(f"汇总要选一个关联属性（relation）" + (f"，现在有：{rels}" if rels else "：这个库还没有关联属性，先加一个"))
+            prop["relation"] = rel["key"]
+        rel = next((p for p in schema if p["key"] == prop["relation"]), None)
+        if not rel:
+            raise ValueError("汇总用的关联属性不存在了")
+        other = schema if rel.get("db") in (db_id, "self") else (get_db(rel["db"]) or {}).get("schema") or []
+        if "target" in spec or "target" not in prop:
+            tgt = prop_of({"schema": other}, spec.get("target") or other[0]["key"] if other else None)
+            if not tgt:
+                raise ValueError(f"关联的库里没有属性「{spec.get('target')}」，有：{'、'.join(p['name'] for p in other)}")
+            if tgt["type"] == "button":
+                raise ValueError("按钮不能汇总")
+            prop["target"] = tgt["key"]
+        if "fn" in spec or "fn" not in prop:
+            fn = _FN_BY_ZH.get(str(spec.get("fn") or "").strip(), str(spec.get("fn") or "count").strip())
+            if fn not in dbcalc.ROLLUPS:
+                raise ValueError(f"汇总的算法只能是：{'、'.join(f'{k} {v}' for k, v in dbcalc.ROLLUPS.items())}")
+            prop["fn"] = fn
+    elif t == "unique_id":
+        if "prefix" in spec:
+            prefix = " ".join(str(spec.get("prefix") or "").split())[:12]
+            if prefix and not re.fullmatch(r"[\w\u4e00-\u9fff -]+", prefix):
+                raise ValueError("编号的前缀只能用字母、数字、汉字和 -")
+            prop["prefix"] = prefix
+        prop.setdefault("prefix", "")
+        prop.setdefault("next", 1)
+    elif t == "button":
+        if "label" in spec or "label" not in prop:
+            prop["label"] = " ".join(str(spec.get("label") or prop["name"]).split())[:30] or prop["name"]
+        if "set" in spec or "set" not in prop:
+            given = spec.get("set") or {}
+            if not isinstance(given, dict):
+                raise ValueError("按钮的 set 要是 {属性名: 值}")
+            out = {}
+            for ref, v in given.items():
+                q = prop_of({"schema": schema}, ref)
+                if not q or q is prop:
+                    raise ValueError(f"按钮要改的属性「{ref}」不存在")
+                if q["type"] in READONLY or is_mirror(q):
+                    raise ValueError(f"按钮改不了「{q['name']}」（自动算的）")
+                out[q["key"]] = v if q["type"] == "title" and isinstance(v, str) else normalize(q, v)
+            prop["set"] = out
+        if "comment" in spec or "comment" not in prop:
+            prop["comment"] = str(spec.get("comment") or "").strip()[:500]
+        if "bot" in spec or "bot" not in prop:
+            b = spec.get("bot")
+            if b in (None, "", 0):
+                prop["bot"] = None
+            else:
+                found = bots.get(b) if isinstance(b, int) and not isinstance(b, bool) else next(
+                    (x for x in bots.list_bots() if x["name"].lower() == str(b).strip().lower()), None)
+                if not found:
+                    raise ValueError(f"没有 Bot「{b}」")
+                prop["bot"] = found["id"]
 
 
 def default_schema() -> list[dict]:
@@ -397,13 +819,23 @@ def _default_views(schema: list[dict]) -> list[dict]:
 def create(title: str, by: str, schema: list[dict] | None = None, parent_id: int | None = None, bot_id: int | None = None,
            properties: list[dict] | None = None, title_name: str | None = None) -> dict:
     """建一个库。schema 是存的样子（网页用 default_schema）；properties 是工具给的 [{name, type, options?, format?}]。"""
+    twoway = []
     if schema is None:
         schema = [{"key": "title", "name": " ".join(str(title_name or "").split())[:NAME_LEN] or "名称", "type": "title"}]
         for spec in properties or []:
             if len(schema) > MAX_PROPS:
                 raise ValueError(f"最多 {MAX_PROPS} 个属性")
-            schema.append(_new_prop(schema, spec if isinstance(spec, dict) else {"name": spec}))
+            spec = spec if isinstance(spec, dict) else {"name": spec}
+            schema.append(_new_prop(schema, spec))
+            if schema[-1]["type"] == "relation" and spec.get("twoway"):
+                twoway.append((schema[-1], spec.get("pair_name")))
+        _formula_cycle(schema)
     p = library.save_page(bot_id, title, "", "markdown", by=by, allow_empty=True, parent_id=parent_id, kind="db")
+    for q in schema:   # 关联自己的：建好才知道自己的编号
+        if q["type"] == "relation" and q.get("db") == "self":
+            q["db"] = p["id"]
+    for q, pair_name in twoway:
+        _make_mirror({"id": p["id"], "title": p["title"]}, schema, q, pair_name, by)
     conn.execute("update pages set schema=?, views=? where id=?",
                  (json.dumps(schema, ensure_ascii=False), json.dumps(_default_views(schema), ensure_ascii=False), p["id"]))
     conn.commit()
@@ -469,6 +901,8 @@ def change_schema(db_id: int, ops: list[dict], by: str = "user") -> dict:
     views = db["views"]
     later: list = []   # 表结构都通过了才改行里的值
     changes: list[dict] = []   # 给人看的摘要：[{kind, key, name, …}]
+    twoway: list = []   # 新加的双向关联：(属性, 对方那一半叫什么)
+    unpair: list = []   # 删掉的、改了类型的关联：对方库里的那一半也去掉
     for op in ops:
         if not isinstance(op, dict):
             raise ValueError("每个改动都要是一个对象")
@@ -476,8 +910,12 @@ def change_schema(db_id: int, ops: list[dict], by: str = "user") -> dict:
         if kind == "add":
             if len(schema) > MAX_PROPS:
                 raise ValueError(f"最多 {MAX_PROPS} 个属性")
-            schema.append(_new_prop(schema, op))
+            schema.append(_new_prop(schema, op, db_id))
             changes.append({"kind": "add", "key": schema[-1]["key"], "name": schema[-1]["name"], "type": schema[-1]["type"]})
+            if schema[-1]["type"] == "unique_id":
+                later.append(("number", schema[-1]["key"], None, schema[-1]))
+            if schema[-1]["type"] == "relation" and op.get("twoway"):
+                twoway.append((schema[-1], op.get("pair_name")))
             continue
         prop = prop_of({"schema": schema}, op.get("prop"))
         if not prop:
@@ -486,6 +924,8 @@ def change_schema(db_id: int, ops: list[dict], by: str = "user") -> dict:
             if prop["type"] == "title":
                 raise ValueError("名称不能删")
             schema.remove(prop)
+            if prop["type"] == "relation":
+                unpair.append(prop)
             later.append(("drop", prop["key"], None, None))
             changes.append({"kind": "delete", "key": prop["key"], "name": prop["name"]})
             continue
@@ -499,12 +939,17 @@ def change_schema(db_id: int, ops: list[dict], by: str = "user") -> dict:
                 raise ValueError(f"已经有叫「{name}」的属性了")
             if name != prop["name"]:
                 changes.append({"kind": "rename", "key": prop["key"], "name": name, "from": prop["name"]})
+                _rename_refs(schema, prop["name"], name)
             prop["name"] = name
         old = json.loads(json.dumps(prop))
         if op.get("type") is not None and _type(op["type"]) != prop["type"]:
             if prop["type"] == "title":
                 raise ValueError("名称的类型不能改")
+            if is_mirror(prop):
+                raise ValueError(f"「{prop['name']}」是另一个库的关联在这边的一半，不能改类型（不要了就删掉）")
             new_t = _type(op["type"])
+            if old["type"] == "relation":
+                unpair.append(old)
             prop["type"] = new_t
             if new_t in OPTIONED and old["type"] not in OPTIONED:
                 prop["options"] = _status_default() if new_t == "status" else []
@@ -516,7 +961,8 @@ def change_schema(db_id: int, ops: list[dict], by: str = "user") -> dict:
                 prop["format"] = op.get("format") if op.get("format") in FORMATS else "number"
             else:
                 prop.pop("format", None)
-            later.append(("convert", prop["key"], old, prop))
+            _config(prop, op, schema, db_id)
+            later.append(("number" if new_t == "unique_id" else "convert", prop["key"], old, prop))
             changes.append({"kind": "type", "key": prop["key"], "name": prop["name"], "from": old["type"], "to": new_t})
         if op.get("options") is not None:
             if prop["type"] not in OPTIONED:
@@ -528,15 +974,24 @@ def change_schema(db_id: int, ops: list[dict], by: str = "user") -> dict:
                 later.append(("unoption", prop["key"], gone, None))
             if json.dumps(prop["options"], ensure_ascii=False) != was:
                 changes.append({"kind": "options", "key": prop["key"], "name": prop["name"]})
+        conf = {k: op[k] for k in _ALL_CONFIG & set(op) if k not in ("next", "mirror_of", "pair") and not (k == "format" and prop["type"] == "number")}
+        if conf and op.get("type") is None or (conf and _type(op["type"]) == old["type"]):
+            before_conf = json.dumps(prop, ensure_ascii=False, sort_keys=True)
+            _config(prop, conf, schema, db_id)
+            if json.dumps(prop, ensure_ascii=False, sort_keys=True) != before_conf:
+                changes.append({"kind": "config", "key": prop["key"], "name": prop["name"]})
         if op.get("format") is not None and prop["type"] == "number":
             if op["format"] not in FORMATS:
                 raise ValueError(f"数字的格式只能是：{'、'.join(FORMATS)}")
             if op["format"] != prop.get("format"):
                 changes.append({"kind": "format", "key": prop["key"], "name": prop["name"]})
             prop["format"] = op["format"]
+    _formula_cycle(schema)
     cells: dict = {}
     for what, key, a, b in later:
-        if what == "drop":
+        if what == "number":
+            _number_rows(db_id, b, cells)
+        elif what == "drop":
             _rewrite_values(db_id, key, lambda v: None, cells)
         elif what == "unoption":
             _rewrite_values(db_id, key, lambda v, gone=a: ([x for x in v if x not in gone] or None) if isinstance(v, list)
@@ -546,15 +1001,94 @@ def change_schema(db_id: int, ops: list[dict], by: str = "user") -> dict:
     views = [_fix_view(v, schema) for v in views] if views else _default_views(schema)
     if not changes and not cells and schema == db["schema"]:
         return get_db(db_id) | {"last_change": []}
+    for prop, pair_name in twoway:
+        _make_mirror(db, schema, prop, pair_name, by)
     _counts(changes, cells)
     _record(db, by, db["schema"], schema, db["views"], views, cells, changes)
     _touch(db_id, schema=schema, views=views)
+    for prop in unpair:
+        _drop_pair(db_id, prop, by)
     return get_db(db_id) | {"last_change": changes}
+
+
+def _rename_refs(schema: list[dict], old: str, new: str):
+    """属性改名：公式里的 prop("旧名") 跟着改。"""
+    pat = re.compile(r"""prop\(\s*(["'“「])""" + re.escape(old) + r"""(["'”」])\s*\)""", re.I)
+    for p in schema:
+        if p["type"] == "formula" and p.get("formula"):
+            p["formula"] = pat.sub(lambda m: f'prop("{new}")', p["formula"])
+
+
+def _number_rows(db_id: int, prop: dict, cells: dict):
+    """自动编号：按手动排的顺序给每一行发号，下一个号记在表结构里。"""
+    n = 0
+    for rid, props in conn.execute("select id, props from pages where parent_id=? and kind='row' order by coalesce(pos, 0), id", (db_id,)).fetchall():
+        n += 1
+        d = json.loads(props or "{}")
+        old = d.get(prop["key"])
+        d[prop["key"]] = n
+        conn.execute("update pages set props=? where id=?", (json.dumps(d, ensure_ascii=False), rid))
+        first = cells.setdefault(str(rid), {}).get(prop["key"])
+        cells[str(rid)][prop["key"]] = [first[0] if first else old, n]
+    prop["next"] = n + 1
+
+
+def _make_mirror(db: dict, schema: list[dict], prop: dict, pair_name, by: str):
+    """双向关联：在对方库（可以是自己）加一个反向的关联属性。"""
+    target = prop["db"]
+    if target == db["id"]:
+        other = schema
+    else:
+        odb = get_db(target)
+        if not odb:
+            return
+        other = json.loads(json.dumps(odb["schema"]))
+    name = " ".join(str(pair_name or "").split())[:NAME_LEN] or (db["title"] if target != db["id"] else f"{prop['name']}（反向）")[:NAME_LEN]
+    base, k = name, 2
+    while any(p["name"].lower() == name.lower() for p in other):
+        name = f"{base} {k}"
+        k += 1
+    m = {"key": _new_id("p", {x["key"] for x in other}), "name": name, "type": "relation", "db": db["id"], "mirror_of": prop["key"]}
+    other.append(m)
+    prop["pair"] = m["key"]
+    if target != db["id"]:
+        _record(odb, by, odb["schema"], other, odb["views"], odb["views"], {}, [{"kind": "add", "key": m["key"], "name": name, "type": "relation"}])
+        _touch(target, schema=other)
+
+
+def _drop_pair(db_id: int, prop: dict, by: str):
+    """删了（或改了类型）一个关联：对方库里反向的那一半也去掉；删的是反向的那一半就把这边记的配对清掉。"""
+    if prop.get("mirror_of"):
+        odb = get_db(prop.get("db"))
+        if odb:
+            sch = json.loads(json.dumps(odb["schema"]))
+            for q in sch:
+                if q["key"] == prop["mirror_of"] and q.get("pair") == prop["key"]:
+                    q.pop("pair", None)
+            if sch != odb["schema"]:
+                _touch(odb["id"], schema=sch)
+        return
+    if not prop.get("pair"):
+        return
+    odb = get_db(prop.get("db"))
+    if not odb:
+        return
+    m = next((q for q in odb["schema"] if q["key"] == prop["pair"] and q.get("mirror_of") == prop["key"]), None)
+    if not m:
+        return
+    sch = [q for q in odb["schema"] if q is not m]
+    if odb["id"] == db_id:
+        _touch(db_id, schema=sch)
+        return
+    _record(odb, by, odb["schema"], sch, odb["views"], [_fix_view(v, sch) for v in odb["views"]], {},
+            [{"kind": "delete", "key": m["key"], "name": m["name"]}])
+    _touch(odb["id"], schema=sch, views=[_fix_view(v, sch) for v in odb["views"]])
 
 
 # ---------- 表结构的历史：每次改动一条，能撤销 ----------
 HISTORY_LABEL = "schema"
-MAX_HISTORY = 50
+MAX_HISTORY = 200
+VIEW_MERGE = 600   # 同一个人 10 分钟内接着调视图（拖列宽、改筛选）并成一条
 
 
 def _counts(changes: list[dict], cells: dict):
@@ -658,8 +1192,8 @@ def undo(db_id: int, vid: int, by: str = "user") -> dict:
         if changed:
             conn.execute("update pages set props=? where id=?", (json.dumps(props, ensure_ascii=False), int(rid)))
     views_before, views_after = entry.get("views") or [None, None]
-    same = json.dumps(db["views"], ensure_ascii=False) == json.dumps(views_after, ensure_ascii=False)
-    views = views_before if same and views_before else [_fix_view(v, schema) for v in db["views"]]
+    views, kept_views = _undo_views(db["views"], views_before, views_after, schema)
+    kept += kept_views
     changes = [{"kind": "undo", "of": vid, "items": entry.get("changes") or [], "kept": kept}]
     _record(db, by, db["schema"], schema, db["views"], views, cells, changes, undo_of=vid)
     _touch(db_id, schema=schema, views=views)
@@ -683,6 +1217,13 @@ def change_text(c: dict) -> str:
         return f"改了「{c['name']}」的选项" + (f"，{c['cleared']} 行用了去掉的选项，清掉了" if c.get("cleared") else "")
     if k == "format":
         return f"改了「{c['name']}」的数字格式"
+    if k == "config":
+        return f"改了「{c['name']}」的设置"
+    if k == "views":
+        parts = ([f"加了视图「{'」「'.join(c['added'])}」"] if c.get("added") else []) + (
+            [f"删了视图「{'」「'.join(c['removed'])}」"] if c.get("removed") else []) + (
+            [f"改了视图「{'」「'.join(c['changed'])}」"] if c.get("changed") else [])
+        return "；".join(parts) or "改了视图"
     if k == "undo":
         return "撤销了：" + "；".join(change_text(x) for x in c.get("items") or [])
     return k
@@ -691,7 +1232,7 @@ def change_text(c: dict) -> str:
 # ---------- 视图 ----------
 def _fix_view(v: dict, schema: list[dict]) -> dict | None:
     """表结构变了以后：去掉指向已经删掉的属性的设置；看板分组的属性没了就退回表格。"""
-    keys = {p["key"]: p for p in schema}
+    keys = {p["key"]: p for p in schema if p["type"] != "button"}
     v = dict(v)
     v["sort"] = [s for s in v.get("sort") or [] if s.get("prop") in keys]
     v["filter"] = [f for f in v.get("filter") or [] if f.get("prop") in keys]
@@ -712,7 +1253,7 @@ def check_views(views, schema: list[dict]) -> list[dict]:
         raise ValueError("至少要有一个视图")
     if len(views) > MAX_VIEWS:
         raise ValueError(f"最多 {MAX_VIEWS} 个视图")
-    keys = {p["key"]: p for p in schema}
+    keys = {p["key"]: p for p in schema if p["type"] != "button"}
     out, ids = [], set()
     for v in views:
         if not isinstance(v, dict) or v.get("type") not in ("table", "board"):
@@ -726,7 +1267,7 @@ def check_views(views, schema: list[dict]) -> list[dict]:
                  "sort": [{"prop": s["prop"], "desc": bool(s.get("desc"))} for s in v.get("sort") or []
                           if isinstance(s, dict) and s.get("prop") in keys][:5],
                  "filter": [_check_filter(f, keys) for f in v.get("filter") or []][:10],
-                 "hidden": [k for k in v.get("hidden") or [] if k in keys and k != "title"],
+                 "hidden": [k for k in v.get("hidden") or [] if k in {p["key"] for p in schema} and k != "title"],
                  "widths": {k: max(60, min(800, int(w))) for k, w in (v.get("widths") or {}).items()
                             if k in keys and isinstance(w, (int, float)) and not isinstance(w, bool)}}
         if v["type"] == "board":
@@ -737,12 +1278,66 @@ def check_views(views, schema: list[dict]) -> list[dict]:
     return out
 
 
-def set_views(db_id: int, views) -> dict:
+def set_views(db_id: int, views, by: str = "user") -> dict:
+    """换掉视图列表，记进库的历史（同一个人 10 分钟内接着改的并成一条），能撤销。"""
     db = get_db(db_id)
     if not db:
         raise LookupError(i18n.t("没有数据库 #{id}", id=db_id))
-    _touch(db_id, views=check_views(views, db["schema"]))
+    new = check_views(views, db["schema"])
+    try:   # 比的时候两边都按规整过的样子（老的视图缺 sort、widths 这些空字段）
+        db["views"] = check_views(db["views"], db["schema"])
+    except ValueError:
+        pass
+    if new == db["views"]:
+        return db
+    last = conn.execute("select id, by, ts, props from page_versions where page_id=? and label=? order by id desc limit 1",
+                        (db_id, HISTORY_LABEL)).fetchone()
+    entry = json.loads(last[3]) if last else None
+    undone = last and conn.execute("select 1 from page_versions where page_id=? and label=? and props like ?",
+                                   (db_id, HISTORY_LABEL, f'%"undo_of": {last[0]}%')).fetchone()
+    if (entry and last[1] == by and time.time() - last[2] < VIEW_MERGE and not undone and not entry.get("undo_of")
+            and [c["kind"] for c in entry.get("changes") or []] == ["views"]):
+        before = entry["views"][0]
+        entry["views"] = [before, new]
+        entry["changes"] = [_view_change(before, new)]
+        conn.execute("update page_versions set ts=?, props=? where id=?", (time.time(), json.dumps(entry, ensure_ascii=False), last[0]))
+    else:
+        _record(db, by, db["schema"], db["schema"], db["views"], new, {}, [_view_change(db["views"], new)])
+    _touch(db_id, views=new)
     return get_db(db_id)
+
+
+def _view_change(before: list, after: list) -> dict:
+    b, a = {v["id"]: v for v in before or []}, {v["id"]: v for v in after or []}
+    return {"kind": "views", "added": [v["name"] for k, v in a.items() if k not in b],
+            "removed": [v["name"] for k, v in b.items() if k not in a],
+            "changed": [v["name"] for k, v in a.items() if k in b and b[k] != v] + (
+                ["顺序"] if [k for k in b if k in a] != [k for k in a if k in b] else [])}
+
+
+def _undo_views(cur: list, before: list | None, after: list | None, schema: list[dict]) -> tuple[list, int]:
+    """撤销一次视图改动：那次改了的视图之后没再动过就换回去，加的去掉，删的放回原来的位置；之后又被改过的留着。"""
+    b, a = {v["id"]: v for v in before or []}, {v["id"]: v for v in after or []}
+    out, kept = [], 0
+    for v in cur:
+        k = v["id"]
+        if k in a and k not in b:
+            if v == a[k]:
+                continue
+            kept += 1
+        elif k in a and k in b and a[k] != b[k]:
+            if v == a[k]:
+                v = b[k]
+            else:
+                kept += 1
+        out.append(v)
+    order = [v["id"] for v in before or []]
+    for k, v in b.items():
+        if k not in a and all(x["id"] != k for x in out):
+            out.insert(min(order.index(k), len(out)), v)
+    if before and [v["id"] for v in cur] == [v["id"] for v in after or []] and set(order) == {v["id"] for v in out}:
+        out.sort(key=lambda v: order.index(v["id"]))   # 那次只调了顺序：顺序也换回去
+    return [x for x in (_fix_view(v, schema) for v in out) if x] or _default_views(schema), kept
 
 
 # ---------- 筛选、排序 ----------
@@ -757,10 +1352,23 @@ def _check_filter(f, keys: dict) -> dict:
     return out
 
 
+def _calc_key(v):
+    """公式、汇总算出来的值排序：类型不一样的分开排（数在前，然后日期、文字、真假），不然没法比。"""
+    if isinstance(v, bool):
+        return (3, int(v), "")
+    if isinstance(v, (int, float)):
+        return (0, v, "")
+    if isinstance(v, dict):
+        return (1, 0, v.get("start", ""))
+    return (2, 0, dbcalc.text(v).lower())
+
+
 def _cmp_value(prop: dict, v):
     """排序、比较用的值：数字是数，选项按选项的顺序，日期、时间按字符串，其余小写的文字。"""
     t = prop["type"]
-    if t == "number":
+    if t in CALCULATED:
+        return _calc_key(v)
+    if t == "number" or t == "unique_id":
         return v
     if t in ("select", "status"):
         order = [o["id"] for o in prop.get("options") or []]
@@ -775,8 +1383,17 @@ def _cmp_value(prop: dict, v):
 
 
 def _target(prop: dict, raw):
-    """筛选里给的值 → 和存的值比的样子（不自动加选项）。"""
+    """筛选里给的值 → 和存的值比的样子（不自动加选项）。公式、汇总留着原样，比的时候按算出来的类型认。"""
     t = prop["type"]
+    if t in CALCULATED:
+        return raw
+    if t == "unique_id":
+        m = re.search(r"(\d+)\s*$", str(raw if raw is not None else ""))
+        if not m:
+            raise ValueError(f"「{prop['name']}」写编号，比如 {prop.get('prefix') or ''}12")
+        return int(m.group(1))
+    if t in ("relation", "files"):
+        return str(raw if raw is not None else "").strip().lstrip("#").lower()
     if t in ("select", "status", "multi_select"):
         return {_option(prop, x, create=False) for x in (raw if isinstance(raw, list) else [raw])}
     if t in ("person", "created_by", "updated_by"):
@@ -803,6 +1420,28 @@ def _match(prop: dict, v, op: str, target) -> bool:
         return empty
     if op == "not_empty":
         return not empty
+    if t in CALCULATED:   # 按算出来的值的类型比
+        if isinstance(v, bool):
+            b = _truthy(target)
+            return False if b is None else (v == b if op in ("eq", "contains") else v != b if op in ("neq", "not_contains") else False)
+        if isinstance(v, (int, float)):
+            n = dbcalc.num(target)
+            if n is None:
+                return op in ("neq", "not_contains")
+            return _match({"type": "number", "name": prop["name"]}, v, op, n)
+        if isinstance(v, dict):
+            d = _day(target.get("start") if isinstance(target, dict) else target)
+            return op in ("neq", "not_contains") if not d else _match({"type": "date", "name": prop["name"]}, v, op, d)
+        return _match({"type": "text", "name": prop["name"]}, dbcalc.text(v), op, str(target if target is not None else "").lower())
+    if t == "relation":   # 比对方行的名称，也能写行号
+        if target.isdigit():
+            hit = int(target) in (v or [])
+        else:
+            hit = target in display(prop, v).lower() if op in ("contains", "not_contains") else target in [x.lower() for x in titles(v or []).values()]
+        return hit if op in ("eq", "contains") else not hit if op in ("neq", "not_contains") else False
+    if t == "files":
+        hit = target in display(prop, v).lower()
+        return hit if op in ("eq", "contains") else not hit if op in ("neq", "not_contains") else False
     if t == "checkbox":
         return bool(v) == target if op in ("eq", "contains") else bool(v) != target
     if t in ("select", "status", "multi_select", "person", "created_by", "updated_by"):
@@ -815,7 +1454,7 @@ def _match(prop: dict, v, op: str, target) -> bool:
         cur = (v["start"] if isinstance(v, dict) else time.strftime("%Y-%m-%d %H:%M", time.localtime(v)) if isinstance(v, (int, float)) else str(v))[:len(target)]
         return {"eq": cur == target, "contains": cur == target, "neq": cur != target, "not_contains": cur != target,
                 "gt": cur > target, "gte": cur >= target, "lt": cur < target, "lte": cur <= target}[op]
-    if t == "number":
+    if t in ("number", "unique_id"):
         if empty:
             return op in ("neq", "not_contains")
         return {"eq": v == target, "contains": v == target, "neq": v != target, "not_contains": v != target,
@@ -887,7 +1526,13 @@ def add_row(db_id: int, props: dict | None, by: str, title: str = "", content: s
     changes, schema_changed, t2 = _check_props(db, props or {}, None)
     if len(content or "") > library.MAX_PAGE:
         raise ValueError(i18n.t("页面太大（最多 {n}K 字）", n=library.MAX_PAGE // 1000))
+    mirrors = {k: changes.pop(k) for k in [k for k in changes if is_mirror(_key(db, k))]}
     stored = {k: v for k, v in changes.items() if v is not None}
+    for q in db["schema"]:   # 自动编号：发下一个号
+        if q["type"] == "unique_id":
+            stored[q["key"]] = q.get("next") or 1
+            q["next"] = stored[q["key"]] + 1
+            schema_changed = True
     if schema_changed:
         _touch(db_id, schema=db["schema"])
     now = time.time()
@@ -898,8 +1543,30 @@ def add_row(db_id: int, props: dict | None, by: str, title: str = "", content: s
     conn.commit()
     if after is not None:
         library.move(p["id"], db_id, after)
+    for k, v in mirrors.items():
+        _set_mirror(db, p["id"], _key(db, k), v or [], by)
     _touch(db_id)
     return get_row(p["id"])
+
+
+def _key(db: dict, key: str) -> dict:
+    return next(p for p in db["schema"] if p["key"] == key)
+
+
+def _set_mirror(db: dict, row_id: int, prop: dict, want: list[int], by: str) -> bool:
+    """在双向关联反向的那一半改值：改的是另一个库里那些行的关联（加上或去掉这一行）。返回有没有变。"""
+    src_key = prop["mirror_of"]
+    now = _backlinks(prop["db"], src_key).get(row_id, [])
+    changed = False
+    for rid in [x for x in want if x not in now] + [x for x in now if x not in want]:
+        other = get_row(rid)
+        if not other:
+            continue
+        cur = [x for x in other["props"].get(src_key) or [] if isinstance(x, int)]
+        new = [x for x in cur if x != row_id] if rid in now else cur + [row_id]
+        update_row(rid, {src_key: new or None}, by)
+        changed = True
+    return changed
 
 
 def update_row(row_id: int, props: dict, by: str, base: int | None = None) -> tuple[dict, list[str]]:
@@ -911,6 +1578,7 @@ def update_row(row_id: int, props: dict, by: str, base: int | None = None) -> tu
     if base is not None and (not isinstance(base, int) or isinstance(base, bool) or base < 0 or base > row["version"]):
         raise ValueError(i18n.t("版本号不对：页面现在是版本 {v}", v=row["version"]))
     changes, schema_changed, title = _check_props(db, props, row)
+    mirrors = {k: changes.pop(k) for k in [k for k in changes if is_mirror(_key(db, k))]}
     cur = dict(row["props"])
     meta = dict(row["meta"])
     changed = [k for k, v in changes.items() if cur.get(k) != v]
@@ -925,8 +1593,9 @@ def update_row(row_id: int, props: dict, by: str, base: int | None = None) -> tu
                                              "by": meta[k].get("by", "")} for k in stale])
     if schema_changed:
         _touch(db["id"], schema=db["schema"])
+    moved = [k for k, v in mirrors.items() if _set_mirror(db, row_id, _key(db, k), v or [], by)]
     if not changed:
-        return row, []
+        return (get_row(row_id) if moved else row), moved
     p, _ = pagedoc.load(row_id)
     now = time.time()
     for k in changed:
@@ -939,9 +1608,31 @@ def update_row(row_id: int, props: dict, by: str, base: int | None = None) -> tu
     try:
         pagedoc.commit_props(p, title if "title" in changed else row["title"], cur, meta, by)
     except pagedoc.Conflict:   # 正好被别人提交了一版：重新来一次（按键查冲突）
-        return update_row(row_id, props, by, base)
+        return update_row(row_id, {k: v for k, v in props.items() if k not in mirrors}, by, base)
     _touch(db["id"])
-    return get_row(row_id), changed
+    return get_row(row_id), changed + moved
+
+
+def press(row_id: int, key: str, by: str = "user") -> tuple[dict, list[str], dict | None]:
+    """点一行上的按钮：按设置改属性（已经删掉的属性、不认了的值跳过），返回 (这一行, 改了的键, 要写的评论 {text, bot} 或 None)。"""
+    row = get_row(row_id)
+    if not row:
+        raise LookupError(i18n.t("没有这一行 #{id}", id=row_id))
+    db = get_db(row["db_id"])
+    btn = next((p for p in db["schema"] if p["key"] == key and p["type"] == "button"), None)
+    if not btn:
+        raise LookupError(i18n.t("没有这个按钮"))
+    keys = {p["key"]: p for p in db["schema"]}
+    todo = {}
+    for k, v in (btn.get("set") or {}).items():
+        q = keys.get(k)
+        if q and q["type"] not in READONLY and (q["type"] == "title" or fits(q, v)):
+            todo[k] = v
+    changed = []
+    if todo:
+        row, changed = update_row(row_id, todo, by)
+    note = {"text": btn["comment"], "bot": btn.get("bot")} if btn.get("comment") else None
+    return row, changed, note
 
 
 def fits(prop: dict, v) -> bool:
@@ -985,27 +1676,88 @@ def restore_props(row_id: int, props: dict, by: str):
 
 
 def public_row(r: dict) -> dict:
-    return {k: r[k] for k in ("id", "title", "version", "pos", "created", "updated", "created_by", "updated_by", "props", "locked")}
+    return {k: r[k] for k in ("id", "title", "version", "pos", "created", "updated", "created_by", "updated_by", "props", "locked")} | {
+        "calc": r.get("calc") or {}}
 
 
-def public(db: dict, view_id: str | None = None) -> dict:
-    """网页用：库、表结构、视图、按视图筛选排序后的行。"""
+def refs(db: dict, items: list[dict]) -> dict[int, str]:
+    """这些行的关联指着的行 → 标题（网页显示关联用）。"""
+    ids = []
+    for p in db["schema"]:
+        if p["type"] == "relation":
+            for r in items:
+                ids += [x for x in value_of(r, p) or [] if isinstance(x, int)]
+    return titles(ids)
+
+
+PAGE = 200   # 网页一次取多少行（往下滚再取）
+
+
+def public(db: dict, view_id: str | None = None, limit: int | None = None, include: list[int] | None = None) -> dict:
+    """网页用：库、表结构、视图、按视图筛选排序后的前 limit 行（count 是符合条件的总数，total 是库里一共几行）。
+    include：刚加的行，不在前 limit 行里也带上（放在最后），免得新建的行看不见。看板多给每一列有几张（groups）。"""
     view, items = view_rows(db, view_id)
-    return {"id": db["id"], "title": db["title"], "locked": db["locked"], "version": db["version"], "schema": db["schema"],
-            "views": db["views"], "view": view["id"], "total": conn.execute(
-                "select count(*) from pages where parent_id=? and kind='row'", (db["id"],)).fetchone()[0],
-            "rows": [public_row(r) for r in items]}
+    limit = max(1, min(int(limit or PAGE), MAX_ROWS))
+    shown = items[:limit]
+    if include:
+        have = {r["id"] for r in shown}
+        shown += [r for r in items[limit:] if r["id"] in set(include) - have]
+    out = {"id": db["id"], "title": db["title"], "locked": db["locked"], "version": db["version"], "schema": db["schema"],
+           "views": db["views"], "view": view["id"], "total": conn.execute(
+               "select count(*) from pages where parent_id=? and kind='row'", (db["id"],)).fetchone()[0],
+           "count": len(items), "rows": [public_row(r) for r in shown], "refs": refs(db, shown)}
+    group = next((p for p in db["schema"] if p["key"] == view.get("group_by")), None) if view.get("type") == "board" else None
+    if group:
+        ids = {o["id"] for o in group.get("options") or []}
+        counts: dict[str, int] = {}
+        for r in items:
+            v = value_of(r, group)
+            k = v if v in ids else ""
+            counts[k] = counts.get(k, 0) + 1
+        out["groups"] = counts
+    return out
+
+
+def find_rows(db_id: int, q: str = "", limit: int = 30) -> list[dict]:
+    """按名称找行（关联的选择框用）：[{id, title}]。"""
+    q = " ".join(str(q or "").split()).lower()
+    out = []
+    for i, title in conn.execute("select id, title from pages where parent_id=? and kind='row' order by coalesce(pos, 0), id", (db_id,)):
+        if not q or q in (title or "").lower() or q.lstrip("#") == str(i):
+            out.append({"id": i, "title": title or ""})
+            if len(out) >= limit:
+                break
+    return out
 
 
 # ---------- 给模型看的文字 ----------
 def schema_text(db: dict) -> str:
     parts = []
+    names = {p["key"]: p["name"] for p in db["schema"]}
     for p in db["schema"]:
         t = TYPES[p["type"]]
         if p["type"] in OPTIONED:
             t += "：" + (" / ".join(o["name"] for o in p.get("options") or []) or "还没有选项")
         elif p["type"] == "number" and (p.get("format") or "number") != "number":
             t += f"（{p['format']}）"
+        elif p["type"] == "formula":
+            t += f"：{p.get('formula') or '还没写'}"
+        elif p["type"] == "relation":
+            odb = get_db(p.get("db"))
+            t += f"到「{odb['title'] if odb else '已删的库'}」#{p.get('db')}" + ("，那边的关联在这边的一半，改这里改的是那边" if is_mirror(p) else "，双向" if p.get("pair") else "")
+        elif p["type"] == "rollup":
+            rel = next((q for q in db["schema"] if q["key"] == p.get("relation")), None)
+            odb = get_db(rel["db"]) if rel else None
+            tgt = next((q["name"] for q in (odb or {}).get("schema") or [] if q["key"] == p.get("target")), "?")
+            t += f"：沿「{rel['name'] if rel else '?'}」取「{tgt}」{dbcalc.ROLLUPS.get(p.get('fn'), p.get('fn'))}"
+        elif p["type"] == "unique_id" and p.get("prefix"):
+            t += f"（{p['prefix']}）"
+        elif p["type"] == "button":
+            acts = [f"把{names.get(k, k)}改成{display(next((q for q in db['schema'] if q['key'] == k), {'type': 'text'}), v) or '空'}"
+                    for k, v in (p.get("set") or {}).items()]
+            if p.get("comment"):
+                acts.append("写评论叫 Bot")
+            t += "：" + ("、".join(acts) or "什么都不做") + "（只有用户能点）"
         parts.append(f"{p['name']}（{t}）")
     return "、".join(parts)
 
@@ -1065,12 +1817,27 @@ def conflict_text(e: Conflict, head: str = "没改") -> str:
 _TYPE_ENUM = [k for k in TYPES if k != "title"]
 _VALUES = ("值的写法：文本、网址、邮箱、电话写文字；数字写数；单选写选项名（没有的会自动加上）；多选写选项名的列表；"
            "状态只能写已有的选项名；日期写 2026-11-15 或 2026-11-15 14:00，有结束日期写 {\"start\": …, \"end\": …}；"
-           "人员写名字的列表（“用户”或者 Bot、外部 Agent 的名字）；勾选写 true / false；写 null 是清空。自动算的（创建时间等）不能写。")
+           "人员写名字的列表（“用户”或者 Bot、外部 Agent 的名字）；勾选写 true / false；关联写对方库的行号或行的名称的列表；"
+           "文件写网址的列表；写 null 是清空。自动算的（创建时间、公式、汇总、自动编号）和按钮不能写。")
 _PROP_SPEC = {"type": "object", "properties": {
     "name": {"type": "string"},
     "type": {"type": "string", "enum": _TYPE_ENUM, "description": "、".join(f"{k} {v}" for k, v in TYPES.items() if k != "title")},
     "options": {"type": "array", "items": {"type": "string"}, "description": "单选、多选、状态的选项（按顺序）；状态不给就是 未开始 / 进行中 / 已完成"},
-    "format": {"type": "string", "enum": list(FORMATS), "description": "数字的显示格式：number、comma 千分位、percent 百分比（存 50 显示 50%）、cny、usd"}},
+    "format": {"type": "string", "enum": list(FORMATS), "description": "数字（公式、汇总算出来是数时也算）的显示格式：number、comma 千分位、percent 百分比（存 50 显示 50%）、cny、usd"},
+    "formula": {"type": "string", "description": '公式：prop("属性名") 取值，+ - * / % ^、== != > < >= <=、and or not、条件 ? 甲 : 乙，'
+                                                 '函数 if、ifs、empty、length、concat、join、contains、replace、lower、upper、slice、toNumber、toText、round、floor、ceil、abs、'
+                                                 'min、max、sum、average、now、today、dateAdd(日期, 数, "days")、dateBetween(日期1, 日期2, "days")、formatDate、year、month、day、weekday。'
+                                                 '例：prop("单价") * prop("数量")、if(prop("完成"), "✓", "")、dateBetween(prop("截止"), today(), "days")'},
+    "db": {"description": "关联：关联到哪个库（库的编号；self 是这个库自己）"},
+    "twoway": {"type": "boolean", "description": "关联：双向（对方库里也加一个反向的关联属性，两边都能改）"},
+    "pair_name": {"type": "string", "description": "关联：双向时对方那一半叫什么"},
+    "relation": {"type": "string", "description": "汇总：沿哪个关联属性（名字）"},
+    "target": {"type": "string", "description": "汇总：取对方库的哪个属性（名字）"},
+    "fn": {"type": "string", "enum": list(dbcalc.ROLLUPS), "description": "汇总的算法：" + "、".join(f"{k} {v}" for k, v in dbcalc.ROLLUPS.items())},
+    "prefix": {"type": "string", "description": "自动编号的前缀，比如 TASK-"},
+    "label": {"type": "string", "description": "按钮上的字"},
+    "set": {"type": "object", "description": "按钮：点了把哪些属性改成什么 {属性名: 值}"},
+    "comment": {"type": "string", "description": "按钮：点了在这一行写一条评论（叫醒 Bot 处理，可以 @ 某个 Bot）"}},
     "required": ["name", "type"]}
 
 DB_CREATE = {"type": "function", "function": {
@@ -1098,7 +1865,9 @@ DB_SCHEMA = {"type": "function", "function": {
             "name": {"type": "string", "description": "add：属性名；update：新名字"},
             "type": {"type": "string", "enum": _TYPE_ENUM},
             "options": {"type": "array", "items": {"type": "string"}},
-            "format": {"type": "string", "enum": list(FORMATS)}},
+            "format": {"type": "string", "enum": list(FORMATS)},
+            **{k: v for k, v in _PROP_SPEC["properties"].items() if k in ("formula", "db", "twoway", "pair_name", "relation", "target", "fn",
+                                                                           "prefix", "label", "set", "comment")}},
             "required": ["op"]}}},
         "required": ["db_id", "ops"]}}}
 
@@ -1110,7 +1879,8 @@ DB_QUERY = {"type": "function", "function": {
         "filter": {"type": "array", "items": {"type": "object", "properties": {
             "prop": {"type": "string", "description": "属性名"},
             "op": {"type": "string", "enum": list(OPS), "description": "eq 等于、neq 不等于、contains 包含（多选、人员是含有其中一个）、"
-                                                                     "not_contains、gt / gte / lt / lte 比大小（日期按先后）、empty 是空的、not_empty"},
+                                                                     "not_contains、gt / gte / lt / lte 比大小（日期按先后）、empty 是空的、not_empty；"
+                                                                     "关联比对方行的名称；公式、汇总按算出来的值"},
             "value": {"description": "比的值，写法和 db_add 一样；日期能写 today / 今天 / 明天"}},
             "required": ["prop", "op"]}},
         "sort": {"type": "array", "items": {"type": "object", "properties": {
@@ -1302,7 +2072,7 @@ def index_text(pid: int) -> str:
     if row:
         db = get_db(row["db_id"])
         return "\n".join(f"{p['name']}：{v}" for p in db["schema"] if p["type"] != "title" and p["type"] not in COMPUTED
-                         and (v := display(p, value_of(row, p))))
+                         and p["type"] not in ("button", "formula", "rollup") and not is_mirror(p) and (v := display(p, value_of(row, p))))
     db = get_db(pid)
     return ("数据库，属性：" + "、".join(p["name"] for p in db["schema"])) if db else ""
 
@@ -1312,8 +2082,14 @@ async def announce(ev: dict | None, by: str, created: bool = False):
     if not ev:
         return
     from . import registry
+    done = set()
     for db_id in ev.get("db_ids") or [ev["db_id"]]:
         await registry.emit("db_changed", db_id=db_id, rows=ev.get("rows") or [], by=by)
+        done.add(db_id)
+    for db_id in list(done):   # 关联着的库：汇总、反向关联跟着变
+        for other in related_dbs(db_id) - done:
+            await registry.emit("db_changed", db_id=other, rows=[], by=by)
+            done.add(other)
     await registry.emit("pages_changed")
 
 

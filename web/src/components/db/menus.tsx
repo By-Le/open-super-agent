@@ -1,14 +1,126 @@
 // 数据库的菜单：表头（改名、改类型、选项、格式、排序、隐藏、删列）、加属性、筛选、排序、显示哪些属性、视图设置。
 // 表结构的改动交给 onSchema（ops，见 osa/dbs.change_schema），视图的改动交给 onView（这个视图改成什么样）。
-import { useState } from 'react'
-import { useStore } from '../../store'
+import { useContext, useEffect, useState } from 'react'
+import { api, useStore } from '../../store'
 import { t } from '../../i18n'
 import { ask } from '../Dialog'
-import { COLORS, COLOR_NAMES, COMPUTED, FORMATS, GROUPS, OPTIONED, TYPES, opName, opsOf, typeIcon, typeName,
-  type DbOption, type DbProp, type DbView, type Filter, type PropType, type Sort } from './db'
+import { Cell, DbCtx } from './cells'
+import { COLORS, COLOR_NAMES, FORMATS, GROUPS, OPTIONED, ROLLUPS, TYPES, dbApi, isMirror, opName, opsOf, readOnly, typeIcon, typeName,
+  type DbOption, type DbProp, type DbRow, type DbView, type Filter, type PropType, type Sort } from './db'
 
 type SchemaFn = (ops: any[]) => Promise<void>
 type ViewFn = (v: DbView) => void
+
+// 所有数据库的名字（关联选库、显示关联到哪个库用），取一次
+let dbList: Promise<{ id: number; title: string }[]> | null = null
+function useDbs() {
+  const [list, setList] = useState<{ id: number; title: string }[]>([])
+  useEffect(() => {
+    dbList = dbList || api<any[]>('/api/pages').then(ps => ps.filter(p => p.kind === 'db').map(p => ({ id: p.id, title: p.title }))).catch(() => [])
+    dbList.then(setList)
+  }, [])
+  return list
+}
+export const forgetDbs = () => { dbList = null }
+
+/** 关联到的库的表结构（汇总选“取哪个属性”用）。 */
+function useSchemaOf(id?: number) {
+  const [schema, setSchema] = useState<DbProp[] | null>(null)
+  useEffect(() => { if (id) dbApi.get(id, null, 1).then(d => setSchema(d.schema)).catch(() => setSchema([])) }, [id])
+  return schema
+}
+
+/** 公式、关联、汇总、自动编号、按钮自己的设置。draft 是现在的样子，onChange 交出改了的字段（表头菜单里马上存，加属性时攒着一起交）。 */
+export function ConfigFields({ draft, schema, onChange, adding }: {
+  draft: Partial<DbProp> & { type: PropType; twoway?: boolean }; schema: DbProp[]; onChange: (patch: Record<string, any>) => void; adding?: boolean
+}) {
+  const { dbId } = useContext(DbCtx)
+  const dbs = useDbs()
+  const rels = schema.filter(p => p.type === 'relation')
+  const rel = rels.find(p => p.key === draft.relation) || (adding ? rels[0] : undefined)
+  const other = useSchemaOf(draft.type === 'rollup' ? rel?.db : undefined)
+  const [formula, setFormula] = useState(draft.formula || '')
+  const dbName = (id?: number) => id === dbId ? t('这个库自己') : dbs.find(d => d.id === id)?.title || `#${id}`
+  const numFormat = (draft.type === 'formula' || draft.type === 'rollup') && <label className="db-menu-row"><span>{t('数字格式')}</span>
+    <select value={draft.format || 'number'} onChange={e => onChange({ format: e.target.value })}>
+      {FORMATS.map(([k, n]) => <option key={k} value={k}>{n}</option>)}</select></label>
+  switch (draft.type) {
+    case 'formula': {
+      const insert = (name: string) => { const x = `${formula}${formula && !formula.endsWith(' ') ? ' ' : ''}prop("${name}")`; setFormula(x); if (adding) onChange({ formula: x }) }
+      return <div className="db-config">
+        <textarea className="db-input db-formula" rows={3} value={formula} placeholder={'prop("单价") * prop("数量")'}   /* i18n-ignore：公式的例子 */
+          onChange={e => { setFormula(e.target.value); if (adding) onChange({ formula: e.target.value }) }}
+          onBlur={() => { if (!adding && formula !== (draft.formula || '')) onChange({ formula }) }} spellCheck={false} />
+        <div className="db-chips">{schema.filter(p => p.key !== draft.key && p.type !== 'button').map(p =>
+          <button key={p.key} className="db-chip c-gray" onMouseDown={e => e.preventDefault()} onClick={() => insert(p.name)}>{p.name}</button>)}</div>
+        <div className="muted small">{t('加减乘除、比大小、and / or，条件 ? 甲 : 乙；函数有 if、concat、round、dateBetween(日期1, 日期2, "days")、dateAdd、today()、formatDate、length、contains、empty 等。')}</div>
+        {numFormat}
+      </div>
+    }
+    case 'relation':
+      if (isMirror(draft as DbProp)) return <div className="muted small">{t('这是「{db}」里的关联在这边的一半：在这里改，改的是那边的行。', { db: dbName(draft.db) })}</div>
+      if (!adding) return <div className="muted small">{t('关联到：{db}', { db: dbName(draft.db) })}{draft.pair ? ' · ' + t('双向') : ''}</div>
+      return <div className="db-config">
+        <label className="db-menu-row"><span>{t('关联到')}</span>
+          <select value={draft.db ?? dbId} onChange={e => onChange({ db: Number(e.target.value) })}>
+            <option value={dbId}>{t('这个库自己')}</option>
+            {dbs.filter(d => d.id !== dbId).map(d => <option key={d.id} value={d.id}>{d.title}</option>)}</select></label>
+        <label className="db-toggle"><input type="checkbox" checked={!!draft.twoway} onChange={e => onChange({ twoway: e.target.checked })} />
+          {t('双向：对方库里也加一列，两边都能改')}</label>
+      </div>
+    case 'rollup':
+      if (!rels.length) return <div className="muted small">{t('汇总要沿一个关联属性取值：先加一个关联。')}</div>
+      return <div className="db-config">
+        <label className="db-menu-row"><span>{t('沿着')}</span>
+          <select value={rel?.key || ''} onChange={e => onChange({ relation: e.target.value, target: undefined })}>
+            {!rel && <option value="" disabled>{t('选一个关联')}</option>}
+            {rels.map(p => <option key={p.key} value={p.key}>{p.name}</option>)}</select></label>
+        <label className="db-menu-row"><span>{t('取')}</span>
+          <select value={draft.target || ''} onChange={e => onChange({ relation: rel?.key, target: e.target.value })}>
+            {!draft.target && <option value="">{other?.[0]?.name || t('名称')}</option>}
+            {(other || []).filter(p => p.type !== 'button').map(p => <option key={p.key} value={p.key}>{p.name}</option>)}</select></label>
+        <label className="db-menu-row"><span>{t('算')}</span>
+          <select value={draft.fn || 'count'} onChange={e => onChange({ relation: rel?.key, fn: e.target.value })}>
+            {ROLLUPS.map(([k, n]) => <option key={k} value={k}>{n}</option>)}</select></label>
+        {numFormat}
+      </div>
+    case 'unique_id':
+      return <label className="db-menu-row"><span>{t('前缀')}</span>
+        <input className="db-input" defaultValue={draft.prefix || ''} placeholder="TASK-" maxLength={12}   /* i18n-ignore：前缀的例子 */
+          onBlur={e => { if (e.target.value !== (draft.prefix || '')) onChange({ prefix: e.target.value }) }} /></label>
+    case 'button':
+      return <ButtonConfig draft={draft} schema={schema} onChange={onChange} />
+    default:
+      return null
+  }
+}
+
+/** 按钮：上面的字、点了把哪些属性改成什么、写一条评论叫哪个 Bot。 */
+function ButtonConfig({ draft, schema, onChange }: { draft: Partial<DbProp>; schema: DbProp[]; onChange: (patch: Record<string, any>) => void }) {
+  const bots = useStore(s => s.bots)
+  const set = draft.set || {}
+  const fake: DbRow = { id: 0, title: set.title ?? '', version: 0, pos: 0, created: 0, updated: 0, created_by: '', updated_by: '', props: set, locked: false }
+  const can = schema.filter(p => !readOnly(p) && !isMirror(p) && p.key !== draft.key)
+  const unused = can.filter(p => !(p.key in set))
+  const put = (next: Record<string, any>) => onChange({ set: next })
+  return <div className="db-config">
+    <label className="db-menu-row"><span>{t('按钮上的字')}</span>
+      <input className="db-input" defaultValue={draft.label || ''} placeholder={draft.name} onBlur={e => onChange({ label: e.target.value })} /></label>
+    <div className="muted small">{t('点了把这些属性改成：')}</div>
+    {Object.keys(set).map(k => { const p = schema.find(x => x.key === k); return p && <div key={k} className="db-menu-row db-set-row">
+      <span>{p.name}</span><Cell prop={p} row={fake} onSave={v => put({ ...set, [k]: v })} className="db-set-value" />
+      <button className="icon-btn small" title={t('去掉')} onClick={() => { const n = { ...set }; delete n[k]; put(n) }}>×</button></div> })}
+    {!!unused.length && <select value="" onChange={e => { const p = schema.find(x => x.key === e.target.value)!; put({ ...set, [p.key]: p.type === 'checkbox' ? true : p.type === 'title' ? '' : null }) }}>
+      <option value="" disabled>{t('＋ 改一个属性')}</option>{unused.map(p => <option key={p.key} value={p.key}>{p.name}</option>)}</select>}
+    <div className="muted small">{t('再写一条评论（会叫醒 Bot 处理这一行，空着就不写）：')}</div>
+    <textarea className="db-input" rows={2} defaultValue={draft.comment || ''} placeholder={t('比如：这一行做完了，帮我写个总结')}
+      onBlur={e => { if (e.target.value !== (draft.comment || '')) onChange({ comment: e.target.value }) }} />
+    <label className="db-menu-row"><span>{t('叫哪个 Bot')}</span>
+      <select value={draft.bot ?? ''} onChange={e => onChange({ bot: e.target.value ? Number(e.target.value) : null })}>
+        <option value="">{t('默认（建这个库的 Bot 或主 Bot）')}</option>
+        {bots.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}</select></label>
+  </div>
+}
 
 function TypeSelect({ value, onChange, title }: { value: PropType | ''; onChange: (t: PropType) => void; title?: boolean }) {
   return <select value={value} onChange={e => onChange(e.target.value as PropType)}>
@@ -19,8 +131,8 @@ function TypeSelect({ value, onChange, title }: { value: PropType | ''; onChange
 }
 
 /** 表头点开的菜单。 */
-export function HeaderMenu({ prop, view, onSchema, onView, onClose }: {
-  prop: DbProp; view: DbView; onSchema: SchemaFn; onView: ViewFn; onClose: () => void
+export function HeaderMenu({ prop, schema, view, onSchema, onView, onClose }: {
+  prop: DbProp; schema: DbProp[]; view: DbView; onSchema: SchemaFn; onView: ViewFn; onClose: () => void
 }) {
   const [name, setName] = useState(prop.name)
   const rename = () => { if (name.trim() && name.trim() !== prop.name) onSchema([{ op: 'update', prop: prop.key, name: name.trim() }]) }
@@ -35,15 +147,16 @@ export function HeaderMenu({ prop, view, onSchema, onView, onClose }: {
     <div className="db-menu">
       <input className="db-input" value={name} onChange={e => setName(e.target.value)} onBlur={rename}
         onKeyDown={e => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) { rename(); onClose() } }} aria-label={t('属性名')} />
-      {prop.type !== 'title' && <label className="db-menu-row"><span>{t('类型')}</span>
+      {prop.type !== 'title' && !isMirror(prop) && <label className="db-menu-row"><span>{t('类型')}</span>
         <TypeSelect value={prop.type} onChange={type => onSchema([{ op: 'update', prop: prop.key, type }])} /></label>}
+      <ConfigFields key={prop.type} draft={prop} schema={schema} onChange={patch => onSchema([{ op: 'update', prop: prop.key, ...patch }])} />
       {prop.type === 'number' && <label className="db-menu-row"><span>{t('格式')}</span>
         <select value={prop.format || 'number'} onChange={e => onSchema([{ op: 'update', prop: prop.key, format: e.target.value }])}>
           {FORMATS.map(([k, n]) => <option key={k} value={k}>{n}</option>)}</select></label>}
       {OPTIONED.has(prop.type) && <OptionsEditor prop={prop} onSave={options => onSchema([{ op: 'update', prop: prop.key, options }])} />}
       <div className="db-menu-sep" />
-      <button onClick={() => sortBy(false)}>↑ {t('升序')}</button>
-      <button onClick={() => sortBy(true)}>↓ {t('降序')}</button>
+      {prop.type !== 'button' && <button onClick={() => sortBy(false)}>↑ {t('升序')}</button>}
+      {prop.type !== 'button' && <button onClick={() => sortBy(true)}>↓ {t('降序')}</button>}
       {prop.type !== 'title' && <button onClick={hide}>{t('在这个视图里隐藏')}</button>}
       {prop.type !== 'title' && <button className="danger-text" onClick={del}>{t('删除属性')}</button>}
     </div>
@@ -83,16 +196,19 @@ function OptionsEditor({ prop, onSave }: { prop: DbProp; onSave: (o: DbOption[])
 }
 
 /** 表头最后的“＋”：加一个属性。 */
-export function AddProp({ onAdd }: { onAdd: (name: string, type: PropType) => void }) {
+export function AddProp({ schema, onAdd }: { schema: DbProp[]; onAdd: (op: Record<string, any>) => void }) {
   const [name, setName] = useState('')
   const [type, setType] = useState<PropType>('text')
-  const go = () => { if (name.trim()) onAdd(name.trim(), type) }
+  const [conf, setConf] = useState<Record<string, any>>({})
+  const go = () => { if (name.trim()) onAdd({ ...conf, name: name.trim(), type }) }
+  const blocked = type === 'rollup' && !schema.some(p => p.type === 'relation')
   return (
     <div className="db-menu">
       <input className="db-input" autoFocus value={name} placeholder={t('属性名')} onChange={e => setName(e.target.value)}
         onKeyDown={e => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) go() }} />
-      <TypeSelect value={type} onChange={setType} />
-      <button className="btn primary" disabled={!name.trim()} onClick={go}>{t('添加')}</button>
+      <TypeSelect value={type} onChange={x => { setType(x); setConf({}) }} />
+      <ConfigFields key={type} adding draft={{ ...conf, type, name }} schema={schema} onChange={patch => setConf(c => ({ ...c, ...patch }))} />
+      <button className="btn primary" disabled={!name.trim() || blocked} onClick={go}>{t('添加')}</button>
     </div>
   )
 }
@@ -116,6 +232,10 @@ function FilterValue({ prop, f, onChange }: { prop: DbProp; f: Filter; onChange:
     return <select value={f.value === false ? 'no' : 'yes'} onChange={e => onChange(e.target.value === 'yes')}>
       <option value="yes">{t('勾了')}</option><option value="no">{t('没勾')}</option></select>
   }
+  if (prop.type === 'relation' || prop.type === 'files') {
+    return <input className="db-input" defaultValue={f.value ?? ''} placeholder={prop.type === 'relation' ? t('名称里有') : t('文件名里有')}
+      onBlur={e => onChange(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) (e.target as HTMLInputElement).blur() }} />
+  }
   if (prop.type === 'date' || prop.type === 'created_time' || prop.type === 'updated_time') {
     return <input type="date" value={f.value ?? ''} onChange={e => onChange(e.target.value)} />
   }
@@ -129,6 +249,7 @@ export function FilterEditor({ schema, view, onView }: { schema: DbProp[]; view:
   const set = (k: number, patch: Partial<Filter>) => put(list.map((f, i) => (i === k ? { ...f, ...patch } : f)))
   const byKey = (k: string) => schema.find(p => p.key === k)!
   const add = () => { const p = schema[0]; put([...list, { prop: p.key, op: opsOf(p.type)[0], value: '' }]) }
+  schema = schema.filter(p => p.type !== 'button')
   return (
     <div className="db-menu">
       {!list.length && <div className="muted small">{t('还没有筛选条件：都显示')}</div>}
@@ -152,6 +273,7 @@ export function FilterEditor({ schema, view, onView }: { schema: DbProp[]; view:
 }
 
 export function SortEditor({ schema, view, onView }: { schema: DbProp[]; view: DbView; onView: ViewFn }) {
+  schema = schema.filter(p => p.type !== 'button')
   const list = view.sort || []
   const put = (next: Sort[]) => onView({ ...view, sort: next })
   return (
@@ -210,10 +332,12 @@ export function ViewMenu({ schema, view, canDelete, onView, onDelete }: {
   )
 }
 
-export const editable = (p: DbProp) => !COMPUTED.has(p.type)
+export const editable = (p: DbProp) => !readOnly(p)
 
 // ---------- 表结构的历史（osa/dbs.history）：每次加列、删列、改类型、改选项一条，能撤销 ----------
-export type Change = { kind: string; key?: string; name?: string; from?: string; to?: string; type?: string; cleared?: number; kept?: number; items?: Change[] }
+export type Change = { kind: string; key?: string; name?: string; from?: string; to?: string; type?: string; cleared?: number; kept?: number; items?: Change[]
+  added?: string[]; removed?: string[]; changed?: string[] }
+const names = (l?: string[]) => (l || []).map(x => x === '顺序' ? t('顺序') : `「${x}」`).join(t('、'))   // i18n-ignore：服务器记的“顺序”
 export type HistoryItem = { id: number; version: number; by: string; ts: number; changes: Change[]; undo_of?: number | null; undone_by?: number }
 
 export function changeText(c: Change): string {
@@ -226,6 +350,9 @@ export function changeText(c: Change): string {
       + (c.cleared ? t('，{n} 行的值转不过去，清掉了', { n: c.cleared }) : '')
     case 'options': return t('改了「{name}」的选项', { name: c.name || '' }) + (c.cleared ? t('，{n} 行用了去掉的选项，清掉了', { n: c.cleared }) : '')
     case 'format': return t('改了「{name}」的数字格式', { name: c.name || '' })
+    case 'config': return t('改了「{name}」的设置', { name: c.name || '' })
+    case 'views': return [c.added?.length ? t('加了视图{names}', { names: names(c.added) }) : '', c.removed?.length ? t('删了视图{names}', { names: names(c.removed) }) : '',
+      c.changed?.length ? t('改了视图{names}', { names: names(c.changed) }) : ''].filter(Boolean).join(t('；')) || t('改了视图')
     case 'undo': return t('撤销了：{what}', { what: (c.items || []).map(changeText).join('；') })
       + (c.kept ? t('（{n} 格之后被改过，留着现在的值）', { n: c.kept }) : '')
     default: return c.kind
@@ -236,7 +363,7 @@ export function SchemaHistory({ list, nameOf, when, onUndo }: {
   list: HistoryItem[] | null; nameOf: (by: string) => string; when: (ts: number) => string; onUndo: (h: HistoryItem) => void
 }) {
   if (!list) return <div className="muted small">{t('加载中…')}</div>
-  if (!list.length) return <div className="muted small">{t('还没有改过表结构。加列、删列、改类型、改选项都会记在这里，能撤销。')}</div>
+  if (!list.length) return <div className="muted small">{t('还没有改过。加列、删列、改类型、改选项、调视图都会记在这里，能撤销。')}</div>
   return (
     <div className="db-menu db-history">
       {list.map(h => (

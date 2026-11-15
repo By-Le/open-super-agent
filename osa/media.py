@@ -85,17 +85,28 @@ def dimensions(b: bytes, mime: str) -> tuple[int, int]:
 
 def _clean_name(name: str, mime: str) -> str:
     name = posixpath.basename((name or "").replace("\\", "/")).strip().replace("\0", "")[:200]
-    return name or "image." + mime.split("/")[1].replace("jpeg", "jpg")
+    return name or ("file" if mime == "application/octet-stream" else "image." + mime.split("/")[1].replace("jpeg", "jpg"))
 
 
-def save(data: bytes, name: str = "", limit: int = MAX_BYTES, video: bool = False) -> dict:
-    """存一张图片（video=True 时也收视频），返回它的信息（id、mime、name、size、w、h）。不是支持的格式就报错。"""
+INLINE = ("image/png", "image/jpeg", "image/webp", "image/gif", "application/pdf")
+
+
+def inline(mime: str) -> bool:
+    """能在浏览器里直接打开的（图片、视频、PDF）；别的一律下载。"""
+    return mime in INLINE or mime.startswith("video/")
+
+
+def save(data: bytes, name: str = "", limit: int = MAX_BYTES, video: bool = False, any_file: bool = False) -> dict:
+    """存一张图片（video=True 时也收视频），返回它的信息（id、mime、name、size、w、h）。不是支持的格式就报错。
+    any_file：数据库的文件属性，什么文件都收（认不出的记成 application/octet-stream，只能下载）。"""
     if not data:
-        raise ValueError(i18n.t("没收到图片"))
+        raise ValueError(i18n.t("没收到图片") if not any_file else i18n.t("没收到文件"))
     if len(data) > limit:
-        raise ValueError(i18n.t("图片太大了（最多 {n} MB）", n=limit >> 20))
+        raise ValueError(i18n.t("图片太大了（最多 {n} MB）", n=limit >> 20) if not any_file else i18n.t("文件太大了（最多 {n} MB）", n=limit >> 20))
     mime = sniff(data)
-    if not mime or (mime.startswith("video/") and not video):
+    if any_file and not mime:
+        mime = "application/pdf" if data.startswith(b"%PDF-") else "application/octet-stream"
+    elif not mime or (mime.startswith("video/") and not video and not any_file):
         raise ValueError(i18n.t("只支持 PNG、JPG、WebP、GIF 图片"))
     mid = hashlib.sha256(data).hexdigest()[:24]
     w, h = dimensions(data, mime)
@@ -154,12 +165,14 @@ def image_md(mid: str, alt: str = "") -> str:
 
 
 def used() -> set[str]:
-    """消息里引用着的图片，加上资料库页面（现在的和历史版本）里引用着的。"""
+    """消息里引用着的图片，加上资料库页面（现在的和历史版本）里引用着的，数据库的文件属性里的。"""
     out = {r[0] for r in conn.execute("""select distinct json_extract(a.value, '$.media')
         from messages m, json_each(m.meta, '$.attachments') a
         where m.meta like '%"attachments"%' and json_extract(a.value, '$.media') is not null""")}
     for (c,) in conn.execute("""select content from pages where content like '%/api/media/%'
-                                union all select content from page_versions where content like '%/api/media/%'"""):
+                                union all select content from page_versions where content like '%/api/media/%'
+                                union all select props from pages where props like '%/api/media/%'
+                                union all select props from page_versions where props like '%/api/media/%'"""):   # 数据库的文件属性
         out.update(EMBED.findall(c or ""))
     return out
 

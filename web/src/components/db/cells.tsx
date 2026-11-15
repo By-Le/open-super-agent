@@ -1,11 +1,35 @@
 // 数据库的格子：每种属性怎么显示、点了怎么改。表格、看板的卡片、行页面顶上的属性栏都用它。
 // 改好的值按存的样子交给 onSave（选项 id、bot:3、{start, end}）；新的选项名直接交名字，服务器会加上这个选项。
-import { useRef, useState } from 'react'
-import { useStore } from '../../store'
+import { createContext, useContext, useEffect, useRef, useState } from 'react'
+import { openLibrary, useStore } from '../../store'
 import { t } from '../../i18n'
 import { useAuthors, who } from '../../authors'
+import { notice } from '../Dialog'
 import { Popover } from './Popover'
-import { COMPUTED, display, fmtNumber, isEmpty, optionOf, valueOf, type DbOption, type DbProp, type DbRow } from './db'
+import { calcText, dbApi, display, fmtNumber, isEmpty, optionOf, readOnly, valueOf, type DbFile, type DbOption, type DbProp, type DbRow } from './db'
+
+/** 格子要的上下文：在哪个库、关联到的行的标题（服务器给的 refs，选了新的行补进来）、点了按钮以后怎么刷新。 */
+export type DbCtxValue = { dbId: number; refs: Record<number, string>; addRefs: (m: Record<number, string>) => void; onPressed: () => void }
+export const DbCtx = createContext<DbCtxValue>({ dbId: 0, refs: {}, addRefs: () => {}, onPressed: () => {} })
+
+function Links({ ids }: { ids: number[] }) {
+  const { refs } = useContext(DbCtx)
+  return <span className="db-chips">{ids.filter(id => id in refs).map(id => (
+    <button key={id} className="db-link-chip" title={t('打开')} onClick={e => { e.stopPropagation(); openLibrary(id) }}>{refs[id] || t('无标题')}</button>))}</span>
+}
+
+function Files({ v }: { v: DbFile[] }) {
+  return <span className="db-chips">{v.map((f, k) => (
+    <a key={k} className="db-file" href={f.url} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()} title={f.name}>
+      {/^\/api\/media\//.test(f.url) && /\.(png|jpe?g|webp|gif)$/i.test(f.name) ? <img src={f.url} alt="" /> : <span className="db-file-icon">⎘</span>}
+      <span>{f.name}</span></a>))}</span>
+}
+
+function Calc({ prop, v }: { prop: DbProp; v: any }) {
+  if (typeof v === 'boolean') return <span className={'db-check' + (v ? ' on' : '')}>{v ? '✓' : ''}</span>
+  if (typeof v === 'number') return <span className="db-num">{fmtNumber(prop, v)}</span>
+  return <span className="db-text">{calcText(prop, v)}</span>
+}
 
 export function Chip({ o }: { o?: DbOption }) {
   if (!o) return <span className="db-chip">?</span>
@@ -20,8 +44,12 @@ function Person({ by }: { by: string }) {
 
 /** 只读的显示。 */
 export function Value({ prop, v }: { prop: DbProp; v: any }) {
+  if (prop.type === 'formula' || prop.type === 'rollup') return v === null || v === undefined || v === '' ? null : <Calc prop={prop} v={v} />
   if (isEmpty(v) && prop.type !== 'checkbox') return null
   switch (prop.type) {
+    case 'relation': return <Links ids={v} />
+    case 'files': return <Files v={v} />
+    case 'unique_id': return <span className="db-num db-id">{display(prop, v)}</span>
     case 'select': case 'status': return <Chip o={optionOf(prop, v)} />
     case 'multi_select': return <span className="db-chips">{(v as string[]).map(id => <Chip key={id} o={optionOf(prop, id)} />)}</span>
     case 'person': return <span className="db-chips">{(v as string[]).map(x => <Person key={x} by={x} />)}</span>
@@ -38,13 +66,25 @@ export function Value({ prop, v }: { prop: DbProp; v: any }) {
 const INLINE = new Set(['title', 'text', 'number', 'url', 'email', 'phone'])
 
 /** 能点着改的格子。readOnly：锁定的库、自动算的属性。 */
-export function Cell({ prop, row, readOnly, onSave, className = '' }: {
+export function Cell({ prop, row, readOnly: ro, onSave, className = '' }: {
   prop: DbProp; row: DbRow; readOnly?: boolean; onSave: (v: any) => void; className?: string
 }) {
   const v = valueOf(row, prop)
   const ref = useRef<HTMLDivElement>(null)
   const [open, setOpen] = useState(false)
-  const locked = readOnly || COMPUTED.has(prop.type)
+  const ctx = useContext(DbCtx)
+  const locked = ro || readOnly(prop)
+  if (prop.type === 'button') {
+    const press = async (e: React.MouseEvent) => {
+      e.stopPropagation()
+      try {
+        const r = await dbApi.press(ctx.dbId, row.id, prop.key)
+        ctx.onPressed()
+        if (r.comment) notice(r.comment.woke?.length ? t('评论写好了，叫醒了 Bot 去处理。') : t('评论写好了。'))
+      } catch (err: any) { notice(err.message) }
+    }
+    return <div className={'db-cell t-button ' + className}><button className="btn db-button" onClick={press}>{prop.label || prop.name}</button></div>
+  }
   const click = () => {
     if (locked) return
     if (prop.type === 'checkbox') return onSave(!v)
@@ -62,6 +102,8 @@ export function Cell({ prop, row, readOnly, onSave, className = '' }: {
           <OptionPicker prop={prop} value={v} onChange={x => { onSave(x); if (prop.type !== 'multi_select') setOpen(false) }} />}
         {prop.type === 'date' && <DatePicker v={v} onChange={onSave} />}
         {prop.type === 'person' && <PersonPicker v={v || []} onChange={onSave} />}
+        {prop.type === 'relation' && <RelationPicker prop={prop} v={(v || []).filter((id: number) => id in ctx.refs)} onChange={onSave} />}
+        {prop.type === 'files' && <FilesEditor v={v || []} onChange={onSave} />}
       </Popover>}
     </div>
   )
@@ -155,6 +197,70 @@ export function DatePicker({ v, onChange }: { v: { start: string; end?: string }
         <button className="link-btn small" onClick={() => { const d = new Date(); const s = new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10); save(s, h0, d1, h1) }}>{t('今天')}</button>
         <span className="grow" />{v && <button className="link-btn small" onClick={() => onChange(null)}>{t('清除')}</button>}
       </div>
+    </div>
+  )
+}
+
+/** 关联：在关联到的库里按名称找行，点了加上；已经选的可以去掉。 */
+export function RelationPicker({ prop, v, onChange }: { prop: DbProp; v: number[]; onChange: (v: any) => void }) {
+  const { refs, addRefs } = useContext(DbCtx)
+  const [q, setQ] = useState('')
+  const [found, setFound] = useState<{ id: number; title: string }[] | null>(null)
+  useEffect(() => {
+    if (!prop.db) return
+    const h = setTimeout(() => dbApi.find(prop.db!, q).then(setFound).catch(() => setFound([])), q ? 200 : 0)
+    return () => clearTimeout(h)
+  }, [q, prop.db])
+  const add = (r: { id: number; title: string }) => { addRefs({ [r.id]: r.title }); onChange([...v, r.id]) }
+  return (
+    <div className="db-picker">
+      {v.length > 0 && <div className="db-chips db-picked">{v.map(id => (
+        <span key={id} className="db-link-chip">{refs[id] || t('无标题')}
+          <button className="icon-btn small" title={t('去掉')} onClick={() => onChange(v.filter(x => x !== id))}>×</button></span>))}</div>}
+      <input className="db-input" autoFocus value={q} placeholder={t('找一行')} onChange={e => setQ(e.target.value)} />
+      <div className="db-picker-list">
+        {found === null ? <div className="muted small db-picker-empty">{t('加载中…')}</div>
+          : found.filter(r => !v.includes(r.id)).map(r => <button key={r.id} className="db-picker-item" onClick={() => add(r)}>{r.title || <span className="muted">{t('无标题')}</span>}</button>)}
+        {found && !found.filter(r => !v.includes(r.id)).length && <div className="muted small db-picker-empty">{t('没有找到')}</div>}
+      </div>
+    </div>
+  )
+}
+
+/** 文件：传上来（任何文件，最多 10 MB）或者贴一个网址；点 × 去掉。 */
+export function FilesEditor({ v, onChange }: { v: DbFile[]; onChange: (v: any) => void }) {
+  const [url, setUrl] = useState('')
+  const [busy, setBusy] = useState(false)
+  const pick = useRef<HTMLInputElement>(null)
+  const upload = async (files: FileList | null) => {
+    if (!files?.length) return
+    setBusy(true)
+    const out = [...v]
+    try {
+      for (const f of Array.from(files)) {
+        const r = await fetch(`/api/media?file=1&name=${encodeURIComponent(f.name)}`, { method: 'PUT', body: f })
+        const d = await r.json().catch(() => ({}))
+        if (!r.ok) throw new Error(d.detail || t('上传失败（{status}）', { status: r.status }))
+        out.push({ name: d.name, url: `/api/media/${d.id}` })
+      }
+      onChange(out)
+    } catch (e: any) { notice(e.message) } finally { setBusy(false); if (pick.current) pick.current.value = '' }
+  }
+  const addUrl = () => {
+    const u = url.trim()
+    if (!u) return
+    onChange([...v, { name: u.split('?')[0].replace(/\/+$/, '').split('/').pop() || u, url: /^https?:\/\//i.test(u) ? u : 'https://' + u }])
+    setUrl('')
+  }
+  return (
+    <div className="db-picker db-files-edit">
+      {v.map((f, k) => <div key={k} className="db-file-row">
+        <a href={f.url} target="_blank" rel="noreferrer">{f.name}</a>
+        <button className="icon-btn small" title={t('去掉')} onClick={() => onChange(v.filter((_, i) => i !== k))}>×</button></div>)}
+      <input ref={pick} type="file" multiple hidden onChange={e => upload(e.target.files)} />
+      <button className="btn" disabled={busy} onClick={() => pick.current?.click()}>{busy ? t('上传中…') : t('传文件')}</button>
+      <input className="db-input" value={url} placeholder={t('或者贴一个网址，回车')} onChange={e => setUrl(e.target.value)}
+        onKeyDown={e => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) { e.preventDefault(); addUrl() } }} />
     </div>
   )
 }

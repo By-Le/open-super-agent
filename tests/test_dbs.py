@@ -1,9 +1,10 @@
 """资料库的数据库（osa/dbs.py）：值的写法、加行改行、按键冲突、历史、筛选排序、改表结构、视图、工具、read_page、接口和事件、分享、搜索。"""
+import asyncio
 from datetime import date, timedelta
 
 import httpx
 import pytest
-from osa import bots, dbs, library, pagedoc, search, server
+from osa import bots, dbs, library, media, pagedoc, providers, search, server
 
 TODAY = date.today()
 
@@ -226,7 +227,7 @@ def test_schema_changes(made):
     db = dbs.change_schema(db["id"], [{"op": "delete", "prop": "级"}])
     assert dbs.get_db(db["id"])["views"][1]["type"] == "table"   # 没有能分列的属性了
     for bad, msg in [([{"op": "delete", "prop": "名称"}], "不能删"), ([{"op": "add", "name": "说明", "type": "text"}], "已经有"),
-                     ([{"op": "add", "name": "x", "type": "formula"}], "不认识"), ([{"op": "update", "prop": "完成", "options": ["a"]}], "没有选项"),
+                     ([{"op": "add", "name": "x", "type": "magic"}], "不认识"), ([{"op": "update", "prop": "完成", "options": ["a"]}], "没有选项"),
                      ([{"op": "add", "name": "ok", "type": "text"}, {"op": "delete", "prop": "nope"}], "没有属性")]:
         with pytest.raises(ValueError, match=msg):
             dbs.change_schema(db["id"], bad)
@@ -245,6 +246,28 @@ def test_views(made):
                                    "hidden": ["title", "owner"], "widths": {"due": 9999}}])
     v = db["views"][0]
     assert v["name"] == "我的" and v["sort"] == [{"prop": "due", "desc": True}] and v["hidden"] == ["owner"] and v["widths"] == {"due": 800}
+
+
+def test_view_history(made):
+    """视图的改动记进库的历史：同一个人接着改并成一条，能撤销（只撤那次改到的视图）。"""
+    db = new_db(made)
+    t, b = db["views"]
+    dbs.set_views(db["id"], [{**t, "sort": [{"prop": "due", "desc": True}]}, b])
+    dbs.set_views(db["id"], [{**t, "sort": [{"prop": "due", "desc": True}], "widths": {"due": 200}}, b])   # 接着改：并成一条
+    h = dbs.history(db["id"])
+    assert len(h) == 1 and h[0]["changes"][0]["kind"] == "views" and h[0]["changes"][0]["changed"] == ["表格"]
+    assert "改了视图「表格」" in dbs.change_text(h[0]["changes"][0])
+    cur = dbs.get_db(db["id"])["views"]
+    dbs.set_views(db["id"], cur + [{"name": "我的看板", "type": "board", "group_by": "status"}], "bot:1")   # 别人加一个视图：另记一条
+    h = dbs.history(db["id"])
+    assert len(h) == 2 and h[0]["changes"][0]["added"] == ["我的看板"]
+    dbs.undo(db["id"], h[1]["id"])   # 撤销最早那条：表格的排序、列宽回去，后加的视图留着
+    views = dbs.get_db(db["id"])["views"]
+    assert views[0]["sort"] == [] and views[0]["widths"] == {} and [v["name"] for v in views] == ["表格", "看板", "我的看板"]
+    dbs.set_views(db["id"], [views[0], views[2]])   # 删一个再撤销：放回原来的位置
+    dbs.undo(db["id"], dbs.history(db["id"])[0]["id"])
+    assert [v["name"] for v in dbs.get_db(db["id"])["views"]] == ["表格", "看板", "我的看板"]
+    assert dbs.set_views(db["id"], dbs.get_db(db["id"])["views"]) and len(dbs.history(db["id"])) == 5   # 没变不记
 
 
 # ---------- 工具、锁定、read_page ----------
@@ -409,3 +432,155 @@ async def test_history_api(made, events):
         assert got["rows"][0]["props"]["owner"] == ["user"] and r["id"] == got["rows"][0]["id"]
         assert (await c.post(f"/api/dbs/{db['id']}/history/999999/undo", json={})).status_code == 404
     assert any(e["db_id"] == db["id"] and e.get("schema") for e in events.of("db_changed"))
+
+
+# ---------- 算出来的属性、关联、文件、自动编号、按钮 ----------
+def test_formula(made):
+    db = new_db(made, [{"name": "单价", "type": "number", "format": "cny"}, {"name": "数量", "type": "number"},
+                       {"name": "完成", "type": "checkbox"}, {"name": "截止", "type": "date"},
+                       {"name": "金额", "type": "formula", "formula": 'prop("单价") * prop("数量")', "format": "cny"},
+                       {"name": "标记", "type": "formula", "formula": 'if(prop("完成"), "✓", "还差 " + toText(10 - prop("数量")))'},
+                       {"name": "剩几天", "type": "formula", "formula": 'dateBetween(prop("截止"), parseDate("2026-11-15"), "days")'}])
+    a = dbs.add_row(db["id"], {"名称": "甲", "单价": 2.5, "数量": 4, "截止": "2026-11-20"}, "user")
+    b = dbs.add_row(db["id"], {"名称": "乙", "单价": 10, "数量": 1, "完成": True}, "user")
+    calc = lambda r, n: r["calc"][P(db, n)["key"]]   # noqa: E731
+    assert calc(a, "金额") == 10 and calc(a, "标记") == "还差 6" and calc(a, "剩几天") == 5
+    assert calc(b, "标记") == "✓" and calc(b, "剩几天") is None
+    assert dbs.display(P(db, "金额"), 10) == "¥10"
+    # 筛选、排序按算出来的值
+    d = dbs.get_db(db["id"])
+    assert [r["title"] for r in dbs.query(d, dbs.rows(db["id"]), [{"prop": "金额", "op": "gt", "value": 9.5}], [{"prop": "金额", "desc": True}])] == ["甲", "乙"]
+    assert [r["title"] for r in dbs.query(d, dbs.rows(db["id"]), [{"prop": "标记", "op": "contains", "value": "还差"}])] == ["甲"]
+    # 改名：公式跟着改；写不进值；写错了、自己引用自己、成环都报错
+    dbs.change_schema(db["id"], [{"op": "update", "prop": "数量", "name": "件数"}])
+    assert P(db, "金额")["formula"] == 'prop("单价") * prop("件数")'
+    assert dbs.get_row(a["id"])["calc"][P(db, "金额")["key"]] == 10
+    with pytest.raises(ValueError, match="自动算"):
+        dbs.update_row(a["id"], {"金额": 3}, "user")
+    for bad, msg in [('prop("没有")', "不存在"), ("1 +", "没写完"), ('prop("坏")', "它自己")]:
+        with pytest.raises(ValueError, match=msg):
+            dbs.change_schema(db["id"], [{"op": "add", "name": "坏", "type": "formula", "formula": bad}])
+    dbs.change_schema(db["id"], [{"op": "add", "name": "甲式", "type": "formula", "formula": "1"},
+                                 {"op": "add", "name": "乙式", "type": "formula", "formula": 'prop("甲式") + 1'}])
+    with pytest.raises(ValueError, match="成了环"):
+        dbs.change_schema(db["id"], [{"op": "update", "prop": "甲式", "formula": 'prop("乙式")'}])
+    # read_page / 工具看到的是算出来的值
+    assert "¥10" in dbs.render_db(db["id"]) and "prop(" in dbs.schema_text(dbs.get_db(db["id"]))
+
+
+def test_relation_rollup(made):
+    proj = new_db(made, [{"name": "预算", "type": "number"}], title="项目")
+    task = new_db(made, [{"name": "工时", "type": "number"}, {"name": "完成", "type": "checkbox"},
+                         {"name": "项目", "type": "relation", "db": proj["id"], "twoway": True, "pair_name": "任务"}], title="任务")
+    mirror = P(proj, "任务")
+    assert mirror and mirror["mirror_of"] == P(task, "项目")["key"] and P(task, "项目")["pair"] == mirror["key"]
+    dbs.change_schema(proj["id"], [{"op": "add", "name": "总工时", "type": "rollup", "relation": "任务", "target": "工时", "fn": "sum"},
+                                   {"op": "add", "name": "完成率", "type": "rollup", "relation": "任务", "target": "完成", "fn": "percent_checked"},
+                                   {"op": "add", "name": "几个", "type": "rollup", "relation": "任务", "fn": "count"}])
+    p1 = dbs.add_row(proj["id"], {"名称": "官网改版"}, "user")
+    p2 = dbs.add_row(proj["id"], {"名称": "发布会"}, "user")
+    t1 = dbs.add_row(task["id"], {"名称": "设计", "工时": 5, "完成": True, "项目": "官网改版"}, "user")   # 写名称
+    t2 = dbs.add_row(task["id"], {"名称": "开发", "工时": 8, "项目": [f"#{p1['id']}"]}, "user")        # 写行号
+    assert t1["props"][P(task, "项目")["key"]] == [p1["id"]]
+    row = dbs.get_row(p1["id"])
+    c = lambda r, n: r["calc"][P(proj, n)["key"]]   # noqa: E731
+    assert c(row, "任务") == [t1["id"], t2["id"]] and c(row, "总工时") == 13 and c(row, "完成率") == 50.0 and c(row, "几个") == 2
+    assert dbs.display(P(proj, "任务"), c(row, "任务")) == "设计, 开发"
+    # 在反向那一半改：改的是任务那边
+    dbs.update_row(p2["id"], {"任务": [t2["id"]]}, "user")
+    assert dbs.get_row(t2["id"])["props"][P(task, "项目")["key"]] == [p1["id"], p2["id"]]
+    dbs.update_row(p1["id"], {"任务": [t1["id"]]}, "user")
+    assert dbs.get_row(t2["id"])["props"][P(task, "项目")["key"]] == [p2["id"]]
+    assert c(dbs.get_row(p1["id"]), "总工时") == 5
+    # 关联的库里没有的行不认；筛选按名称
+    with pytest.raises(ValueError, match="没有叫"):
+        dbs.update_row(t1["id"], {"项目": "不存在的项目"}, "user")
+    with pytest.raises(ValueError, match="没有行"):
+        dbs.update_row(t1["id"], {"项目": [t1["id"]]}, "user")   # 任务库的行不是项目
+    d = dbs.get_db(task["id"])
+    assert [r["title"] for r in dbs.query(d, dbs.rows(task["id"]), [{"prop": "项目", "op": "contains", "value": "发布"}])] == ["开发"]
+    assert dbs.related_dbs(task["id"]) == {proj["id"]} and dbs.related_dbs(proj["id"]) == {task["id"]}
+    # 网页拿到的标题表
+    pub = dbs.public(dbs.get_db(proj["id"]))
+    assert pub["refs"][t1["id"]] == "设计"
+    # 删了这边的关联，对方那一半也去掉
+    dbs.change_schema(task["id"], [{"op": "delete", "prop": "项目"}])
+    assert P(proj, "任务") is None
+    assert dbs.get_row(p1["id"])["calc"].get(P(proj, "总工时")["key"]) is None
+
+
+def test_files_unique_id_button(made, bot):
+    b = bot("Helper")
+    db = new_db(made)
+    mid = media.save(providers._png(5, 3, (1, 2, 3)), "图.png")["id"]
+    dbs.change_schema(db["id"], [{"op": "add", "name": "附件", "type": "files"}])
+    r1 = dbs.add_row(db["id"], {"名称": "一", "附件": [mid, "https://example.com/a/报告.pdf"]}, "user")
+    assert r1["props"][P(db, "附件")["key"]] == [{"name": "图.png", "url": f"/api/media/{mid}"}, {"name": "报告.pdf", "url": "https://example.com/a/报告.pdf"}]
+    assert mid in media.used()   # 属性里引用着的不会被清掉
+    with pytest.raises(ValueError, match="网址"):
+        dbs.update_row(r1["id"], {"附件": "ftp://x"}, "user")
+    r2 = dbs.add_row(db["id"], {"名称": "二"}, "user")
+    # 加自动编号：已有的行按顺序发号，新行接着发
+    dbs.change_schema(db["id"], [{"op": "add", "name": "编号", "type": "unique_id", "prefix": "T-"}])
+    k = P(db, "编号")["key"]
+    assert dbs.get_row(r1["id"])["props"][k] == 1 and dbs.get_row(r2["id"])["props"][k] == 2
+    r3 = dbs.add_row(db["id"], {"名称": "三"}, "user")
+    assert r3["props"][k] == 3 and dbs.display(P(db, "编号"), 3) == "T-3" and P(db, "编号")["next"] == 4
+    with pytest.raises(ValueError, match="自动算"):
+        dbs.update_row(r3["id"], {"编号": 9}, "user")
+    d = dbs.get_db(db["id"])
+    assert [r["title"] for r in dbs.query(d, dbs.rows(db["id"]), [{"prop": "编号", "op": "gte", "value": "T-2"}])] == ["二", "三"]
+    # 按钮：改状态、写评论叫 Bot
+    dbs.change_schema(db["id"], [{"op": "add", "name": "做完", "type": "button", "label": "标成完成", "set": {"状态": "已完成"},
+                                  "comment": "这一行做完了，帮我写个总结", "bot": b["name"]}])
+    btn = P(db, "做完")
+    assert btn["set"] == {"status": P(db, "状态")["options"][2]["id"]} and btn["bot"] == b["id"]
+    row, changed, note = dbs.press(r1["id"], btn["key"])
+    assert changed == ["status"] and note == {"text": "这一行做完了，帮我写个总结", "bot": b["id"]}
+    with pytest.raises(ValueError, match="按钮"):
+        dbs.update_row(r1["id"], {"做完": 1}, "user")
+    assert "标成完成" not in dbs.render_db(db["id"]) and "只有用户能点" in dbs.schema_text(dbs.get_db(db["id"]))
+
+
+async def test_press_and_related_events(made, bot, events, monkeypatch):
+    b = bot("Closer")
+    woke = []
+    monkeypatch.setattr(server.pagecomments.dm, "wake", lambda *a, **k: woke.append(a) or asyncio.sleep(0))
+    proj = new_db(made, [], title="项目")
+    task = new_db(made, title="任务")
+    dbs.change_schema(task["id"], [{"op": "add", "name": "项目", "type": "relation", "db": proj["id"]},
+                                   {"op": "add", "name": "做完", "type": "button", "set": {"状态": "已完成"}, "comment": "收尾", "bot": b["id"]}])
+    t = dbs.add_row(task["id"], {"名称": "写文档"}, "user")
+    key = P(task, "做完")["key"]
+    async with http() as c:
+        r = await c.post(f"/api/dbs/{task['id']}/rows/{t['id']}/press/{key}")
+        assert r.status_code == 200 and r.json()["changed"] == ["status"] and r.json()["comment"]["text"] == "收尾"
+        assert (await c.post(f"/api/dbs/{task['id']}/rows/{t['id']}/press/nope")).status_code == 404
+        got = {e["db_id"] for e in events.of("db_changed")}
+        assert {task["id"], proj["id"]} <= got   # 关联着的库也收到
+        row = (await c.get(f"/api/dbs/{task['id']}/rows/{t['id']}")).json()
+        assert "calc" in row["row"] and row["refs"] == {}
+        # 文件属性：什么文件都能传，不是图片的只能下载
+        up = await c.put("/api/media?file=1&name=说明.txt", content=b"hello")
+        assert up.status_code == 200 and up.json()["mime"] == "application/octet-stream"
+        got = await c.get(f"/api/media/{up.json()['id']}")
+        assert got.headers["content-disposition"].startswith("attachment")
+        assert (await c.put("/api/media?name=x.txt", content=b"hello")).status_code == 400   # 对话里还是只收图片
+    await asyncio.sleep(0)
+    assert woke and woke[0][0] == b["id"]
+
+
+async def test_paging(made):
+    db = new_db(made)
+    ids = [dbs.add_row(db["id"], {"状态": "进行中" if k % 3 else "已完成"}, "user", f"行{k}")["id"] for k in range(7)]
+    async with http() as c:
+        d = (await c.get(f"/api/dbs/{db['id']}?limit=3")).json()
+        assert [r["id"] for r in d["rows"]] == ids[:3] and d["count"] == 7 and d["total"] == 7
+        d = (await c.get(f"/api/dbs/{db['id']}?limit=3&include={ids[6]}")).json()
+        assert [r["id"] for r in d["rows"]] == ids[:3] + [ids[6]]   # 刚加的行带在最后
+        board = next(v for v in d["views"] if v["type"] == "board")
+        d = (await c.get(f"/api/dbs/{db['id']}?view={board['id']}&limit=2")).json()
+        st = {o["name"]: o["id"] for o in P(db, "状态")["options"]}
+        assert d["groups"] == {st["已完成"]: 3, st["进行中"]: 4} and len(d["rows"]) == 2
+        found = (await c.get(f"/api/dbs/{db['id']}/find?q=行5")).json()
+        assert found == [{"id": ids[5], "title": "行5"}]

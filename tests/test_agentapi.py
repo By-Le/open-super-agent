@@ -334,6 +334,11 @@ async def test_db_tools(token, pages, events):
         assert "改了 状态，现在是版本 2" in out
         assert "优先级" in await a.call("db_schema", db_id=db_id, ops=[{"op": "add", "name": "优先级", "type": "select", "options": ["高"]}])
         assert "数据库《任务》" in await a.call("read_page", page_id=db_id)
+        out = await a.call("db_schema", db_id=db_id, ops=[{"op": "add", "name": "双倍", "type": "formula", "formula": 'prop("分") * 2'},
+                                                          {"op": "add", "name": "编号", "type": "unique_id", "prefix": "T-"}])
+        assert "双倍" in out and "T-" in out
+        out = await a.call("db_query", db_id=db_id, props=["分", "双倍", "编号"])
+        assert "| 写文档 | 3 | 6 | T-1 |" in out
     assert any(e["db_id"] == db_id and e["by"] == f"agent:{t['id']}" for e in events.of("db_changed"))
     _, ro = token("Reader", "read")
     async with Agent(ro) as a:

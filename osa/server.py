@@ -290,13 +290,14 @@ async def avatar_file(aid: str):
 
 # ---------- 对话里的图片 ----------
 @app.put("/api/media")
-async def upload_media(request: Request, name: str = ""):
-    """传一张对话里用的图片（请求体就是图片，浏览器已经缩过），返回 id、宽高。发消息时放进 attachments。"""
+async def upload_media(request: Request, name: str = "", file: bool = False):
+    """传一张对话里用的图片（请求体就是图片，浏览器已经缩过），返回 id、宽高。发消息时放进 attachments。
+    file=1：数据库的文件属性，什么文件都收（不是图片、视频、PDF 的打开时一律下载）。"""
     if int(request.headers.get("content-length") or 0) > media.MAX_BYTES:
         raise HTTPException(413, i18n.t("图片太大了（最多 {n} MB）", n=media.MAX_BYTES >> 20))
     data = await request.body()
     try:
-        return media.save(data, name)
+        return media.save(data, name, any_file=file)
     except ValueError as e:
         _err(e)
 
@@ -307,6 +308,7 @@ def _media_response(mid: str, download: bool = False, rng: str | None = None) ->
     if not got:
         raise HTTPException(404)
     mime, size, name = got["mime"], got["size"], got["name"]
+    download = download or not media.inline(mime)   # 数据库的文件属性传的别的文件：只下载，不在站里打开
     headers = {"Cache-Control": "private, max-age=31536000, immutable", "X-Content-Type-Options": "nosniff",
                "Content-Security-Policy": "default-src 'none'",
                "Content-Disposition": f"{'attachment' if download else 'inline'}; filename*=UTF-8''{quote(name)}"}
@@ -1095,6 +1097,8 @@ async def _row_touched(p: dict, rows: list[int] | None = None):
     """数据库的行改了（标题、恢复、删除）：开着的库重新取。"""
     if p.get("kind") == "row" and p.get("parent_id") is not None:
         await broadcast({"type": "db_changed", "db_id": p["parent_id"], "rows": rows or [p["id"]], "by": "user"})
+        for other in dbs.related_dbs(p["parent_id"]):
+            await broadcast({"type": "db_changed", "db_id": other, "rows": [], "by": "user"})
 
 
 def _db_or_404(db_id: int) -> dict:
@@ -1123,16 +1127,26 @@ async def create_db(data: dict = Body(...)):
 
 
 @app.get("/api/dbs/{db_id}")
-async def get_db(db_id: int, view: str | None = None):
-    """库、表结构、视图，和按视图（view 是视图 id，不给就是第一个）筛选排序后的行。"""
+async def get_db(db_id: int, view: str | None = None, limit: int | None = None, include: str = ""):
+    """库、表结构、视图，和按视图（view 是视图 id，不给就是第一个）筛选排序后的前 limit 行（默认 200，往下滚再要）。
+    include：逗号分开的行号，刚加的行不在前 limit 行里也带上。"""
     try:
-        return dbs.public(_db_or_404(db_id), view)
+        return dbs.public(_db_or_404(db_id), view, limit, [int(x) for x in include.split(",") if x.strip().isdigit()][:50])
     except ValueError as e:
         _err(e)
 
 
+@app.get("/api/dbs/{db_id}/find")
+async def find_db_rows(db_id: int, q: str = ""):
+    """按名称找行（别的库关联到这个库时的选择框）。"""
+    _db_or_404(db_id)
+    return dbs.find_rows(db_id, q)
+
+
 async def _db_saved(db_id: int, rows: list[int] | None = None, schema: bool = False):
     await broadcast({"type": "db_changed", "db_id": db_id, "rows": rows or [], "schema": schema, "by": "user"})
+    for other in dbs.related_dbs(db_id):   # 关联着的库：汇总、反向关联跟着变，整个重新取
+        await broadcast({"type": "db_changed", "db_id": other, "rows": [], "schema": schema, "by": "user"})
 
 
 @app.patch("/api/dbs/{db_id}/schema")
@@ -1144,7 +1158,7 @@ async def change_db_schema(db_id: int, data: dict = Body(...)):
     except (ValueError, TypeError) as e:
         _err(e)
     await _db_saved(db_id, schema=True)
-    return dbs.public(db, data.get("view")) | {"last_change": db["last_change"]}
+    return dbs.public(db, data.get("view"), data.get("limit")) | {"last_change": db["last_change"]}
 
 
 @app.get("/api/dbs/{db_id}/history")
@@ -1165,7 +1179,7 @@ async def db_undo(db_id: int, vid: int, data: dict = Body(default={})):
     except ValueError as e:
         _err(e)
     await _db_saved(db_id, schema=True)
-    return dbs.public(db, data.get("view")) | {"last_change": db["last_change"]}
+    return dbs.public(db, data.get("view"), data.get("limit")) | {"last_change": db["last_change"]}
 
 
 @app.put("/api/dbs/{db_id}/views")
@@ -1173,11 +1187,11 @@ async def set_db_views(db_id: int, data: dict = Body(...)):
     """整个换掉视图列表：{views, view?}（view 是现在看的那个，返回按它筛选排序的行）。"""
     _db_or_404(db_id)
     try:
-        db = dbs.set_views(db_id, data.get("views"))
+        db = dbs.set_views(db_id, data.get("views"), "user")
     except (ValueError, TypeError) as e:
         _err(e)
     await _db_saved(db_id, schema=True)
-    return dbs.public(db, data.get("view"))
+    return dbs.public(db, data.get("view"), data.get("limit"))
 
 
 @app.post("/api/dbs/{db_id}/rows")
@@ -1198,7 +1212,28 @@ async def get_db_row(db_id: int, rid: int):
     """一行和它所在库的表结构（行页面顶上的属性栏用）。"""
     r = _row_or_404(db_id, rid)
     db = _db_or_404(db_id)
-    return {"db": {"id": db["id"], "title": db["title"], "locked": db["locked"], "schema": db["schema"]}, "row": dbs.public_row(r)}
+    return {"db": {"id": db["id"], "title": db["title"], "locked": db["locked"], "schema": db["schema"]}, "row": dbs.public_row(r),
+            "refs": dbs.refs(db, [r])}
+
+
+@app.post("/api/dbs/{db_id}/rows/{rid}/press/{key}")
+async def press_db_button(db_id: int, rid: int, key: str):
+    """点一行上的按钮：按设置改属性，设了评论就写一条（叫醒 Bot）。"""
+    _row_or_404(db_id, rid)
+    try:
+        r, changed, note = dbs.press(rid, key, "user")
+    except LookupError as e:
+        raise HTTPException(404, str(e))
+    except (ValueError, TypeError) as e:
+        _err(e)
+    if changed:
+        await _db_saved(db_id, [rid], schema=True)
+        if "title" in changed:
+            await broadcast({"type": "pages_changed"})
+    comment = None
+    if note:
+        comment = await pagecomments.post(rid, note["text"], wake=note["bot"] if note.get("bot") else None)
+    return {"row": dbs.public_row(r), "changed": changed, "comment": comment}
 
 
 @app.patch("/api/dbs/{db_id}/rows/{rid}")

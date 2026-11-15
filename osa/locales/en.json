@@ -1260,5 +1260,8 @@
   "数据库的行只能在数据库里": "Database rows can only live in a database",
   "数据库和它的行下面不能放子页面": "Databases and their rows can't have subpages",
   "数据库的表结构改动在库的“历史”里撤销": "Undo changes to a database's properties from the database's History",
-  "先撤销，再从列表里删掉": "Revoke it before removing it from the list"
+  "先撤销，再从列表里删掉": "Revoke it before removing it from the list",
+  "没收到文件": "No file received",
+  "文件太大了（最多 {n} MB）": "The file is too large (max {n} MB)",
+  "没有这个按钮": "No such button"
 }

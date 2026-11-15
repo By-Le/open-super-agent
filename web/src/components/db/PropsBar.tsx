@@ -5,11 +5,12 @@ import { ApiError, api } from '../../store'
 import { t } from '../../i18n'
 import { notice } from '../Dialog'
 import { nameOf } from '../../authors'
-import { Cell } from './cells'
+import { Cell, DbCtx } from './cells'
 import { dbApi, typeIcon, type DbProp, type DbRow } from './db'
 
 export default function PropsBar({ dbId, rowId }: { dbId: number; rowId: number }) {
-  const [d, setD] = useState<{ db: { id: number; title: string; locked: boolean; schema: DbProp[] }; row: DbRow } | null>(null)
+  const [d, setD] = useState<{ db: { id: number; title: string; locked: boolean; schema: DbProp[] }; row: DbRow; refs: Record<number, string> } | null>(null)
+  const [extra, setExtra] = useState<Record<number, string>>({})
   const load = useCallback(() => api(`/api/dbs/${dbId}/rows/${rowId}`).then(setD).catch(() => {}), [dbId, rowId])
   useEffect(() => { load() }, [load])
   useEffect(() => {
@@ -21,13 +22,14 @@ export default function PropsBar({ dbId, rowId }: { dbId: number; rowId: number 
   if (!d) return null
   const save = (p: DbProp, v: any) => {
     setD({ ...d, row: { ...d.row, props: { ...d.row.props, [p.key]: v } } })
-    dbApi.update(dbId, rowId, { [p.key]: v }, d.row.version).then(row => setD(x => x && { ...x, row })).catch((e: any) => {
+    dbApi.update(dbId, rowId, { [p.key]: v }, d.row.version).then(row => setD(x => x && { ...x, row })).then(() => { if (p.type === 'relation') load() }).catch((e: any) => {
       const c = e instanceof ApiError && e.status === 409 ? e.data?.detail?.conflicts?.[0] : null
       notice(c ? t('「{name}」刚被{who}改成了「{value}」，已经换成现在的样子。', { name: c.name, who: nameOf(c.by), value: c.current || t('空') }) : e.message)
       load()
     })
   }
   return (
+    <DbCtx.Provider value={{ dbId, refs: { ...extra, ...d.refs }, addRefs: m => setExtra(x => ({ ...x, ...m })), onPressed: load }}>
     <div className="db-props">
       {d.db.schema.filter(p => p.type !== 'title').map(p => (
         <div key={p.key} className="db-prop">
@@ -35,5 +37,6 @@ export default function PropsBar({ dbId, rowId }: { dbId: number; rowId: number 
           <Cell prop={p} row={d.row} onSave={v => save(p, v)} className="db-prop-value" />
         </div>))}
     </div>
+    </DbCtx.Provider>
   )
 }

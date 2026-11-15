@@ -3,14 +3,15 @@
 // 表结构后来改过（删了列、改了类型、删了选项）的值服务器标成 stale，不比、不恢复，只提一句。
 import { t } from '../../i18n'
 import { Value } from './cells'
-import { COMPUTED, isEmpty, typeIcon, type DbProp } from './db'
+import { CALCULATED, COMPUTED, isEmpty, isMirror, typeIcon, type DbProp } from './db'
 
 export type PropsSnap = { title: string; props: Record<string, any>; stale?: string[] }
 export type PropChange = { prop: DbProp; old: any; now: any }
 
 const valOf = (s: PropsSnap, p: DbProp) => p.type === 'title' ? s.title : s.props[p.key]
 const same = (a: any, b: any) => (isEmpty(a) && isEmpty(b)) || JSON.stringify(a) === JSON.stringify(b)
-const shown = (schema: DbProp[], stale: Set<string>) => schema.filter(p => !COMPUTED.has(p.type) && !stale.has(p.key))
+const shown = (schema: DbProp[], stale: Set<string>) => schema.filter(p => !COMPUTED.has(p.type) && !CALCULATED.has(p.type) && p.type !== 'button'
+  && !isMirror(p) && !stale.has(p.key))   // 算出来的、按钮、反向关联不存在行里，历史里没有
 
 /** from → to 改了哪些属性（名称也算）。 */
 export function propChanges(schema: DbProp[], from: PropsSnap, to: PropsSnap): PropChange[] {

@@ -24,7 +24,7 @@ from mcp.server.transport_security import TransportSecuritySettings
 from mcp_types import ListToolsResult, ToolAnnotations
 from pydantic import BaseModel, Field
 
-from . import dbs, i18n, library, media, pagecomments, pagedoc, registry, search, security
+from . import dbcalc, dbs, i18n, library, media, pagecomments, pagedoc, registry, search, security
 from .memory import conn
 
 conn.execute("""create table if not exists agent_tokens(
@@ -401,14 +401,32 @@ _TypeName = Literal[tuple(dbs._TYPE_ENUM)]
 _Format = Literal[tuple(dbs.FORMATS)]
 
 
-class DbProp(BaseModel):
+_P = dbs._PROP_SPEC["properties"]
+
+
+class _PropConfig(BaseModel):
+    """公式、关联、汇总、自动编号、按钮自己的设置（说明和 Bot 的 db_create / db_schema 一样）。"""
+    formula: str | None = Field(None, description=_P["formula"]["description"])
+    db: int | str | None = Field(None, description=_P["db"]["description"])
+    twoway: bool | None = Field(None, description=_P["twoway"]["description"])
+    pair_name: str | None = Field(None, description=_P["pair_name"]["description"])
+    relation: str | None = Field(None, description=_P["relation"]["description"])
+    target: str | None = Field(None, description=_P["target"]["description"])
+    fn: Literal[tuple(dbcalc.ROLLUPS)] | None = Field(None, description=_P["fn"]["description"])
+    prefix: str | None = Field(None, description=_P["prefix"]["description"])
+    label: str | None = Field(None, description=_P["label"]["description"])
+    set: dict[str, Any] | None = Field(None, description=_P["set"]["description"])
+    comment: str | None = Field(None, description=_P["comment"]["description"])
+
+
+class DbProp(_PropConfig):
     name: str
     type: _TypeName = Field(description=dbs._PROP_SPEC["properties"]["type"]["description"])
     options: list[str] | None = Field(None, description="单选、多选、状态的选项（按顺序）；状态不给就是 未开始 / 进行中 / 已完成")
-    format: _Format | None = Field(None, description="数字的显示格式")
+    format: _Format | None = Field(None, description=_P["format"]["description"])
 
 
-class DbSchemaOp(BaseModel):
+class DbSchemaOp(_PropConfig):
     op: Literal["add", "update", "delete"]
     prop: str | None = Field(None, description="update / delete：哪个属性（名字）")
     name: str | None = Field(None, description="add：属性名；update：新名字")

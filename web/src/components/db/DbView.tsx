@@ -7,9 +7,9 @@ import { locale, t } from '../../i18n'
 import { ask, notice } from '../Dialog'
 import { nameOf } from '../../authors'
 import { Popover } from './Popover'
-import { Cell, Chip, Value } from './cells'
+import { Cell, Chip, DbCtx, Value } from './cells'
 import { AddProp, FieldsEditor, FilterEditor, HeaderMenu, SchemaHistory, SortEditor, ViewMenu, changeText, type Change, type HistoryItem } from './menus'
-import { dbApi, isEmpty, typeIcon, valueOf, type DbData, type DbProp, type DbRow, type DbView as View, type PropType } from './db'
+import { PAGE, dbApi, isEmpty, typeIcon, valueOf, type DbData, type DbProp, type DbRow, type DbView as View } from './db'
 
 type Pop = { kind: 'header' | 'add' | 'filter' | 'sort' | 'fields' | 'view' | 'row' | 'newview' | 'history'; anchor: HTMLElement; prop?: DbProp; row?: DbRow; view?: View }
 
@@ -24,11 +24,18 @@ export default function DbView({ id }: { id: number }) {
   const [fresh, setFresh] = useState<number | null>(null)   // 刚加的行：标题直接进入编辑
   const [hist, setHist] = useState<HistoryItem[] | null>(null)
   const loadHist = useCallback(() => api<HistoryItem[]>(`/api/dbs/${id}/history`).then(setHist).catch(() => {}), [id])
+  const [extraRefs, setExtraRefs] = useState<Record<number, string>>({})   // 关联里刚选的行的标题（服务器下次给之前先用着）
+  // 一次取 PAGE 行，滚到底再多取一页；刚加的行不在前面这些里也带上（include），免得新建了看不见
+  const [limit, setLimit] = useState(PAGE)
+  const added = useRef<number[]>([])
   const vid = useRef(viewId)
   vid.current = viewId
-  const load = useCallback(() => dbApi.get(id, vid.current).then(d => { setData(d); setErr('') }).catch((e: any) => setErr(e.message)), [id])
-  useEffect(() => { setViewId(stored(id)) }, [id])
-  useEffect(() => { load() }, [id, viewId, load])
+  const lim = useRef(limit)
+  lim.current = limit
+  const load = useCallback(() => dbApi.get(id, vid.current, lim.current, added.current).then(d => { setData(d); setErr('') })
+    .catch((e: any) => setErr(e.message)), [id])
+  useEffect(() => { setViewId(stored(id)); setLimit(PAGE); added.current = [] }, [id])
+  useEffect(() => { load() }, [id, viewId, limit, load])
   useEffect(() => {
     const h = (e: Event) => { if ((e as CustomEvent).detail?.db_id === id) load() }
     const again = () => load()
@@ -36,7 +43,17 @@ export default function DbView({ id }: { id: number }) {
     window.addEventListener('osa-page-resync', again)
     return () => { window.removeEventListener('osa-db', h); window.removeEventListener('osa-page-resync', again) }
   }, [id, load])
-  const pick = (v: string) => { try { localStorage.setItem(`osa.dbview.${id}`, v) } catch { /* 记不住就算了 */ } setViewId(v) }
+  const pick = (v: string) => { try { localStorage.setItem(`osa.dbview.${id}`, v) } catch { /* 记不住就算了 */ } setViewId(v); setLimit(PAGE) }
+  // 滚到最下面的那条线露出来：再多取一页
+  const more = useRef<HTMLDivElement>(null)
+  const hasMore = !!data && data.rows.length - added.current.filter(x => data.rows.some(r => r.id === x)).length < data.count
+  useEffect(() => {
+    const el = more.current
+    if (!el || !hasMore) return
+    const io = new IntersectionObserver(es => { if (es.some(e => e.isIntersecting)) setLimit(l => Math.max(l, (data?.rows.length || 0)) + PAGE) }, { rootMargin: '400px' })
+    io.observe(el)
+    return () => io.disconnect()
+  }, [hasMore, data?.rows.length])
 
   if (err && !data) return <div className="error-line">{err}</div>
   if (!data) return <div className="muted">{t('加载中…')}</div>
@@ -59,7 +76,7 @@ export default function DbView({ id }: { id: number }) {
   const putView = (v: View) => {
     const views = data.views.map(x => (x.id === v.id ? v : x))
     setData({ ...data, views })
-    dbApi.views(id, views, view.id).then(setData).catch(failed)
+    dbApi.views(id, views, view.id, limit).then(setData).catch(failed)
   }
   // 改表结构：清掉了值的告诉一声，能在“历史”里撤销
   const told = (d: DbData & { last_change?: Change[] }) => {
@@ -68,10 +85,10 @@ export default function DbView({ id }: { id: number }) {
     if (lost.length) notice(lost.map(changeText).join('；') + t('。点“历史”能撤销。'))
     if (pop?.kind === 'history') loadHist()
   }
-  const schemaOps = (ops: any[]) => dbApi.schema(id, ops, view.id).then(told).catch(failed)
+  const schemaOps = (ops: any[]) => dbApi.schema(id, ops, view.id, limit).then(told).catch(failed)
   const undo = async (h: HistoryItem) => {
     if (!(await ask(t('撤销这次改动？{what}', { what: h.changes.map(changeText).join('；') }), { ok: t('撤销') }))) return
-    api<DbData>(`/api/dbs/${id}/history/${h.id}/undo`, { method: 'POST', body: { view: view.id } }).then(d => { setData(d); loadHist() }).catch(failed)
+    api<DbData>(`/api/dbs/${id}/history/${h.id}/undo`, { method: 'POST', body: { view: view.id, limit } }).then(d => { setData(d); loadHist() }).catch(failed)
   }
   const addView = (type: View['type']) => {
     const group = schema.find(p => p.type === 'status') || schema.find(p => p.type === 'select')
@@ -99,6 +116,7 @@ export default function DbView({ id }: { id: number }) {
   const addRow = async (props: Record<string, any> = {}) => {
     try {
       const r = await dbApi.add(id, { props: { ...prefill(), ...props } })
+      added.current = [...added.current, r.id].slice(-50)
       setFresh(r.id)
       await load()
     } catch (e: any) { failed(e) }
@@ -106,7 +124,7 @@ export default function DbView({ id }: { id: number }) {
   const delRow = async (r: DbRow) => {
     setPop(null)
     if (!(await ask(t('删除「{title}」这一行？它的正文和历史也会删掉。', { title: r.title || t('无标题') }), { ok: t('删除'), danger: true }))) return
-    setData({ ...data, rows: data.rows.filter(x => x.id !== r.id), total: data.total - 1 })
+    setData({ ...data, rows: data.rows.filter(x => x.id !== r.id), total: data.total - 1, count: data.count - 1 })
     dbApi.remove(id, r.id).catch(failed)
   }
   const open = (kind: Pop['kind'], extra: Partial<Pop> = {}) => (e: React.MouseEvent<HTMLElement>) => {
@@ -117,7 +135,9 @@ export default function DbView({ id }: { id: number }) {
   const hidden = new Set(view.hidden || [])
   const cols = schema.filter(p => p.type === 'title' || !hidden.has(p.key))
 
+  const ctx = { dbId: id, refs: { ...extraRefs, ...data.refs }, addRefs: (m: Record<number, string>) => setExtraRefs(x => ({ ...x, ...m })), onPressed: load }
   return (
+    <DbCtx.Provider value={ctx}>
     <div className="db">
       <div className="db-bar">
         <div className="db-tabs">
@@ -159,14 +179,16 @@ export default function DbView({ id }: { id: number }) {
                 </tr>))}
             </tbody>
           </table>
-          <button className="db-add-row" onClick={() => addRow()}>＋ {t('新建')}</button>{/* i18n-ignore */}
-          {data.rows.length < data.total && <div className="muted small db-note">{t('筛掉了 {n} 行', { n: data.total - data.rows.length })}</div>}
+          {hasMore ? <div ref={more} className="muted small db-note db-more">{t('还有 {n} 行，往下滚接着加载…', { n: data.count - data.rows.length })}</div>
+            : <button className="db-add-row" onClick={() => addRow()}>＋ {t('新建')}</button>}{/* i18n-ignore */}
+          {data.count < data.total && <div className="muted small db-note">{t('筛掉了 {n} 行', { n: data.total - data.count })}</div>}
         </div>}
+      {view.type === 'board' && hasMore && <div ref={more} className="muted small db-note db-more">{t('还有 {n} 张卡片，往下滚接着加载…', { n: data.count - data.rows.length })}</div>}
 
-      {pop && <Popover anchor={pop.anchor} onClose={() => setPop(null)} width={pop.kind === 'filter' ? 420 : pop.kind === 'header' || pop.kind === 'history' ? 320 : 240}>
-        {pop.kind === 'header' && pop.prop && <HeaderMenu key={pop.prop.key} prop={schema.find(p => p.key === pop.prop!.key) || pop.prop} view={view}
+      {pop && <Popover anchor={pop.anchor} onClose={() => setPop(null)} width={pop.kind === 'filter' ? 420 : pop.kind === 'header' || pop.kind === 'history' || pop.kind === 'add' ? 340 : 240}>
+        {pop.kind === 'header' && pop.prop && <HeaderMenu key={pop.prop.key} prop={schema.find(p => p.key === pop.prop!.key) || pop.prop} schema={schema} view={view}
           onSchema={schemaOps} onView={putView} onClose={() => setPop(null)} />}
-        {pop.kind === 'add' && <AddProp onAdd={(name, type: PropType) => { setPop(null); schemaOps([{ op: 'add', name, type }]) }} />}
+        {pop.kind === 'add' && <AddProp schema={schema} onAdd={op => { setPop(null); schemaOps([{ op: 'add', ...op }]) }} />}
         {pop.kind === 'filter' && <FilterEditor schema={schema} view={view} onView={putView} />}
         {pop.kind === 'sort' && <SortEditor schema={schema} view={view} onView={putView} />}
         {pop.kind === 'fields' && <FieldsEditor schema={schema} view={view} onView={putView} />}
@@ -182,6 +204,7 @@ export default function DbView({ id }: { id: number }) {
         </div>}
       </Popover>}
     </div>
+    </DbCtx.Provider>
   )
 }
 
@@ -247,8 +270,101 @@ function Board({ data, view, save, addRow, fresh, setFresh, failed, reload }: {
       byCol.set(k, [...(byCol.get(k) || []), r])
     }
     const cols = (group.options || []).map(o => ({ id: o.id, o, rows: byCol.get(o.id) || [] }))
-    return byCol.get('')?.length ? [{ id: '', o: undefined, rows: byCol.get('')! }, ...cols] : cols
-  }, [data.rows, group])
+    return byCol.get('')?.length || data.groups?.[''] ? [{ id: '', o: undefined, rows: byCol.get('') || [] }, ...cols] : cols
+  }, [data.rows, data.groups, group])
+  // 手机上长按卡片拖动（HTML5 拖放在 iPhone 上不灵）：长按 350 毫秒拿起，跟着手指走，松手放下；拖到边上自动滚
+  const boardRef = useRef<HTMLDivElement>(null)
+  const latest = useRef<{ place: (r: DbRow, col: string, index: number) => void; rows: DbRow[] } | null>(null)
+  useEffect(() => {
+    const el = boardRef.current
+    if (!el) return
+    type St = { id: number; card: HTMLElement; x: number; y: number; on: boolean; timer: ReturnType<typeof setTimeout>; ghost?: HTMLElement
+      dx: number; dy: number; at?: { col: string; index: number }; raf?: number }
+    let st: St | null = null
+    const scroller = () => el.closest('.scroller') as HTMLElement | null
+    const target = (x: number, y: number) => {   // 按横向位置找列：列只有卡片那么高，手指在短的列下面也算放进这一列
+      const col = [...el.querySelectorAll<HTMLElement>('.db-col')].find(c => { const r = c.getBoundingClientRect(); return x >= r.left - 6 && x <= r.right + 6 })
+      if (!col) return undefined
+      const cards = [...col.querySelectorAll<HTMLElement>('.db-card:not(.dragging)')]
+      const k = cards.findIndex(c => { const r = c.getBoundingClientRect(); return y < r.top + r.height / 2 })
+      return { col: col.dataset.col || '', index: k < 0 ? cards.length : k }
+    }
+    const tick = () => {   // 手指在边上：横着滚看板、竖着滚页面
+      if (!st?.on) return
+      const b = el.getBoundingClientRect(), sc = scroller(), edge = 48
+      const x0 = el.scrollLeft, y0 = sc?.scrollTop
+      if (st.x < b.left + edge) el.scrollLeft -= 10
+      else if (st.x > b.right - edge) el.scrollLeft += 10
+      if (sc) {
+        const r = sc.getBoundingClientRect()
+        if (st.y < r.top + edge) sc.scrollTop -= 10
+        else if (st.y > r.bottom - edge) sc.scrollTop += 10
+      }
+      if (el.scrollLeft !== x0 || sc?.scrollTop !== y0) {   // 滚了：手指没动，底下的列变了
+        st.at = target(st.x, st.y)
+        setOver(st.at || null)
+      }
+      st.raf = requestAnimationFrame(tick)
+    }
+    const lift = () => {
+      if (!st) return
+      st.on = true
+      const r = st.card.getBoundingClientRect()
+      st.dx = st.x - r.left; st.dy = st.y - r.top
+      const g = st.card.cloneNode(true) as HTMLElement
+      g.className = 'db-card db-ghost'
+      Object.assign(g.style, { width: r.width + 'px', left: r.left + 'px', top: r.top + 'px' })
+      document.body.appendChild(g)
+      st.ghost = g
+      setDrag(st.id)
+      navigator.vibrate?.(10)
+      st.raf = requestAnimationFrame(tick)
+    }
+    const start = (e: TouchEvent) => {
+      const t0 = e.touches[0]
+      const card = (e.target as HTMLElement).closest?.('.db-card') as HTMLElement | null
+      if (e.touches.length !== 1 || !card || (e.target as HTMLElement).closest('button, input, textarea, a')) return
+      st = { id: Number(card.dataset.id), card, x: t0.clientX, y: t0.clientY, on: false, dx: 0, dy: 0, timer: setTimeout(lift, 350) }
+    }
+    const move = (e: TouchEvent) => {
+      if (!st) return
+      const t0 = e.touches[0]
+      if (!st.on) {   // 还没拿起来就动了：是在滚动，不拖
+        if (Math.hypot(t0.clientX - st.x, t0.clientY - st.y) > 8) { clearTimeout(st.timer); st = null }
+        return
+      }
+      e.preventDefault()
+      st.x = t0.clientX; st.y = t0.clientY
+      if (st.ghost) Object.assign(st.ghost.style, { left: st.x - st.dx + 'px', top: st.y - st.dy + 'px' })
+      st.at = target(st.x, st.y)
+      setOver(st.at || null)
+    }
+    const end = (e: TouchEvent) => {
+      if (!st) return
+      clearTimeout(st.timer)
+      const s0 = st
+      st = null
+      if (!s0.on) return
+      e.preventDefault()   // 不要再算成一次点击（会打开这一行）
+      if (s0.raf) cancelAnimationFrame(s0.raf)
+      s0.ghost?.remove()
+      setDrag(null)
+      setOver(null)
+      const r = latest.current?.rows.find(x => x.id === s0.id)
+      if (r && s0.at && e.type === 'touchend') latest.current!.place(r, s0.at.col, s0.at.index)
+    }
+    el.addEventListener('touchstart', start, { passive: true })
+    el.addEventListener('touchmove', move, { passive: false })
+    el.addEventListener('touchend', end)
+    el.addEventListener('touchcancel', end)
+    return () => {
+      el.removeEventListener('touchstart', start)
+      el.removeEventListener('touchmove', move)
+      el.removeEventListener('touchend', end)
+      el.removeEventListener('touchcancel', end)
+      if (st) { clearTimeout(st.timer); st.ghost?.remove(); if (st.raf) cancelAnimationFrame(st.raf) }
+    }
+  }, [!!group])
   if (!group) return <div className="muted">{t('看板要按一个单选或状态属性分列：在视图设置里选一个。')}</div>
   const sorted = !!view.sort?.length
   const indexAt = (colEl: HTMLElement, y: number) => {
@@ -270,6 +386,7 @@ function Board({ data, view, save, addRow, fresh, setFresh, failed, reload }: {
       }
     } catch (e: any) { failed(e) }
   }
+  latest.current = { place, rows: data.rows }
   const drop = (colId: string, index: number) => {
     const r = data.rows.find(x => x.id === drag)
     setDrag(null)
@@ -283,19 +400,19 @@ function Board({ data, view, save, addRow, fresh, setFresh, failed, reload }: {
   const menuLen = menuRow ? (columns.find(c => c.id === colOf(menuRow))?.rows.length || 0) : 0
   const pick = (fn: () => void) => { setMenu(null); fn() }
   return (
-    <div className="db-board">
+    <div className="db-board" ref={boardRef}>
       {columns.map(c => (
-        <div key={c.id || 'none'} className={'db-col' + (over?.col === c.id ? ' over' : '')}
+        <div key={c.id || 'none'} data-col={c.id} className={'db-col' + (over?.col === c.id ? ' over' : '')}
           onDragOver={e => { if (drag == null) return; e.preventDefault(); setOver({ col: c.id, index: indexAt(e.currentTarget, e.clientY) }) }}
           onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setOver(null) }}
           onDrop={e => { e.preventDefault(); drop(c.id, indexAt(e.currentTarget, e.clientY)) }}>
           <div className="db-col-head">{c.o ? <Chip o={c.o} /> : <span className="db-chip">{t('没有{name}', { name: group.name })}</span>}
-            <span className="muted small">{c.rows.length}</span></div>
+            <span className="muted small">{data.groups?.[c.id] ?? c.rows.length}</span></div>
           {c.rows.map(r => {
             const at = r.id === drag ? -1 : c.rows.filter(x => x.id !== drag).indexOf(r)   // 被拖的那张不算位置
             return <div key={r.id}>
               {over?.col === c.id && over.index === at && <div className="db-drop-line" />}
-              <div className={'db-card' + (drag === r.id ? ' dragging' : '')} draggable
+              <div className={'db-card' + (drag === r.id ? ' dragging' : '')} draggable data-id={r.id}
                 onDragStart={e => { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', String(r.id)); setDrag(r.id) }}
                 onDragEnd={() => { setDrag(null); setOver(null) }}
                 onClick={() => fresh !== r.id && openLibrary(r.id)}>

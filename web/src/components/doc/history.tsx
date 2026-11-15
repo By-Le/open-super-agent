@@ -11,11 +11,12 @@ import { useBack } from '../../swipe'
 import { useAuthors } from '../../authors'
 import { dbApi, type DbProp } from '../db/db'
 import { PropsDiff, PropsSnapshot, propChanges, type PropChange, type PropsSnap } from '../db/PropsDiff'
+import { DbCtx } from '../db/cells'
 
 export type Version = { id: number; version: number; title: string; by: string; ts_start: number; ts: number; label: string; size: number }
 // 数据库的行多带着那一版的属性、所在的库和现在认不出的键（osa/pagedoc.version）
 type Snap = Version & { content: string; blocks?: { id: string; md: string }[]; props?: Record<string, any>; db_id?: number; stale?: string[] }
-type Live = { schema: DbProp[]; now: PropsSnap }
+type Live = { schema: DbProp[]; now: PropsSnap; refs: Record<number, string> }
 
 const when = (ts: number) => new Date(ts * 1000).toLocaleString(locale, { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
 const clock = (ts: number) => new Date(ts * 1000).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' })
@@ -86,7 +87,7 @@ export function HistoryView({ pageId, version, list, current, onRestorePage, onR
   const dbId = snap?.db_id
   useEffect(() => {
     if (!dbId) return
-    const load = () => api(`/api/dbs/${dbId}/rows/${pageId}`).then(d => setLive({ schema: d.db.schema, now: { title: d.row.title, props: d.row.props } })).catch(() => {})
+    const load = () => api(`/api/dbs/${dbId}/rows/${pageId}`).then(d => setLive({ schema: d.db.schema, now: { title: d.row.title, props: d.row.props }, refs: d.refs || {} })).catch(() => {})
     load()
     const h = (e: Event) => {
       const x = (e as CustomEvent).detail
@@ -145,8 +146,10 @@ export function HistoryView({ pageId, version, list, current, onRestorePage, onR
         {list[0]?.id !== version.id && <button className="btn" disabled={busy} onClick={() => run(() => onRestorePage(version))}>{t('回到这一版')}</button>}
         <button className="btn" onClick={onClose}>{t('回到编辑')}</button>
       </div>
-      {snap && mode === 'only' && live && snap.props && <PropsSnapshot schema={live.schema} snap={asProps(snap)} />}
-      {props && mode !== 'only' && <PropsDiff changes={props.changes} mode={mode} staleNames={props.stale} busy={busy} restoreLabel={backLabel} onRestore={restoreProp} />}
+      <DbCtx.Provider value={{ dbId: dbId || 0, refs: live?.refs || {}, addRefs: () => {}, onPressed: () => {} }}>
+        {snap && mode === 'only' && live && snap.props && <PropsSnapshot schema={live.schema} snap={asProps(snap)} />}
+        {props && mode !== 'only' && <PropsDiff changes={props.changes} mode={mode} staleNames={props.stale} busy={busy} restoreLabel={backLabel} onRestore={restoreProp} />}
+      </DbCtx.Provider>
       {!snap ? <p className="muted">{t('加载中…')}</p> : mode === 'only' || !snap.blocks ? (
         <div className="md"><Markdown text={snap.content} /></div>
       ) : !rows!.some(r => r.kind !== 'same') ? (
