@@ -431,6 +431,11 @@ def render(pid: int, start: str | None = None, limit: int = READ_LIMIT) -> str:
     owner = bots.get(p["bot_id"]) if p.get("bot_id") else None
     head = (f"《{p['title']}》{library.link(pid)} · 版本 {p['version']} · " + (f"「{owner['name']}」建的" if owner else "用户建的") +
             f" · {time.strftime('%Y-%m-%d', time.localtime(p['updated']))} 更新" + (" · 已锁定（只有用户能改，有意见用 comment_page）" if p.get("locked") else ""))
+    fam = library.family(pid)
+    if fam["ancestors"] or fam["children"]:
+        head += "\n" + "　".join(x for x in (
+            "上级：" + " / ".join(f"#{a['id']}《{a['title']}》" for a in fam["ancestors"]) if fam["ancestors"] else "",
+            "子页面：" + "、".join(f"#{c['id']}《{c['title']}》" for c in fam["children"][:30]) if fam["children"] else "") if x)
     from . import pagecomments
     tail = pagecomments.render(pid)
     tail = "\n\n" + tail if tail else ""

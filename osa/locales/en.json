@@ -1236,5 +1236,8 @@
   "评论太长（最多 {n} 字）": "The comment is too long (max {n} characters)",
   "没有评论 #{id}": "No comment #{id}",
   "没有段落 ⟦{id}⟧": "No block ⟦{id}⟧",
-  "用户在页面上的评论": "the user's comment on a page"
+  "用户在页面上的评论": "the user's comment on a page",
+  "html 页面下面不能放子页面": "HTML pages can't have subpages",
+  "不能挪到它自己或者它的子页面下面": "A page can't be moved under itself or one of its subpages",
+  "页面 #{id} 不在那一层": "Page #{id} isn't at that level"
 }

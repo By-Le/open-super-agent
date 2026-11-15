@@ -205,6 +205,8 @@ export type Page = {
   id: number; bot_id: number | null; title: string; format: 'markdown' | 'html'; share_token: string | null; pinned: boolean
   task_id: number | null; created: number; updated: number; size: number; content?: string
   version: number; locked: boolean   // version：每次修改 +1（osa/pagedoc.py）；locked：Bot 只能读
+  parent_id: number | null; pos: number   // 子页面：挂在哪个页面下面、同一层里的顺序
+  ancestors?: { id: number; title: string }[]; children?: { id: number; title: string; format: string }[]   // 只有打开单个页面时给
   app?: { tools: string[]; chat: boolean } | null   // 小应用的清单（见 osa/applets.py），普通页面没有
 }
 export type Teach = { bot_id: number; started: number; note: string; max_s: number }

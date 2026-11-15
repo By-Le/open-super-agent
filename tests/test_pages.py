@@ -373,3 +373,48 @@ async def test_bot_reads_then_edits_in_chat(llm, events, bot, pages):
     assert any(e["page_id"] == pid and e["by"] == f"bot:{b['id']}" for e in events.of("page_changed"))
     names = [t["function"]["name"] for t in llm.bodies("router", "写手乙")[0]["tools"]]
     assert "edit_page" in names and names.index("edit_page") > names.index("save_page")
+
+
+async def test_hierarchy(no_password, bot, pages, events):
+    b = bot("写手")
+    a = new(pages, b, "# A", "A")
+    child = library.save_page(b["id"], "B", "# B", parent_id=a)["id"]
+    grand = library.save_page(b["id"], "C", "# C", parent_id=child)["id"]
+    d = library.save_page(b["id"], "D", "# D", parent_id=a)["id"]
+    pages.extend([child, grand, d])
+    assert library.family(grand)["ancestors"] == [{"id": a, "title": "A"}, {"id": child, "title": "B"}]
+    assert [c["id"] for c in library.family(a)["children"]] == [child, d]
+    html = library.save_page(b["id"], "面板", "<p>x</p>", "html")["id"]
+    pages.append(html)
+    for bad in ((a, grand), (a, a), (child, html)):   # 挪到自己的子孙下面、自己下面、html 页面下面
+        with pytest.raises(ValueError):
+            library.move(bad[0], bad[1])
+    with pytest.raises(ValueError):
+        library.save_page(b["id"], "X", "x", parent_id=html)
+    library.move(d, a, after=0)                          # 排到最前
+    assert [c["id"] for c in library.family(a)["children"]] == [d, child]
+    library.move(d, a, after=child)                      # 排在 B 后面
+    assert [c["id"] for c in library.family(a)["children"]] == [child, d]
+    text = pagedoc.render(child)
+    assert f"上级：#{a}《A》" in text and f"子页面：#{grand}《C》" in text
+    # 工具：新建时可以放在某个页面下面
+    out = library.tool_save_page(b["id"], {"title": "E", "content": "# E", "parent_id": a})
+    e = int(out.split("#")[1].split("「")[0])
+    pages.append(e)
+    assert library.get_page(e, False)["parent_id"] == a
+    # 删 B：C 挪到 A 下面，站在 B 原来的位置（D 前面）
+    library.delete_page(child)
+    assert [c["id"] for c in library.family(a)["children"]] == [grand, d, e]
+    async with http() as c:
+        assert (await c.post(f"/api/pages/{a}/move", json={"parent_id": grand})).status_code == 400
+        r = await c.post(f"/api/pages/{grand}/move", json={"parent_id": None})
+        assert r.status_code == 200 and r.json()["parent_id"] is None
+        got = (await c.get(f"/api/pages/{d}")).json()
+        assert got["ancestors"] == [{"id": a, "title": "A"}] and got["children"] == []
+        r = await c.post("/api/pages", json={"title": "子", "content": "", "allow_empty": True, "parent_id": a})
+        sub = r.json()["id"]
+        pages.append(sub)
+        assert r.json()["parent_id"] == a
+        assert (await c.delete(f"/api/pages/{a}?cascade=true")).json() == {"ok": True}   # 连子页面一起删
+    assert not library.get_page(a, False) and not library.get_page(d, False) and not library.get_page(sub, False)
+    assert library.get_page(grand, False)   # 已经挪走的不受影响

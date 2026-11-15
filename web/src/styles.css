@@ -440,6 +440,24 @@ a { color: var(--link); text-decoration: none; } a:hover { text-decoration: unde
   .lib-body { padding: 12px 12px 30px; }
 }
 
+/* 资料库的页面树、页面路径、子页面（PageTree.tsx） */
+.tree-row { display: flex; align-items: center; gap: 2px; border-bottom: 1px solid var(--line); }
+.tree-row .lib-row { border-bottom: 0; flex: 1; min-width: 0; padding-left: 4px; }
+.tree-row:hover { background: var(--bg2); } .tree-row:hover .lib-row { background: transparent; }
+.tree-chev { width: 22px; height: 28px; flex: none; color: var(--fg3); font-size: 12px; } .tree-chev.none { cursor: default; }
+.tree-acts { display: flex; gap: 2px; opacity: 0; flex: none; padding-right: 4px; } .tree-row:hover .tree-acts { opacity: 1; }
+.tree-acts .icon-btn { width: 28px; height: 28px; font-size: 15px; }
+@media (hover: none) { .tree-acts { opacity: 1; } }
+.page-path { max-width: 820px; margin: 0 auto; padding: 12px 24px 0; color: var(--fg3); }
+.page-path + .page-info { padding-top: 4px; }
+.page-kids { max-width: 820px; margin: -40px auto 0; padding: 0 24px 60px 64px; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
+.page-kid { padding: 4px 8px; border-radius: 8px; text-align: left; } .page-kid:hover { background: var(--bg2); }
+.move-dialog input { width: 100%; }
+.move-list { display: flex; flex-direction: column; max-height: 50vh; overflow-y: auto; border: 1px solid var(--line); border-radius: 10px; padding: 4px; }
+.move-list button { text-align: left; padding: 7px 10px; border-radius: 8px; } .move-list button:hover:not(:disabled) { background: var(--bg2); }
+.move-list button:disabled { color: var(--fg3); }
+@media (max-width: 760px) { .page-path { padding: 10px 14px 0; } .page-kids { padding: 0 14px 40px 46px; } }
+
 /* ---------- 资料库：文档编辑器（components/doc/） ---------- */
 .lib-tools { display: flex; gap: 8px; align-items: center; } .lib-tools .lib-search { flex: 1; margin: 0; } .lib-tools .btn { white-space: nowrap; padding: 6px 12px; font-size: 13.5px; }
 .lib-list > .lib-tools { margin-bottom: 8px; }

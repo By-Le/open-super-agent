@@ -1555,5 +1555,15 @@
   "标成已解决": "Resolve",
   "没有没解决的评论。选中一段文字点“评论”，Bot 会来处理；也可以对整页提意见。": "No open comments. Select some text and click Comment, and a Bot will handle it. You can also comment on the whole page.",
   "还没有解决过的评论。": "No resolved comments yet.",
-  "评论整页": "Comment on the page"
+  "评论整页": "Comment on the page",
+  "挪到…": "Move to…",
+  "子页面": "Subpages",
+  "删除页面「{title}」？它下面的 {n} 个子页面会挪到上一级，分享链接也会失效。": "Delete the page \"{title}\"? Its {n} subpages will move up one level, and the share link will stop working.",
+  "展开或收起子页面": "Show or hide subpages",
+  "新建子页面": "New subpage",
+  "把「{title}」挪到…": "Move \"{title}\" to…",
+  "按标题找": "Find by title",
+  "最上层": "Top level",
+  "现在在这里": "current location",
+  "没有能放的页面": "No page to move it under"
 }

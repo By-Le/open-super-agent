@@ -922,7 +922,7 @@ async def create_page(data: dict = Body(...)):
     try:
         p = library.save_page(data.get("bot_id"), data.get("title", ""), data.get("content", ""),
                               data.get("format") or "markdown", task_id=data.get("task_id"), app=data.get("app"),
-                              allow_empty=bool(data.get("allow_empty")) and not data.get("bot_id"))
+                              allow_empty=bool(data.get("allow_empty")) and not data.get("bot_id"), parent_id=data.get("parent_id"))
     except (ValueError, TypeError) as e:
         _err(e)
     await broadcast({"type": "pages_changed"})
@@ -931,7 +931,19 @@ async def create_page(data: dict = Body(...)):
 
 @app.get("/api/pages/{pid}")
 async def get_page(pid: int):
-    return _page_or_404(pid, True)
+    return _page_or_404(pid, True) | library.family(pid)
+
+
+@app.post("/api/pages/{pid}/move")
+async def move_page(pid: int, data: dict = Body(...)):
+    """{parent_id: 页面编号 | null（最上层）, after: 排在哪个页面后面 | null（最后）| 0（最前）}"""
+    _page_or_404(pid)
+    try:
+        p = library.move(pid, data.get("parent_id"), data.get("after"))
+    except (ValueError, TypeError) as e:
+        _err(e)
+    await broadcast({"type": "pages_changed"})
+    return p
 
 
 @app.get("/api/pages/{pid}/raw")
@@ -1063,8 +1075,9 @@ async def share_page(pid: int, data: dict = Body(...)):
 
 
 @app.delete("/api/pages/{pid}")
-async def delete_page(pid: int):
-    library.delete_page(pid)
+async def delete_page(pid: int, cascade: bool = False):
+    """删页面：子页面默认挪到上一级；cascade=true 连子页面一起删。"""
+    library.delete_page(pid, cascade)
     await broadcast({"type": "pages_changed"})
     return {"ok": True}
 

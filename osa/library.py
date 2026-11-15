@@ -18,8 +18,9 @@ conn.execute("""create table if not exists pages(
   share_token text, pinned integer default 0, task_id integer, created real, updated real, app text)""")
 conn.execute("create unique index if not exists pages_token on pages(share_token)")
 _have = {r[1] for r in conn.execute("pragma table_info(pages)")}
-for _col, _type in (("app", "text"), ("block_meta", "text"), ("version", "integer default 0"), ("locked", "integer default 0")):
-    if _col not in _have:   # block_meta / version / locked：按段编辑（pagedoc.py）
+for _col, _type in (("app", "text"), ("block_meta", "text"), ("version", "integer default 0"), ("locked", "integer default 0"),
+                    ("parent_id", "integer"), ("pos", "real")):
+    if _col not in _have:   # block_meta / version / locked：按段编辑（pagedoc.py）；parent_id / pos：子页面和它们的顺序
         conn.execute(f"alter table pages add column {_col} {_type}")
 conn.execute("""create table if not exists page_data(
   page_id integer, key text, value text, updated real, primary key(page_id, key))""")
@@ -35,15 +36,15 @@ RAW_CSP = ("sandbox allow-scripts allow-popups; default-src 'none'; script-src '
            "style-src 'unsafe-inline' https:; img-src https: data:; font-src https: data:; media-src https: data:; "
            "connect-src 'none'; frame-src 'none'; form-action 'none'")
 
-_COLS = "id, bot_id, title, format, share_token, pinned, task_id, created, updated, length(content), app, version, locked"
+_COLS = "id, bot_id, title, format, share_token, pinned, task_id, created, updated, length(content), app, version, locked, parent_id, pos"
 
 
 # ---------- 页面 ----------
 def _page(r, content: str | None = None) -> dict:
-    i, bot_id, title, fmt, token, pinned, task_id, created, updated, size, app, version, locked = r
+    i, bot_id, title, fmt, token, pinned, task_id, created, updated, size, app, version, locked, parent_id, pos = r
     p = {"id": i, "bot_id": bot_id, "title": title, "format": fmt, "share_token": token, "pinned": bool(pinned),
          "task_id": task_id, "created": created, "updated": updated, "size": size or 0,
-         "app": json.loads(app) if app else None, "version": version or 0, "locked": bool(locked)}
+         "app": json.loads(app) if app else None, "version": version or 0, "locked": bool(locked), "parent_id": parent_id, "pos": pos or 0}
     if content is not None:
         p["content"] = content
     return p
@@ -67,10 +68,11 @@ def by_token(token: str) -> dict | None:
 
 def save_page(bot_id: int | None, title: str, content: str, fmt: str = "markdown",
               pid: int | None = None, task_id: int | None = None, app=None, by: str | None = None,
-              base: int | None = None, allow_empty: bool = False) -> dict:
+              base: int | None = None, allow_empty: bool = False, parent_id: int | None = None) -> dict:
     """新建，或者给 pid 时更新内容。app 是小应用的清单（见 applets.manifest），只对 html 有效；更新时不给就保留原来的。
     by 是谁改的（默认 bot_id 对应的 Bot，没有就是用户）。markdown 页面更新时按段对齐（pagedoc.rewrite），没变的段保留编号和作者；
-    给了 base（调用方读到的版本号），会覆盖掉 base 之后别人改过的段就抛 pagedoc.Conflict。allow_empty：用户新建的空白页面。"""
+    给了 base（调用方读到的版本号），会覆盖掉 base 之后别人改过的段就抛 pagedoc.Conflict。allow_empty：用户新建的空白页面。
+    parent_id 只在新建时有用：放在哪个页面下面（排在最后）。"""
     from . import applets, pagedoc
     title = " ".join((title or "").split())[:120] or i18n.t("未命名页面")
     fmt = fmt if fmt in FORMATS else "markdown"
@@ -98,9 +100,12 @@ def save_page(bot_id: int | None, title: str, content: str, fmt: str = "markdown
     else:
         if conn.execute("select count(*) from pages").fetchone()[0] >= MAX_PAGES:
             raise ValueError(i18n.t("资料库最多 {n} 个页面，先删掉一些", n=MAX_PAGES))
-        pid = conn.execute("insert into pages(bot_id, title, format, content, task_id, created, updated, app) "
-                           "values(?,?,?,?,?,?,?,?)", (bot_id, title, fmt, content, task_id, now, now,
-                                                       json.dumps(app, ensure_ascii=False) if app else None)).lastrowid
+        if parent_id is not None:
+            _check_parent(parent_id)
+        pid = conn.execute("insert into pages(bot_id, title, format, content, task_id, created, updated, app, parent_id, pos) "
+                           "values(?,?,?,?,?,?,?,?,?,?)", (bot_id, title, fmt, content, task_id, now, now,
+                                                           json.dumps(app, ensure_ascii=False) if app else None,
+                                                           parent_id, _end_pos(parent_id))).lastrowid
         conn.commit()
         if fmt == "markdown":
             pagedoc.init(pid, by)
@@ -133,13 +138,94 @@ def share(pid: int, on: bool) -> dict:
     return get_page(pid, False)
 
 
-def delete_page(pid: int):
+def delete_page(pid: int, cascade: bool = False):
+    """删页面。子页面默认挪到上一级、排在它原来的位置；cascade 就连子页面一起删。"""
     from . import pagecomments, pagedoc   # noqa: F401  确保版本历史、评论的表已经建好
+    p = get_page(pid, False)
+    if p:
+        kids = _children(pid)
+        if cascade:
+            for k in kids:
+                delete_page(k[0], cascade=True)
+        elif kids:
+            after = _next_after(p["parent_id"], p["pos"])
+            step = ((after if after is not None else p["pos"] + 1) - p["pos"]) / (len(kids) + 1)
+            for n, (kid, _) in enumerate(kids, 1):
+                conn.execute("update pages set parent_id=?, pos=? where id=?", (p["parent_id"], p["pos"] + step * n, kid))
     conn.execute("delete from pages where id=?", (pid,))
     conn.execute("delete from page_data where page_id=?", (pid,))
     conn.execute("delete from page_versions where page_id=?", (pid,))
     pagecomments.drop_page(pid)
     conn.commit()
+
+
+# ---------- 子页面 ----------
+def _children(pid: int | None) -> list[tuple[int, float]]:
+    q = "select id, coalesce(pos, 0) from pages where parent_id " + ("is null" if pid is None else "=?") + " order by coalesce(pos, 0), id"
+    return list(conn.execute(q, () if pid is None else (pid,)))
+
+
+def _end_pos(parent_id: int | None) -> float:
+    kids = _children(parent_id)
+    return (max(p for _, p in kids) + 1) if kids else 1.0
+
+
+def _next_after(parent_id: int | None, pos: float) -> float | None:
+    return next((p for _, p in _children(parent_id) if p > pos), None)
+
+
+def descendants(pid: int) -> set[int]:
+    out, todo = set(), [pid]
+    while todo:
+        for kid, _ in _children(todo.pop()):
+            if kid not in out:
+                out.add(kid)
+                todo.append(kid)
+    return out
+
+
+def _check_parent(parent_id: int, pid: int | None = None):
+    parent = get_page(parent_id, False) if isinstance(parent_id, int) and not isinstance(parent_id, bool) else None
+    if not parent:
+        raise ValueError(i18n.t("没有页面 #{id}", id=parent_id))
+    if parent["format"] != "markdown":
+        raise ValueError(i18n.t("html 页面下面不能放子页面"))
+    if pid is not None and (parent_id == pid or parent_id in descendants(pid)):
+        raise ValueError(i18n.t("不能挪到它自己或者它的子页面下面"))
+
+
+def move(pid: int, parent_id: int | None, after: int | None = None) -> dict:
+    """挪到 parent_id 下面（None 是最上层），排在 after 后面（None 是排在最后，0 是排在最前）。"""
+    if not get_page(pid, False):
+        raise ValueError(i18n.t("没有页面 #{id}", id=pid))
+    if parent_id is not None:
+        _check_parent(parent_id, pid)
+    kids = [(k, p) for k, p in _children(parent_id) if k != pid]
+    if after is None:
+        pos = (kids[-1][1] + 1) if kids else 1.0
+    elif after == 0:
+        pos = (kids[0][1] - 1) if kids else 1.0
+    else:
+        at = next((n for n, (k, _) in enumerate(kids) if k == after), None)
+        if at is None:
+            raise ValueError(i18n.t("页面 #{id} 不在那一层", id=after))
+        pos = (kids[at][1] + kids[at + 1][1]) / 2 if at + 1 < len(kids) else kids[at][1] + 1
+    conn.execute("update pages set parent_id=?, pos=? where id=?", (parent_id, pos, pid))
+    conn.commit()
+    return get_page(pid, False)
+
+
+def family(pid: int) -> dict:
+    """上级（从最上层往下）和子页面（按顺序），给页面顶上的路径和底下的子页面列表用。"""
+    ancestors, seen = [], {pid}
+    p = get_page(pid, False)
+    while p and p["parent_id"] is not None and p["parent_id"] not in seen:
+        seen.add(p["parent_id"])
+        p = get_page(p["parent_id"], False)
+        if p:
+            ancestors.insert(0, {"id": p["id"], "title": p["title"]})
+    kids = [get_page(k, False) for k, _ in _children(pid)]
+    return {"ancestors": ancestors, "children": [{"id": k["id"], "title": k["title"], "format": k["format"]} for k in kids if k]}
 
 
 # ---------- 小应用的数据 ----------
@@ -181,6 +267,7 @@ SAVE_PAGE = {"type": "function", "function": {
         "format": {"type": "string", "enum": list(FORMATS)},
         "page_id": {"type": "integer", "description": "可选：要更新的页面编号"},
         "version": {"type": "integer", "description": "更新时：read_page 显示的版本号（页面最近是别人改的就必须带）"},
+        "parent_id": {"type": "integer", "description": "可选，新建时：放在哪个页面下面当子页面"},
         "app": {"type": "object", "description": "可选，只对 html 有效：填了就是小应用。tools 是页面里允许调用的工具名（只能是你现在有的工具）；"
                                                  "chat 为 true 时页面能替用户给你发消息",
                 "properties": {"tools": {"type": "array", "items": {"type": "string"}}, "chat": {"type": "boolean"}}}},
@@ -267,7 +354,8 @@ def tool_save_page(bot_id: int, args: dict, task_id: int | None = None, saved: l
         return f"没保存：app.tools 里有现在没有的工具 {', '.join(unknown)}，只能列你这一轮能用的工具"
     try:
         p = save_page(bot_id, args.get("title", ""), args.get("content", ""), fmt or "markdown",
-                      pid, task_id, app, by=f"bot:{bot_id}", base=args.get("version"))
+                      pid, task_id, app, by=f"bot:{bot_id}", base=args.get("version"),
+                      parent_id=args.get("parent_id") if pid is None else None)
     except pagedoc.Conflict as e:
         return pagedoc.conflict_text(e, "没保存")
     except (ValueError, TypeError) as e:

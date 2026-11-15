@@ -129,7 +129,7 @@ web/src/
 | `llm_usage` | 旧版本的调用记录，原样留着不加列（旧版本按位置插 8 个值，加列后退回旧版本会出错）。启动时把新出现的行搬进 `llm_calls`，搬到哪儿记在 `settings` 的 `llm_usage_moved` |
 | `task_steps` | 后台任务的过程：每一步的类型（思考 / 工具 / 结果……）、Heavy 里是哪个研究员、标题、内容、状态、用时。`task_id` 是“任务已派发”那条消息的 id；工具那一步的工具名在 `name`（标题会被进度说明盖掉）；只留最近 `memory.task_log_days` 天 |
 | `memories` | 长期记忆。`bot_id` 为空的是共享的用户事实；`kind=work` 是自动记的“做过的事” |
-| `pages`、`file_pins` | 资料库的页面（`share_token` 不为空表示已分享）和置顶的文件路径。`block_meta`（JSON）是 markdown 页面每段的编号、作者（`by`：user / bot:<id> / 空）、最后改动的版本（`v`）和指纹（`h`），按位置对应从 `content` 切出来的段；`version` 每次提交 +1；`locked` 为 1 时 Bot 只能读 |
+| `pages`、`file_pins` | 资料库的页面（`share_token` 不为空表示已分享）和置顶的文件路径。`block_meta`（JSON）是 markdown 页面每段的编号、作者（`by`：user / bot:<id> / 空）、最后改动的版本（`v`）和指纹（`h`），按位置对应从 `content` 切出来的段；`version` 每次提交 +1；`locked` 为 1 时 Bot 只能读；`parent_id` 是上一级页面（空的是最上层），`pos` 是同一层里的顺序 |
 | `page_comments` | 页面的评论：挂在哪一段（`block_id`，空的是整页）、回复的是哪串（`parent_id`）、谁写的（`by`）、引文、是否已解决（整串一起）、叫醒了哪些 Bot（`woke`） |
 | `page_versions` | 页面的版本历史：每版的标题、正文、段的元数据、谁改的、起止时间；同一个人 10 分钟内接着改并进同一版；`label` 是 `base`（旧页面第一次被改前的原样）或 `restore:<版本>`；每页最多 50 版、总共 4 MB |
 | `push_subs` | 开启了推送的设备（推送服务地址和密钥）；VAPID 私钥存在 `settings` 的 `vapid` 里 |
@@ -423,6 +423,8 @@ web/src/
   `memory.context` 只按当时存下的 meta 渲染（不现查页面）：评论是用户的话不改，段落原文和标题 defang。叫醒用 `dm.wake`，
   `woke.from` 是那串评论的第一条（不是 Bot 编号，`_turn_block` 和 `cancel_task` 都单独处理）。那一轮没派任务、
   Bot 自己也没在这串里回过（从这一轮开始算），就把这一轮的回复贴进去；派了任务的，任务结果贴回来（`Task.comment`）。
+- 子页面：html 页面下面不放子页面；挪动时查环（不能挪到自己和子孙下面）；删页面时子页面默认挪到上一级、排在它原来的位置，
+  `cascade` 才连子页面一起删。Bot 没有挪、删页面的工具，`save_page` 的 `parent_id` 只在新建时有用。
 - 用户在网页上按段保存只广播 `page_changed`（带改动的段编号），不发 `pages_changed`：后者会让列表、页面卡片整个重拉。
 - 搜索索引：页面改了一段，其余没变的块沿用原来的向量（`search._vectors`），编辑器几秒存一次也不会每次都把整页重算。
 - **网页编辑器（`web/src/components/doc/`）以 Markdown 为准**：只开 Markdown 存得下的格式（提示框存成 `> [!NOTE]`，折叠块存成 `<details>`）。
