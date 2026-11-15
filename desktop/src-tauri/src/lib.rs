@@ -193,6 +193,33 @@ fn server_pattern(origin: &Url) -> String {
     format!("{}{UI_PATHS}", origin.origin().ascii_serialization())
 }
 
+/// 调桥接命令的是不是网页界面本身：Tauri 在 macOS 上按请求的 Origin（没有路径）对授权，UI_PATHS 里的路径实际挡不住，
+/// 同一个域名下别的页面（Bot 的报告页 /api/pages/1/raw）被打开在主窗口里时也能调。每个命令再按窗口现在的地址看一遍
+pub(crate) fn from_ui(webview: &tauri::Webview) -> bool {
+    let Ok(u) = webview.url() else { return false };
+    let same = state(webview.app_handle()).origin.lock().unwrap().as_ref().is_some_and(|o| o.origin() == u.origin());
+    same && ui_path(u.path())
+}
+
+#[cfg(test)]
+mod ui_path_tests {
+    #[test]
+    fn ui_paths() {
+        for ok in ["/", "", "/apps", "/apps/", "/library", "/library/pages/12", "/library/pages/12/"] {
+            assert!(super::ui_path(ok), "{ok}");
+        }
+        for bad in ["/api/pages/1/raw", "/s/abc", "/library/pages/", "/library/pages/1x", "/apps/x", "/login"] {
+            assert!(!super::ui_path(bad), "{bad}");
+        }
+    }
+}
+
+/// 和 UI_PATHS 一样：`/`、`/apps`、`/library`、`/library/pages/12`
+fn ui_path(path: &str) -> bool {
+    let p = path.trim_end_matches('/');
+    matches!(p, "" | "/apps" | "/library") || p.strip_prefix("/library/pages/").is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
+}
+
 fn grant(app: &AppHandle, origin: &Url) {
     let key = origin.origin().ascii_serialization();
     let st = state(app);
@@ -281,7 +308,10 @@ fn trace(what: std::fmt::Arguments) {
 }
 
 #[tauri::command]
-fn desktop_notify(app: AppHandle, title: String, body: String, chat_id: Option<i64>, active: Option<bool>) {
+fn desktop_notify(app: AppHandle, webview: tauri::Webview, title: String, body: String, chat_id: Option<i64>, active: Option<bool>) {
+    if !from_ui(&webview) {
+        return;
+    }
     let looking = main_window(&app).is_some_and(|w| w.is_visible().unwrap_or(false) && w.is_focused().unwrap_or(false));
     trace(format_args!("notify {title:?} {body:?} chat={chat_id:?} active={active:?} looking={looking}"));
     if looking && active.unwrap_or(false) {
@@ -310,7 +340,10 @@ fn parse_theme(theme: Option<&str>) -> Option<Theme> {
 
 /// 网页设置里选了明亮 / 夜间（None 是跟随系统）：所有窗口的标题栏跟着换，记下来下次启动就用
 #[tauri::command]
-fn desktop_set_theme(app: AppHandle, theme: Option<String>) {
+fn desktop_set_theme(app: AppHandle, webview: tauri::Webview, theme: Option<String>) {
+    if !from_ui(&webview) {
+        return;
+    }
     let theme = theme.filter(|t| t == "light" || t == "dark");
     app.set_theme(parse_theme(theme.as_deref()));
     let st = state(&app);
@@ -323,12 +356,18 @@ fn desktop_set_theme(app: AppHandle, theme: Option<String>) {
 
 /// 网页设置里的“切换服务器”：和菜单栏里的一样，回到启动页重新选用法。在这台电脑上运行时没有“退出登录”（见 osa/server.py 的 can_sign_out）
 #[tauri::command]
-fn desktop_switch(app: AppHandle) {
+fn desktop_switch(app: AppHandle, webview: tauri::Webview) {
+    if !from_ui(&webview) {
+        return;
+    }
     show_setup(&app, "?switch=1");
 }
 
 #[tauri::command]
-fn desktop_set_badge(app: AppHandle, count: i64) {
+fn desktop_set_badge(app: AppHandle, webview: tauri::Webview, count: i64) {
+    if !from_ui(&webview) {
+        return;
+    }
     trace(format_args!("badge {count}"));
     tray::set_count(&app, count);
     if let Some(w) = main_window(&app) {
@@ -337,7 +376,10 @@ fn desktop_set_badge(app: AppHandle, count: i64) {
 }
 
 #[tauri::command]
-fn desktop_open_external(app: AppHandle, url: String) {
+fn desktop_open_external(app: AppHandle, webview: tauri::Webview, url: String) {
+    if !from_ui(&webview) {
+        return;
+    }
     trace(format_args!("open {url}"));
     if let Ok(u) = Url::parse(&url) {
         if matches!(u.scheme(), "http" | "https" | "mailto") {
@@ -409,13 +451,19 @@ fn update_ready(app: &AppHandle, version: &str) {
 
 /// 页面打开前就装好的新版本（页面加载完问一次）
 #[tauri::command]
-fn desktop_update_pending(app: AppHandle) -> Option<String> {
+fn desktop_update_pending(app: AppHandle, webview: tauri::Webview) -> Option<String> {
+    if !from_ui(&webview) {
+        return None;
+    }
     state(&app).updated.lock().unwrap().clone()
 }
 
 /// 重启换上装好的新版本。退出前照常停掉本机的服务和派任务用的连接（见 run 里的 ExitRequested）。没有装好的新版本时什么都不做
 #[tauri::command]
-fn desktop_restart(app: AppHandle) {
+fn desktop_restart(app: AppHandle, webview: tauri::Webview) {
+    if !from_ui(&webview) {
+        return;
+    }
     restart_for_update(&app);
 }
 

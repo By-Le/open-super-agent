@@ -72,7 +72,10 @@ fn confirm(app: &AppHandle, title: &str, text: &str, ok: &str) -> bool {
 // ---------- 网页经 window.osaDesktop.link 调用的命令（只授权给服务器的网页界面） ----------
 
 #[tauri::command]
-pub fn desktop_link_state(app: AppHandle) -> serde_json::Value {
+pub fn desktop_link_state(app: AppHandle, webview: tauri::Webview) -> serde_json::Value {
+    if !crate::from_ui(&webview) {
+        return serde_json::Value::Null;
+    }
     let origin = remote(&app);
     let saved = origin.as_ref().and_then(|o| store::link_get(&key(o)));
     json!({
@@ -85,7 +88,10 @@ pub fn desktop_link_state(app: AppHandle) -> serde_json::Value {
 
 /// 允许服务器派任务到这台 Mac：问过你再存令牌、起小程序。返回你同不同意
 #[tauri::command(async)]
-pub fn desktop_link(app: AppHandle, token: String, id: i64) -> Result<bool, String> {
+pub fn desktop_link(app: AppHandle, webview: tauri::Webview, token: String, id: i64) -> Result<bool, String> {
+    if !crate::from_ui(&webview) {
+        return Err("not allowed".into());
+    }
     let origin = remote(&app).ok_or_else(|| tr("只有连着服务器时才能这样做", "Only available when connected to a server").to_string())?;
     let host = origin.host_str().unwrap_or_default().to_string();
     let text = if crate::zh() {
@@ -105,7 +111,10 @@ pub fn desktop_link(app: AppHandle, token: String, id: i64) -> Result<bool, Stri
 }
 
 #[tauri::command]
-pub fn desktop_unlink(app: AppHandle) {
+pub fn desktop_unlink(app: AppHandle, webview: tauri::Webview) {
+    if !crate::from_ui(&webview) {
+        return;
+    }
     unlink(&app);
 }
 

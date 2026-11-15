@@ -308,24 +308,43 @@ fn cancel_pair(app: AppHandle) {
 
 // ---------- 网页通过 window.osaDesktop 调用的命令 ----------
 
+/// 调桥接命令的是不是网页界面本身（`/`、`/apps`、`/library`、`/library/pages/12`，和 UI_PATHS 一样）：
+/// Tauri 按 Origin 授权、不看路径，主界面又只停在这些路径上（见 main_path_ok），这里按窗口现在的地址再看一遍
+fn from_ui(webview: &tauri::Webview) -> bool {
+    let Ok(u) = webview.url() else { return false };
+    let same = state(webview.app_handle()).origin.lock().unwrap().as_ref().is_some_and(|o| o.origin() == u.origin());
+    let p = u.path().trim_end_matches('/');
+    same && (matches!(p, "" | "/apps" | "/library")
+        || p.strip_prefix("/library/pages/").is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit())))
+}
+
 fn current_origin(app: &AppHandle) -> Result<String, String> {
     state(app).origin.lock().unwrap().as_ref().map(|o| o.origin().ascii_serialization()).ok_or_else(|| "no server".into())
 }
 
 #[tauri::command(async)]
-async fn mobile_set_badge(app: AppHandle, count: i64) -> Result<(), String> {
+async fn mobile_set_badge(app: AppHandle, webview: tauri::Webview, count: i64) -> Result<(), String> {
+    if !from_ui(&webview) {
+        return Err("not allowed".into());
+    }
     app.osa_ios().call::<Value>("setBadge", json!({ "count": count.max(0) })).await.map(|_| ())
 }
 
 /// 网页设置里选了明亮 / 夜间（None 是跟随系统）：整个 App 跟着换，状态栏的字才看得清
 #[tauri::command(async)]
-async fn mobile_set_theme(app: AppHandle, theme: Option<String>) -> Result<(), String> {
+async fn mobile_set_theme(app: AppHandle, webview: tauri::Webview, theme: Option<String>) -> Result<(), String> {
+    if !from_ui(&webview) {
+        return Err("not allowed".into());
+    }
     let theme = theme.filter(|t| t == "light" || t == "dark");
     app.osa_ios().call::<Value>("setTheme", json!({ "theme": theme })).await.map(|_| ())
 }
 
 #[tauri::command]
-fn mobile_open_external(app: AppHandle, url: String) {
+fn mobile_open_external(app: AppHandle, webview: tauri::Webview, url: String) {
+    if !from_ui(&webview) {
+        return;
+    }
     if let Ok(u) = Url::parse(&url) {
         if matches!(u.scheme(), "http" | "https" | "mailto" | "tel") {
             let _ = app.opener().open_url(u.as_str(), None::<&str>);
@@ -339,21 +358,30 @@ fn mobile_log(msg: String) {
 }
 
 #[tauri::command(async)]
-async fn mobile_push_current(app: AppHandle, key: String) -> Result<Option<Value>, String> {
+async fn mobile_push_current(app: AppHandle, webview: tauri::Webview, key: String) -> Result<Option<Value>, String> {
+    if !from_ui(&webview) {
+        return Err("not allowed".into());
+    }
     let origin = current_origin(&app)?;
     let r: Value = app.osa_ios().call("pushCurrent", json!({ "origin": origin, "vapid": key })).await?;
     Ok(r.get("subscription").filter(|s| !s.is_null()).cloned())
 }
 
 #[tauri::command(async)]
-async fn mobile_push_subscribe(app: AppHandle, key: String) -> Result<Value, String> {
+async fn mobile_push_subscribe(app: AppHandle, webview: tauri::Webview, key: String) -> Result<Value, String> {
+    if !from_ui(&webview) {
+        return Err("not allowed".into());
+    }
     let origin = current_origin(&app)?;
     let r: Value = app.osa_ios().call("pushSubscribe", json!({ "origin": origin, "vapid": key })).await?;
     r.get("subscription").filter(|s| !s.is_null()).cloned().ok_or_else(|| "no subscription".into())
 }
 
 #[tauri::command(async)]
-async fn mobile_push_unsubscribe(app: AppHandle, key: String) -> Result<(), String> {
+async fn mobile_push_unsubscribe(app: AppHandle, webview: tauri::Webview, key: String) -> Result<(), String> {
+    if !from_ui(&webview) {
+        return Err("not allowed".into());
+    }
     let _ = key;
     let origin = current_origin(&app)?;
     app.osa_ios().call::<Value>("pushUnsubscribe", json!({ "origin": origin })).await.map(|_| ())
@@ -361,14 +389,20 @@ async fn mobile_push_unsubscribe(app: AppHandle, key: String) -> Result<(), Stri
 
 /// 通知权限现在的样子：default（还没问过）、granted、denied（拒绝过）。网页据此决定连上后要不要问、怎么问
 #[tauri::command(async)]
-async fn mobile_push_status(app: AppHandle) -> Result<String, String> {
+async fn mobile_push_status(app: AppHandle, webview: tauri::Webview) -> Result<String, String> {
+    if !from_ui(&webview) {
+        return Err("not allowed".into());
+    }
     let r: Value = app.osa_ios().call("pushStatus", json!({})).await?;
     Ok(r.get("status").and_then(Value::as_str).unwrap_or("default").to_string())
 }
 
 /// 在弹出页里打开同一台服务器上的地址，等它关掉。别的网站用系统浏览器
 #[tauri::command(async)]
-async fn mobile_open_sheet(app: AppHandle, url: String) -> Result<(), String> {
+async fn mobile_open_sheet(app: AppHandle, webview: tauri::Webview, url: String) -> Result<(), String> {
+    if !from_ui(&webview) {
+        return Err("not allowed".into());
+    }
     let origin = state(&app).origin.lock().unwrap().clone().ok_or("no server")?;
     let u = origin.join(&url).map_err(|e| e.to_string())?;
     if u.origin() != origin.origin() {
@@ -379,12 +413,18 @@ async fn mobile_open_sheet(app: AppHandle, url: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn mobile_switch_server(app: AppHandle) {
+fn mobile_switch_server(app: AppHandle, webview: tauri::Webview) {
+    if !from_ui(&webview) {
+        return;
+    }
     show_setup(&app, "?switch=1");
 }
 
 #[tauri::command(async)]
-async fn mobile_take_pending_open(app: AppHandle) -> Result<Option<String>, String> {
+async fn mobile_take_pending_open(app: AppHandle, webview: tauri::Webview) -> Result<Option<String>, String> {
+    if !from_ui(&webview) {
+        return Err("not allowed".into());
+    }
     let origin = current_origin(&app)?;
     let r: Value = app.osa_ios().call("takePendingOpen", json!({ "origin": origin })).await?;
     Ok(r.get("url").and_then(|u| u.as_str()).map(String::from))
