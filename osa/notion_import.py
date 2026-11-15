@@ -83,8 +83,11 @@ def parse_fetch(raw: str) -> dict:
             pass
         content = text.split("<content>", 1)[1] if "<content>" in text else ""
         out["content"] = content.rsplit("</content>", 1)[0].strip("\n")
-        if not out["title"]:
-            out["title"] = out["props"].get("title") or ""
+        # 标题：页面的图标放在前面；标题自己已经以这个图标开头的不再加（不然成了“🗄 🗄 归档区”）
+        icon = (re.search(r'<page\s+url="[^"]*"\s+icon="([^"]*)"', text) or [None, ""])[1]
+        base = str(out["props"].get("title") or "").strip()
+        if base:
+            out["title"] = base if not icon or base.startswith(icon) else f"{icon} {base}"
     else:
         if not out["title"] and (m := re.search(r"The title of this Database is: (.*)", text)):
             out["title"] = m.group(1).strip()

@@ -72,6 +72,8 @@ def test_to_markdown():
     assert "<details><summary>展开看</summary>\n\n里面一行\n\n</details>" in md
     assert "| 名 | 值\\|竖线 |\n| --- | --- |\n| a | 1 |" in md
     assert "<ul>" not in md and "<empty-block" not in md and "x = '<b>不动</b>'" in md
+    assert notion_import.parse_fetch(json.dumps({"title": "🗄 🗄 归档", "text": '<page url="https://app.notion.com/p/x" icon="🗄">\n<properties>\n{"title":"🗄 归档"}\n</properties>\n<content>\n</content>\n</page>'}))["title"] == "🗄 归档"
+    assert notion_import.parse_fetch(json.dumps({"title": "x", "text": '<page url="https://app.notion.com/p/x" icon="🏢">\n<properties>\n{"title":"总部"}\n</properties>\n<content>\n</content>\n</page>'}))["title"] == "🏢 总部"
     assert "📄 [子页面](/library/pages/7)" in md and f"▦ [内嵌库](https://app.notion.com/p/{'c' * 32})" in md
 
 
