@@ -11,7 +11,7 @@ from playwright.sync_api import sync_playwright
 
 BASE = os.environ.get("OSA_E2E_BASE", "http://127.0.0.1:8766")
 HERE = Path(os.environ.get("OSA_E2E_OUT", tempfile.gettempdir()))   # 截图放这里
-DOC = Path(__file__).parents[1] / "fixtures" / "md_blocks" / "report.md".read_text() + \
+DOC = (Path(__file__).parents[1] / "fixtures" / "md_blocks" / "report.md").read_text() + \
     "\n\n<div>html 段</div>\n\n[ref]: https://example.com\n\n| a<br>b | c |\n| - | - |\n| 1 | 2 |\n"
 _req = urllib.request.Request(f"{BASE}/api/pages", data=json.dumps({"bot_id": 1, "title": "E2E 周报", "content": DOC}).encode(),
                               headers={"content-type": "application/json"})

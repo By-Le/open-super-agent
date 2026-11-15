@@ -71,9 +71,10 @@ final class DriverTests: XCTestCase {
         osa.webViews.firstMatch.pinch(withScale: 2.5, velocity: 3)
     }
 
-    func testDoubleTap() {
+    func testDoubleTap() {   // 文字里可以写 "x,y"，默认屏幕正中
         osa.activate()
-        at(0.5, 0.5).doubleTap()
+        let n = nums
+        n.count == 2 ? at(n[0], n[1]).doubleTap() : at(0.5, 0.5).doubleTap()
     }
 
     func testDragPage() {   // 在不能滚的地方（顶上的标题栏）往下拖
@@ -99,5 +100,48 @@ final class DriverTests: XCTestCase {
 
     func testDump() {
         print(springboard.debugDescription)
+    }
+
+    // ---------- 编辑器：真的点键盘上的键（拼音键盘上打的就是拼音，走输入法的组字）、长按、按名字点 ----------
+    func testKeys() {   // 文字里写要按的键，一个字符一个键；"␣" 是空格键（拼音键盘上是“选第一个候选”）
+        osa.activate()
+        let kb = osa.keyboards.firstMatch
+        guard kb.waitForExistence(timeout: 5) else { return XCTFail("no keyboard") }
+        for ch in text {
+            let key = ch == "␣" ? kb.keys.matching(NSPredicate(format: "label IN %@", ["空格", "space", "选定", "确认"])).firstMatch : kb.keys[String(ch)]
+            if key.exists { key.tap() } else { print("NOKEY: \(ch)") }
+        }
+    }
+
+    func testKeysHome() {   // 打完字马上回桌面（自动保存还没来得及发）：看切到后台时补不补存
+        testKeys()
+        XCUIDevice.shared.press(.home)
+    }
+
+    func testKeyboard() {   // 键盘上有哪些键、候选
+        osa.activate()
+        print(osa.keyboards.firstMatch.debugDescription)
+    }
+
+    func testTapLabel() {   // 点 App 里（含键盘、系统菜单）文字等于这段的东西
+        osa.activate()
+        let el = osa.descendants(matching: .any).matching(NSPredicate(format: "label == %@", text)).firstMatch
+        guard el.waitForExistence(timeout: 5) else { return XCTFail("nothing labelled \(text)") }
+        print("TAPPING: \(el.label)")
+        el.tap()
+    }
+
+    func testLongPress() {   // 文字里写 "x,y"：按住 1 秒（选词）
+        osa.activate()
+        let n = nums
+        guard n.count == 2 else { return XCTFail("need x,y") }
+        at(n[0], n[1]).press(forDuration: 1.0)
+    }
+
+    func testMenus() {   // 现在弹出来的菜单（系统的拷贝/粘贴、网页里的格式菜单）
+        osa.activate()
+        for q in [osa.menuItems, osa.menus, osa.buttons] {
+            for el in q.allElementsBoundByIndex where el.isHittable { print("ITEM: \(el.elementType.rawValue) \(el.label) \(el.frame)") }
+        }
     }
 }
