@@ -1,4 +1,4 @@
-"""页面层级：列表里新建子页面、树展开收起（记得住）、页面路径和返回上一级、子页面列表、挪到最上层、删父页面时子页面上移。"""
+"""页面层级：列表里新建子页面、页面底下的“＋ 子页面”、树展开收起（记得住）、页面路径和返回上一级、子页面列表、挪到最上层、删父页面时子页面上移。"""
 import json
 import os
 import tempfile
@@ -53,6 +53,17 @@ with sync_playwright() as pw:
     check(f"项目{TAG}" in page.locator(".page-path").inner_text(), "页面顶上有路径：" + page.locator(".page-path").inner_text())
     page.keyboard.type("子页面里写的字")   # 新页面直接能打字
     page.wait_for_function("document.querySelector('.doc-status').textContent.includes('已保存')", timeout=8000)
+    # 还没有子页面的页面：底下的“＋ 子页面”要点得动（它往上收进了编辑器的下边距，曾经被编辑器盖住、点了没反应）
+    try:
+        page.locator(".page-kids button", has_text="子页面").click(timeout=5000)
+        page.wait_for_url(lambda u: not u.endswith(f"/{child}"), timeout=8000)
+        grand = int(page.url.rsplit("/", 1)[1])
+        check(api(f"/api/pages/{grand}")["parent_id"] == child, "页面底下的“＋ 子页面”点得动，建在这一页下面")
+        api(f"/api/pages/{grand}", method="DELETE")
+    except Exception as e:
+        check(False, "页面底下的“＋ 子页面”点不动：" + str(e).splitlines()[0])
+    page.goto(f"{BASE}/library/pages/{child}")
+    page.wait_for_selector(".doc-body")
     page.locator(".page-head .back").click()
     page.wait_for_selector(".page-kid", timeout=8000)
     check(page.locator(".page-kid").inner_text().endswith("无标题"), "父页面底下列出了子页面")
