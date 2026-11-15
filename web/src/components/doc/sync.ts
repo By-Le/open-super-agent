@@ -298,12 +298,16 @@ export class DocSync {
     if (!edits || !localOrder) ({ edits, order: localOrder } = this.localEdits())
     const live = new Set(this.order)
     const after = new Map<string | null, { id: string; md: string }[]>()
+    const lastLive = localOrder.reduce((k, id, i) => (live.has(id) ? i : k), -1)
+    const tail: { id: string; md: string }[] = []
     let anchor: string | null = null
-    for (const id of localOrder) {
-      if (live.has(id)) { anchor = id; continue }
+    localOrder.forEach((id, i) => {
+      if (live.has(id)) { anchor = id; return }
       const d = edits.get(id)
-      if (d) after.set(anchor, [...(after.get(anchor) || []), d])
-    }
+      // 末尾自动补的空段（还没打字）留在最后：不然别人在页面最后加的段会排到它后面，列表被它隔成两个
+      if (d && i > lastLive && !d.md.trim()) tail.push(d)
+      else if (d) after.set(anchor, [...(after.get(anchor) || []), d])
+    })
     const seq: { id: string; md: string; gap: string }[] = []
     const put = (id: string | null) => (after.get(id) || []).forEach(d => seq.push({ id: d.id, md: d.md, gap: '\n\n' }))
     put(null)
@@ -313,6 +317,7 @@ export class DocSync {
       seq.push({ id, md: mine && !mine.fresh ? mine.md : b.md, gap: b.gap })
       put(id)
     }
+    tail.forEach(d => seq.push({ id: d.id, md: d.md, gap: '\n\n' }))
     this.replaceDoc(buildDoc(this.editor, seq))
     this.bind(new Set([...edits.values()].map(d => d.id)))
   }
