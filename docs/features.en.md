@@ -74,6 +74,7 @@ The README lists the highlights; this is the full list. For setup see [Configura
 - **Edit pages directly**: markdown pages open in a Notion-style editor that saves as you type; type `/` to insert headings, lists, to-dos, tables, callouts and toggles, and upload, paste or drop images.
   Each block shows which Bot wrote it; a Bot's edits appear live, and you're asked to choose when you and a Bot change the same block. Only formats Markdown can store are offered, so a Bot's original text is never rewritten.
   On phones a "⋮" next to the current block moves it up or down or deletes it (Alt+Shift+↑/↓ on desktop).
+- **Import from Notion**: through the connected Notion app, bring pages (with subpages) and databases (with every row) into the library; links are rewritten to point into the library, and importing again updates them.
 - **Trash**: deleted pages, databases and rows, with their history and comments, stay in the trash for 30 days and can be put back.
 - **Subpages**: pages can contain subpages, the library list is a collapsible tree, and pages can be moved under other pages.
 - **Comments wake Bots**: comment on a block and the Bot that wrote it makes the change, replies in the thread and resolves it when done. You can also @ another Bot (names autocomplete) or ask nobody.

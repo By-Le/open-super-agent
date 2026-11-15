@@ -3,6 +3,10 @@
 格式参照 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
 ## [未发布]
+### 新增
+- **从 Notion 导入资料库**：资料库列表上点“从 Notion 导入”，用应用市场里连着的 Notion 搜页面和数据库，勾上的连同子页面、数据库的每一行一起导进来，
+  Notion 的链接换成资料库里的；数据库的状态分组、选项颜色、自动编号（TASK-12）照搬，文件下载下来存进资料库。再导一次是更新。写法见 [配置](docs/configuration.md#从-notion-导入)
+- 数据库文字格里的链接（`[标题](地址)`、网址）点得开
 
 ## [0.23.0] - 2026-11-15
 ### 新增
