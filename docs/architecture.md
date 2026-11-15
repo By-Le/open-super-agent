@@ -110,6 +110,8 @@ web/src/
   i18n.ts          界面语言：t() 按中文原文查 locales/en.json
   components/      Chat、Thread（讨论串面板）、Composer、Sidebar、BotEditor、Computer、Settings、Routines（技能和定时任务面板）、
                    Memories（记忆面板）、Library（资料库和分享页）、Groups（新建群聊和群聊面板）、Tasks（任务列表和过程）、Markdown
+  components/doc/  资料库 markdown 页面的块编辑器（Tiptap，懒加载）：lazy.tsx 是主包唯一的入口；markdown.ts 段和文档互转；
+                   blockIds.ts 段的编号；sync.ts 自动保存、冲突、合进别人的改动；gutter.ts 作者条；nodes.tsx 提示框、折叠块、原文块；menus.tsx 菜单
 ```
 
 ## 数据
@@ -417,6 +419,12 @@ web/src/
   markdown 页面谁都能改（锁定的除外），html 页面和小应用的数据仍然只有建它的 Bot 能改；`save_page` 更新最近是别人改的页面必须带 `version`。
 - 用户在网页上按段保存只广播 `page_changed`（带改动的段编号），不发 `pages_changed`：后者会让列表、页面卡片整个重拉。
 - 搜索索引：页面改了一段，其余没变的块沿用原来的向量（`search._vectors`），编辑器几秒存一次也不会每次都把整页重算。
+- **网页编辑器（`web/src/components/doc/`）以 Markdown 为准**：只开 Markdown 存得下的格式（提示框存成 `> [!NOTE]`，折叠块存成 `<details>`）。
+  每段单独解析（绝不拼起来再解析），认不全的（HTML、引用式链接定义……）放进“Markdown 原文”块原样保留，Bot 写的 HTML 不进编辑器的 HTML 解析。
+  只有人真改过的段才写回 Markdown：节点没变就不算改，变了再和“原节点写回的样子”比一下；所以 Bot 的原文不会被编辑器改样。
+  段落里的软换行换成带 `soft` 标记的换行节点（不然一编辑就被 ProseMirror 读成硬换行）；表格按行写回，不补空格对齐，改一个格子只动那一行。
+- 编辑器是懒加载的分块：只开聊天不下载；分块加载失败（服务器换了新版）就显示原来的只读页面并提示刷新。
+  资料库的地址跟着走（`/library`、`/library/pages/<id>`），刷新和前进后退都在原来的页面；别的视图还是 `/`。
 
 ### 图片和附件
 - 你发的附件照旧传到电脑的 `uploads` 目录（任务靠路径处理），正文后面由服务端接上“[附件] 路径”（`media.with_marks`），这一行存进数据库、不翻译；

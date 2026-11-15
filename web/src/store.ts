@@ -79,6 +79,11 @@ export function toLogin() {
   location.href = '/login?next=' + encodeURIComponent(location.pathname + location.search)
 }
 
+/** 接口报错：带着状态码和返回的内容（比如 409 冲突时服务器给的详情）。网络不通时 fetch 自己抛 TypeError，没有 status。 */
+export class ApiError extends Error {
+  constructor(message: string, readonly status: number, readonly data: any) { super(message) }
+}
+
 export async function api<T = any>(path: string, opts: { method?: string; body?: any } = {}): Promise<T> {
   const r = await fetch(path, {
     method: opts.method || 'GET',
@@ -87,7 +92,7 @@ export async function api<T = any>(path: string, opts: { method?: string; body?:
   })
   if (r.status === 401 && !path.startsWith('/api/shared/')) toLogin()
   const data = await r.json().catch(() => ({}))
-  if (!r.ok) throw new Error(data.detail || t('请求失败（{status}）', { status: r.status }))
+  if (!r.ok) throw new ApiError(typeof data.detail === 'string' ? data.detail : t('请求失败（{status}）', { status: r.status }), r.status, data)
   return data
 }
 
@@ -228,7 +233,9 @@ export async function pinChat(chatId: number, pinned: boolean) {
 
 export async function openChat(chatId: number) {
   localStorage.setItem('osa.active', String(chatId))
+  const was = state.view
   set(s => ({ active: chatId, view: 'chat', thread: s.active === chatId ? s.thread : null }))
+  if (was === 'library') leaveLibrary()
   await loadChat(chatId)
   if (state.active === chatId) seeActive()
 }
@@ -334,18 +341,36 @@ export function showTask(id: number | null) {
   if (id) window.dispatchEvent(new CustomEvent('osa-open-task'))
 }
 
+// 资料库的地址跟着走（/library、/library/pages/12）：刷新还在原来的页面，浏览器的后退能回去。
+// 别的视图都是 /（桌面 App、手机 App 只认这几个地址，见 desktop/src-tauri/src/lib.rs 的 UI_PATHS）
+function go(path: string) { if (location.pathname !== path) history.pushState(null, '', path) }
+function leaveLibrary() { if (location.pathname.startsWith('/library')) history.pushState(null, '', '/') }
+
 export function openLibrary(pageId: number | null = null) {
   set({ view: 'library', libraryPage: pageId })
+  go(pageId ? `/library/pages/${pageId}` : '/library')
+}
+
+/** 浏览器前进后退：按地址切回对应的视图（不再往历史里加）。 */
+export function followUrl() {
+  const m = location.pathname.match(/^\/library(?:\/pages\/(\d+))?\/?$/)
+  if (m) set({ view: 'library', libraryPage: m[1] ? Number(m[1]) : null })
+  else if (state.view === 'library') set({ view: 'chat' })
 }
 
 export function openObserve() {
+  if (state.view === 'library') leaveLibrary()
   set({ view: 'observe' })
 }
 
 export function openApps() {
+  if (state.view === 'library') leaveLibrary()
   set({ view: 'apps' })
   refreshApps()
 }
+
+/** 编辑器的分块加载失败（服务器换了新版、旧的分块已经没了）：提示刷新。 */
+export const markNewBuild = () => set({ newBuild: true })
 
 export async function loadOlder(chatId: number) {
   const cur = state.messages[chatId] || []
@@ -401,6 +426,7 @@ async function resync() {
   set({ messages: {}, streams: {}, tasks, teach: b.teach || null, threads: byId(b.threads) })
   if (state.active) loadChat(state.active).then(seeActive)
   if (state.thread) openThread(state.thread.chat, state.thread.rootId)
+  window.dispatchEvent(new CustomEvent('osa-page-resync'))   // 打开着的文档补上断线期间漏掉的改动
   Object.keys(state.taskSteps).forEach(id => loadTask(Number(id)))   // 断线期间漏掉的过程
 }
 
@@ -511,6 +537,9 @@ function handle(d: any) {
       break
     case 'pages_changed':
       window.dispatchEvent(new CustomEvent('osa-pages'))
+      break
+    case 'page_changed':   // 某个页面的内容改了（Bot 改的，或者你在别的窗口改的）：打开着它的编辑器去取改动
+      window.dispatchEvent(new CustomEvent('osa-page', { detail: d }))
       break
     case 'page_data':   // 小应用的数据被 Bot 或别的窗口改了：转给打开着的小应用（applet.ts）
       window.dispatchEvent(new CustomEvent('osa-page-data', { detail: { page_id: d.page_id, data: d.data } }))

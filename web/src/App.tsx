@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { api, bootstrap, chatById, closeThread, connect, getState, openApps, openChat, openFromUrl, openLibrary, openChatOrThread, setSettings, useStore } from './store'
+import { api, bootstrap, chatById, closeThread, connect, getState, openApps, openChat, openFromUrl, openLibrary, openChatOrThread, followUrl, setSettings, useStore } from './store'
 import { desktop } from './desktop'
 import Chat from './components/Chat'
 import ThreadPanel from './components/Thread'
@@ -117,12 +117,18 @@ export default function App() {
     return () => window.removeEventListener('osa-open-page', h)
   }, [])
 
+  // 浏览器的前进后退：资料库的地址切回对应的页面
+  useEffect(() => {
+    window.addEventListener('popstate', followUrl)
+    return () => window.removeEventListener('popstate', followUrl)
+  }, [])
+
   useEffect(() => {
     const deep = location.pathname.match(/^\/library(?:\/pages\/(\d+))?\/?$/)
     const apps = /^\/apps\/?$/.test(location.pathname)   // 登录授权在本窗口完成后回到这里
     bootstrap().then(() => {
       if (getState().onboarding && !deep && !apps) setOnboard(true)
-      if (deep) { openLibrary(deep[1] ? Number(deep[1]) : null); history.replaceState(null, '', '/') }
+      if (deep) openLibrary(deep[1] ? Number(deep[1]) : null)   // 地址留着：刷新还在这一页
       if (apps) { openApps(); history.replaceState(null, '', '/') }
       connect()
       desktop?.takePendingOpen?.().then(url => { if (url) openFromUrl(url) })   // 手机 App 是点通知启动的

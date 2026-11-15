@@ -10,6 +10,7 @@ import { useBack } from '../swipe'
 import { AppletFrame } from './Applet'
 import { FileLink, fileUrl } from './Media'
 import { PC_NAMES } from './Computer'
+import { DocPage, prefetchDoc } from './doc/lazy'
 
 const when = (ts: number) => new Date(ts * 1000).toLocaleString(locale, { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
 export const size = (n: number) => n < 1024 ? `${n} B` : n < 1 << 20 ? `${(n / 1024).toFixed(1)} KB` : `${(n / (1 << 20)).toFixed(1)} MB`
@@ -29,6 +30,7 @@ export default function Library() {
   useEffect(() => localStorage.setItem('osa.libtab', tab), [tab])
   const page = useRef<HTMLElement>(null)
   useBack(() => openLibrary(), page, !!pageId)   // 页面 → 资料库列表
+  useEffect(() => { const timer = setTimeout(prefetchDoc, 1500); return () => clearTimeout(timer) }, [])   // 编辑器先在后台下载好
   if (pageId) return <main className="chat library" ref={page}><PageView id={pageId} /></main>
   return (
     <main className="chat library">
@@ -46,6 +48,7 @@ export default function Library() {
 
 function BotTag({ id }: { id: number | null }) {
   const bot = useStore(s => s.bots.find(b => b.id === id))
+  if (!id) return <span className="muted small">{t('你建的')}</span>
   if (!bot) return <span className="muted small">{t('已删除的 Bot')}</span>
   return <span className="bot-tag"><BotAvatar avatar={bot.avatar} size={16} />{bot.name}</span>
 }
@@ -74,16 +77,25 @@ function Pages() {
     return () => window.removeEventListener('osa-pages', load)
   }, [])
   if (!list) return <div className="muted">{t('加载中…')}</div>
+  const create = async () => {
+    const p = await api('/api/pages', { method: 'POST', body: { title: t('无标题'), content: '', allow_empty: true } })
+    openLibrary(p.id)
+  }
+  const add = <button className="btn" onClick={create}>＋ {t('新建页面')}</button>   // i18n-ignore
   if (!list.length) return (
     <div className="lib-empty">
       <p>{t('还没有页面。')}</p>
       <p className="muted small">{t('Bot 做好的报告、清单、网页会存在这里。在对话里说“把结果做成页面”，或者在任务结果下面点“存为页面”。')}</p>
+      <p>{add}</p>
     </div>
   )
   return (
     <div className="lib-list">
-      <p className="lib-intro muted small">{t('页面是 Bot 做好存下来的成品：报告、清单、网页、小应用，所有 Bot 的都在这里，存在服务的数据库里。可以置顶、改名、生成分享链接。')}</p>
-      <input className="lib-search" value={q} placeholder={t('按意思找页面，比如“上次做的竞品对比”')} onChange={e => setQ(e.target.value)} />
+      <p className="lib-intro muted small">{t('页面是 Bot 做好存下来的成品：报告、清单、网页、小应用，所有 Bot 的都在这里，存在服务的数据库里。markdown 页面你和 Bot 都能直接改，每段记着是谁写的。')}</p>
+      <div className="lib-tools">
+        <input className="lib-search" value={q} placeholder={t('按意思找页面，比如“上次做的竞品对比”')} onChange={e => setQ(e.target.value)} />
+        {add}
+      </div>
       {hits && (hits.length ? hits.map(h => (
         <button key={h.ref} className="lib-row" onClick={() => openLibrary(h.ref)}>
           <span className="lib-icon">▤</span>
@@ -108,6 +120,13 @@ function PageView({ id }: { id: number }) {
   const [err, setErr] = useState('')
   const [rename, setRename] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
+  const [more, setMore] = useState(false)
+  useEffect(() => {   // “⋯”菜单：点别处就收起
+    if (!more) return
+    const close = () => setMore(false)
+    const timer = setTimeout(() => document.addEventListener('click', close), 0)
+    return () => { clearTimeout(timer); document.removeEventListener('click', close) }
+  }, [more])
   const load = () => api(`/api/pages/${id}`).then(setP).catch((e: any) => setErr(e.message))
   useEffect(() => {
     load()
@@ -136,20 +155,29 @@ function PageView({ id }: { id: number }) {
           : <span className="head-name page-title" title={t('点击改名')} onClick={() => setRename(p.title)}>{p.title}</span>)}
         <span className="grow" />
         {p && <div className="page-actions">
-          <button className="btn" onClick={() => patch({ pinned: !p.pinned })}>{p.pinned ? t('取消置顶') : t('置顶')}</button>
           {p.share_token
             ? <><button className="btn" onClick={() => copy(p.share_token!)}>{copied ? t('已复制链接') : t('复制链接')}</button>
                 <button className="btn" onClick={() => share(false)}>{t('取消分享')}</button></>
             : <button className="btn" onClick={() => share(true)}>{t('分享')}</button>}
-          {p.format === 'html' && <a className="btn" href={`/api/pages/${id}/raw`} target="_blank" rel="noreferrer">{t('新窗口')}</a>}
-          <button className="btn danger" onClick={del}>{t('删除')}</button>
+          <div className="page-more">
+            <button className="btn" title={t('更多')} onClick={() => setMore(!more)}>⋯</button>
+            {more && <div className="menu">
+              <button onClick={() => patch({ pinned: !p.pinned })}>{p.pinned ? t('取消置顶') : t('置顶')}</button>
+              {p.format === 'markdown' && <button title={t('锁定后 Bot 只能读，你照样能改')} onClick={() => patch({ locked: !p.locked })}>
+                {p.locked ? t('解锁') : t('锁定（Bot 只能读）')}</button>}
+              {p.format === 'html' && <button onClick={() => window.open(`/api/pages/${id}/raw`, '_blank', 'noreferrer')}>{t('新窗口打开')}</button>}
+              <button className="danger-text" onClick={del}>{t('删除')}</button>
+            </div>}
+          </div>
         </div>}
       </header>
       {err ? <div className="lib-body"><div className="error-line">{err}</div></div> : !p ? <div className="lib-body muted">{t('加载中…')}</div> : (
         <div className={'scroller' + (p.format === 'html' ? ' frame-wrap' : '')}>
           {p.format !== 'html' && <div className="page-info muted small"><BotTag id={p.bot_id} /> · {t('更新于 {time}', { time: when(p.updated) })}{p.task_id ? ' · ' + t('来自任务 #{id}', { id: p.task_id }) : ''}
-            {p.share_token && <> · {t('任何拿到链接的人都能看')}</>}</div>}
-          <PageBody format={p.format} content={p.content || ''} rawUrl={`/api/pages/${id}/raw`} applet={p.app ? id : undefined} />
+            {p.share_token && <> · {t('任何拿到链接的人都能看')}</>}{p.locked && <> · {t('已锁定：Bot 只能读')}</>}</div>}
+          {p.format === 'markdown'
+            ? <DocPage id={id} content={p.content || ''} />
+            : <PageBody format={p.format} content={p.content || ''} rawUrl={`/api/pages/${id}/raw`} applet={p.app ? id : undefined} />}
         </div>
       )}
     </>

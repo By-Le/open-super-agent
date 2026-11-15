@@ -71,6 +71,8 @@ The README lists the highlights; this is the full list. For setup see [Configura
 - **Edit the same page together**: markdown pages are stored block by block (each list item and each table row is its own block). Any Bot can use `edit_page` to change just the blocks it needs, and each block remembers who wrote it.
   Edits only conflict when two of them touch the same block; the Bot then sees what the other one wrote and resubmits. Bots hand work over by linking the page, so no Notion account is needed.
   Every change is kept in the page's history (edits by the same author within 10 minutes count as one version), and any version can be restored. Locked pages are read-only for Bots.
+- **Edit pages directly**: markdown pages open in a Notion-style editor that saves as you type; type `/` to insert headings, lists, to-dos, tables, callouts and toggles.
+  Each block shows which Bot wrote it; a Bot's edits appear live, and you're asked to choose when you and a Bot change the same block. Only formats Markdown can store are offered, so a Bot's original text is never rewritten.
 - **Each Bot's library**: the Library tab in the side panel lists everything that Bot has handed you, newest first: pages, files it sent, images it drew and links in its replies. Filter by kind, search, open the original, and jump to the task that made it.
 - **Images and files**:
   - Attach files in chat: images show as thumbnails, other files as cards.

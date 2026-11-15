@@ -28,6 +28,57 @@ function brTags() {
   return (tree: any) => walk(tree)
 }
 
+// GitHub 的提示框写法（> [!NOTE]、[!TIP]、[!WARNING]……）：显示成带颜色的框。资料库编辑器里的提示框也是这样存的
+const ALERT = /^\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\][ \t]*\n?/i
+function alerts() {
+  const walk = (node: any) => {
+    for (const c of node.children || []) {
+      const para = c.type === 'blockquote' && c.children?.[0]?.type === 'paragraph' ? c.children[0] : null
+      const text = para?.children?.[0]?.type === 'text' ? para.children[0] : null
+      const m = text?.value.match(ALERT)
+      if (m) {
+        text.value = text.value.slice(m[0].length)
+        if (!text.value) para.children.shift()
+        if (para.children[0]?.type === 'break') para.children.shift()
+        if (!para.children.length) c.children.shift()
+        const kind = m[1].toLowerCase()
+        c.data = { ...c.data, hName: 'div', hProperties: { className: ['callout', 'callout-' + kind] } }
+      }
+      walk(c)
+    }
+  }
+  return (tree: any) => walk(tree)
+}
+
+// 折叠块 <details><summary>…</summary> … </details>：网页里的 HTML 一律不当真，只认这一种写法，换成真的折叠块。
+// 中间隔着空行的内容照常按 Markdown 显示；嵌套的也认
+const D_OPEN = /^<details(\s[^>]*)?>\s*(?:<summary>([\s\S]*?)<\/summary>)?\s*$/i
+const D_ONE = /^<details(\s[^>]*)?>\s*<summary>([\s\S]*?)<\/summary>([\s\S]*?)<\/details\s*>$/i
+const D_CLOSE = /^<\/details\s*>$/i
+const unescape = (s: string) => s.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, '&')
+const box = (attrs: string | undefined, summary: string | undefined, rest: any[] = []) => ({
+  type: 'blockquote', data: { hName: 'details', hProperties: attrs && /\bopen\b/i.test(attrs) ? { open: true } : {} },
+  children: [...(summary ? [{ type: 'paragraph', data: { hName: 'summary' }, children: [{ type: 'text', value: unescape(summary.trim()) }] }] : []), ...rest],
+})
+function details() {
+  const fold = (node: any) => {
+    if (!node.children) return
+    node.children.forEach(fold)
+    const out: any[] = [], stack: any[] = []
+    const put = (n: any) => (stack.length ? stack[stack.length - 1].children : out).push(n)
+    for (const c of node.children) {
+      const v = c.type === 'html' ? String(c.value).trim() : ''
+      let m
+      if (v && (m = v.match(D_ONE))) put(box(m[1], m[2], m[3].trim() ? [{ type: 'paragraph', children: [{ type: 'text', value: unescape(m[3].trim()) }] }] : []))
+      else if (v && (m = v.match(D_OPEN))) { const b = box(m[1], m[2]); put(b); stack.push(b) }
+      else if (v && D_CLOSE.test(v) && stack.length) stack.pop()
+      else put(c)
+    }
+    node.children = out
+  }
+  return (tree: any) => fold(tree)
+}
+
 // 站内的资料库链接（/library/pages/12）在应用里打开；电脑里文件的链接，浏览器看不了的直接下载
 // （App 里开新窗口去下载只会弹出空白窗口，见 Media.tsx）；其余链接开新标签页
 const FILE_LINK = /^\/(api\/)?files\/download$/
@@ -144,7 +195,7 @@ function Table({ node, ...p }: any) {
 const Markdown = memo(function Markdown({ text, embeds }: { text: string; embeds?: boolean }) {
   return (
     <div className="md">
-      <ReactMarkdown remarkPlugins={[[remarkGfm, { singleTilde: false }], brTags]} rehypePlugins={[[rehypeHighlight, { ignoreMissing: true }], ...(embeds ? [markEmbeds] : [])]}
+      <ReactMarkdown remarkPlugins={[[remarkGfm, { singleTilde: false }], brTags, alerts, details]} rehypePlugins={[[rehypeHighlight, { ignoreMissing: true }], ...(embeds ? [markEmbeds] : [])]}
         components={{ pre: CodeBlock, a: Link, img: Img, p: Para, table: Table }}>
         {text}
       </ReactMarkdown>
