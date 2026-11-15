@@ -1279,6 +1279,19 @@ async def revoke_agent_token(tid: int):
     return t
 
 
+@app.post("/api/agent-tokens/{tid}/hide")
+async def hide_agent_token(tid: int):
+    """撤销了的从设置的列表里删掉（名字还留着，它写过的东西照样署它的名字）。"""
+    _no_agents_in_demo()
+    try:
+        agentapi.hide(tid)
+    except LookupError as e:
+        raise HTTPException(404, str(e))
+    except ValueError as e:
+        _err(e)
+    return {"ok": True}
+
+
 # ---------- 应用自带的界面（MCP Apps）：网页宿主 web/src/mcpapp.ts 调过来 ----------
 def _mcp_errors(e: Exception):
     if isinstance(e, PermissionError):

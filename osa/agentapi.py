@@ -29,6 +29,8 @@ from .memory import conn
 
 conn.execute("""create table if not exists agent_tokens(
   id integer primary key, name text, hash text unique, scope text, created real, last_used real, revoked real)""")
+if "hidden" not in {r[1] for r in conn.execute("pragma table_info(agent_tokens)")}:   # 撤销了又从设置的列表里删掉的（名字还留着：它写过的段要显示）
+    conn.execute("alter table agent_tokens add column hidden real")
 conn.commit()
 
 PATH = "/mcp"
@@ -52,8 +54,8 @@ def _row(r) -> dict:
 
 
 def tokens() -> list[dict]:
-    """设置页的列表：没撤销的在前，新的在前。"""
-    return [_row(r) for r in conn.execute(f"select {_COLS} from agent_tokens order by revoked is not null, id desc")]
+    """设置页的列表：没撤销的在前，新的在前；从列表里删掉的不列。"""
+    return [_row(r) for r in conn.execute(f"select {_COLS} from agent_tokens where hidden is null order by revoked is not null, id desc")]
 
 
 def get(tid: int) -> dict | None:
@@ -85,6 +87,17 @@ def revoke(tid: int) -> dict:
         conn.execute("update agent_tokens set revoked=? where id=?", (time.time(), tid))
         conn.commit()
     return get(tid)
+
+
+def hide(tid: int) -> None:
+    """把撤销了的从设置的列表里删掉。只删列表里的这一行：名字还留着（它写过的段、评论、建的页面要显示是谁），token 早就不能用了。"""
+    t = get(tid)
+    if not t:
+        raise LookupError(i18n.t("没有这个外部 Agent"))
+    if t["revoked"] is None:
+        raise ValueError(i18n.t("先撤销，再从列表里删掉"))
+    conn.execute("update agent_tokens set hidden=? where id=? and hidden is null", (time.time(), tid))
+    conn.commit()
 
 
 def check(token: str) -> dict | None:

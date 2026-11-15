@@ -1511,6 +1511,7 @@ textarea.newbot-role.edit { display: block; width: 100%; max-height: 360px; resi
 .agent-row .chip { margin-left: 4px; }
 .agent-row-side { display: flex; gap: 10px; align-items: center; flex-shrink: 0; }
 .agent-row.revoked b { color: var(--fg3); font-weight: 500; text-decoration: line-through; }
+.agent-gone { margin-top: 6px; } .agent-gone summary { cursor: pointer; padding: 4px 0; }
 
 /* ---------- 资料库的数据库（components/db/） ---------- */
 .db { max-width: 1200px; margin: 0 auto; padding: 8px 24px 60px; }

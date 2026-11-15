@@ -1259,5 +1259,6 @@
   "数据库的行不能挪出数据库": "Database rows can't be moved out of their database",
   "数据库的行只能在数据库里": "Database rows can only live in a database",
   "数据库和它的行下面不能放子页面": "Databases and their rows can't have subpages",
-  "数据库的表结构改动在库的“历史”里撤销": "Undo changes to a database's properties from the database's History"
+  "数据库的表结构改动在库的“历史”里撤销": "Undo changes to a database's properties from the database's History",
+  "先撤销，再从列表里删掉": "Revoke it before removing it from the list"
 }

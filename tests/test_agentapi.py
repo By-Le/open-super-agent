@@ -124,6 +124,15 @@ async def test_settings_api(token, events):
         assert (await c.delete("/api/agent-tokens/999999")).status_code == 404
         boot = (await c.get("/api/bootstrap")).json()
         assert {"id": made["id"], "name": "Codex", "revoked": True} in boot["agents"]
+        # 撤销了的能从列表里删掉，名字还在（写过的段要显示）；没撤销的不能删
+        live, _ = token("还在用")
+        assert (await c.post(f"/api/agent-tokens/{live['id']}/hide")).status_code == 400
+        assert (await c.post(f"/api/agent-tokens/{made['id']}/hide")).json()["ok"]
+        assert made["id"] not in [x["id"] for x in (await c.get("/api/agent-tokens")).json()]
+        assert live["id"] in [x["id"] for x in (await c.get("/api/agent-tokens")).json()]
+        assert {"id": made["id"], "name": "Codex", "revoked": True} in (await c.get("/api/bootstrap")).json()["agents"]
+        assert agentapi.name(made["id"]) == "Codex"
+        assert (await c.post("/api/agent-tokens/999999/hide")).status_code == 404
 
 
 # ---------- 鉴权 ----------

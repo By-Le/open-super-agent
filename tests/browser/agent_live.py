@@ -108,6 +108,8 @@ with sync_playwright() as pw:
         page.locator(".dialog .btn.danger, .dialog button:has-text('撤销')").last.click(timeout=3000)
     except Exception:
         pass
+    page.wait_for_selector(".agent-gone summary", timeout=5000)   # 撤销了的收在“已撤销的”里
+    page.locator(".agent-gone summary").click()
     page.wait_for_selector(f".agent-row.revoked:has-text('{NAME}')", timeout=5000)
     check(True, "撤销以后列表里标成已撤销")
     page.screenshot(path=str(HERE / "32-agent-revoked.png"))

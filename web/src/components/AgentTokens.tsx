@@ -42,6 +42,20 @@ function Made({ made, url, onClose }: { made: AgentToken & { token: string }; ur
   )
 }
 
+function Row({ x, onRevoke, onHide }: { x: AgentToken; onRevoke?: () => void; onHide?: () => void }) {
+  return (
+    <div className={'kv agent-row' + (x.revoked ? ' revoked' : '')}>
+      <span><b>{x.name}</b> <span className="chip">{scopeName(x.scope)}</span></span>
+      <span className="agent-row-side">
+        <span className="muted small">{x.revoked ? t('{time} 撤销了', { time: when(x.revoked) })
+          : x.last_used ? t('最后用过：{time}', { time: when(x.last_used) }) : t('还没用过')}</span>
+        {onRevoke && <button className="ghost-btn" onClick={onRevoke}>{t('撤销')}</button>}
+        {onHide && <button className="ghost-btn" title={t('它写过的内容照样署它的名字')} onClick={onHide}>{t('从列表里删掉')}</button>}
+      </span>
+    </div>
+  )
+}
+
 export default function AgentTokens() {
   const demo = useStore(s => s.settings?.security?.demo)
   const [list, setList] = useState<AgentToken[] | null>(null)
@@ -61,6 +75,10 @@ export default function AgentTokens() {
       load()
     } catch (e: any) { setErr(e.message) }
   }
+  const hide = async (x: AgentToken) => {
+    try { await api(`/api/agent-tokens/${x.id}/hide`, { method: 'POST' }); load() } catch (e: any) { setErr(e.message) }
+  }
+  const live = (list || []).filter(x => !x.revoked), gone = (list || []).filter(x => x.revoked)
   const revoke = async (x: AgentToken) => {
     if (!await ask(t('撤销「{name}」？撤销后它马上就连不上了；它写过的内容和署名都留着。', { name: x.name }), { ok: t('撤销'), danger: true })) return
     try { await api(`/api/agent-tokens/${x.id}`, { method: 'DELETE' }); load() } catch (e: any) { setErr(e.message) }
@@ -82,15 +100,12 @@ export default function AgentTokens() {
       </>}
       {err && <div className="error-line">{err}</div>}
       <h4>{t('已建的')}</h4>
-      {list?.map(x => (
-        <div className={'kv agent-row' + (x.revoked ? ' revoked' : '')} key={x.id}>
-          <span><b>{x.name}</b> <span className="chip">{scopeName(x.scope)}</span></span>
-          <span className="agent-row-side">
-            <span className="muted small">{x.revoked ? t('{time} 撤销了', { time: when(x.revoked) })
-              : x.last_used ? t('最后用过：{time}', { time: when(x.last_used) }) : t('还没用过')}</span>
-            {!x.revoked && <button className="ghost-btn" onClick={() => revoke(x)}>{t('撤销')}</button>}
-          </span>
-        </div>))}
+      {live.map(x => <Row key={x.id} x={x} onRevoke={() => revoke(x)} />)}
+      {/* 撤销了的收起来；删掉只是不在这里列了，它写过的东西照样署它的名字 */}
+      {!!gone.length && <details className="agent-gone">
+        <summary className="muted small">{t('已撤销的（{n}）', { n: gone.length })}</summary>
+        {gone.map(x => <Row key={x.id} x={x} onHide={() => hide(x)} />)}
+      </details>}
       {list && !list.length && <div className="muted small">{t('还没有外部 Agent')}</div>}
     </div>
   )
