@@ -170,7 +170,7 @@ async def test_read_only(token, pages, bot):
     pid = library.save_page(bot()["id"], "周报", DOC)["id"]
     pages.append(pid)
     async with Agent(tok) as a:
-        assert set(await a.tools()) == {"search_pages", "list_pages", "read_page", "list_comments"}
+        assert set(await a.tools()) == {"search_pages", "list_pages", "read_page", "list_comments", "db_query"}
         assert "周报" in await a.call("read_page", page_id=pid)
         out = await a.call("create_page", title="x", content="y")   # 看不到，硬调也不行
         assert out.startswith("ERROR") and "只读" in out
@@ -184,7 +184,7 @@ async def test_create_read_edit(token, pages, events):
     by = f"agent:{t['id']}"
     async with Agent(tok) as a:
         assert set(await a.tools()) == {"search_pages", "list_pages", "read_page", "create_page", "edit_page", "rewrite_page",
-                                        "list_comments", "comment_page"}
+                                        "list_comments", "comment_page", "db_query", "db_create", "db_schema", "db_add", "db_update"}
         out = await a.call("create_page", title="调研：向量库", content="# 结论\n\n用 sqlite-vec。\n\n- 便宜\n- 够快")
         assert out.startswith("已建页面") and "http://127.0.0.1/library/pages/" in out
         pid = int(out.split("#")[1].split("「")[0])
@@ -305,3 +305,28 @@ async def test_comments(token, pages, bot, monkeypatch, events):
     assert len(mine) == 2 and not woke and all(not c["woke"] for c in mine)
     assert any(e["page_id"] == pid for e in events.of("page_comments"))
     assert "Claude Code（外部 Agent）" in pagedoc.render(pid)   # Bot 读页面时也看到是谁说的
+
+
+async def test_db_tools(token, pages, events):
+    """数据库：建库、加行、查、改属性、改表结构，作者记成 agent:N，发 db_changed。"""
+    from osa import dbs
+    t, tok = token("Codex")
+    async with Agent(tok) as a:
+        out = await a.call("db_create", title="任务", properties=[{"name": "状态", "type": "status"}, {"name": "分", "type": "number"}])
+        db_id = int(out.split("#")[1].split("「")[0])
+        pages.append(db_id)
+        out = await a.call("db_add", db_id=db_id, rows=[{"title": "写文档", "props": {"状态": "进行中", "分": 3}}, {"title": "测试"}])
+        assert "加了 2 行" in out
+        rid = int(out.split("#")[2].split(" ")[0])
+        assert dbs.get_row(rid)["created_by"] == f"agent:{t['id']}"
+        out = await a.call("db_query", db_id=db_id, filter=[{"prop": "状态", "op": "eq", "value": "进行中"}])
+        assert "符合条件的 1 行" in out and "| 写文档 | 进行中 | 3 |" in out
+        out = await a.call("db_update", rows=[{"row_id": rid, "props": {"状态": "已完成"}, "version": 1}])
+        assert "改了 状态，现在是版本 2" in out
+        assert "优先级" in await a.call("db_schema", db_id=db_id, ops=[{"op": "add", "name": "优先级", "type": "select", "options": ["高"]}])
+        assert "数据库《任务》" in await a.call("read_page", page_id=db_id)
+    assert any(e["db_id"] == db_id and e["by"] == f"agent:{t['id']}" for e in events.of("db_changed"))
+    _, ro = token("Reader", "read")
+    async with Agent(ro) as a:
+        assert "只读" in await a.call("db_add", db_id=db_id, rows=[{"title": "x"}])
+        assert "写文档" in await a.call("db_query", db_id=db_id)

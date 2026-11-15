@@ -130,9 +130,13 @@ def sync() -> int:
             if r:
                 _add(kind, ref, r[0], r[1], u, "", [r[2]])
         else:
-            r = conn.execute("select bot_id, title, format, content from pages where id=?", (ref,)).fetchone()
+            r = conn.execute("select bot_id, title, format, content, coalesce(kind, 'page') from pages where id=?", (ref,)).fetchone()
             if r:
-                _add(kind, ref, r[0], "", u, r[1] or "", chunks(_plain(r[3] or "", r[2])) or [r[1] or ""], reuse.get((kind, ref)))
+                text = _plain(r[3] or "", r[2])
+                if r[4] in ("db", "row"):   # 数据库：属性的文字也进索引（行的属性值、库的属性名）
+                    from . import dbs
+                    text = dbs.index_text(ref) + ("\n\n" + text if text else "")
+                _add(kind, ref, r[0], "", u, r[1] or "", chunks(text) or [r[1] or ""], reuse.get((kind, ref)))
         changed += 1
     if changed:
         conn.commit()

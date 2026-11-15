@@ -143,7 +143,7 @@ def for_bot(bot_id: int, limit: int = 500, own_hosts: set[str] | None = None) ->
             put(key, src | {"kind": "link", "title": title, "url": u, "host": urlsplit(u).hostname or ""})
 
     for pid, title, fmt, token, task_id, created, updated in conn.execute(
-            "select id, title, format, share_token, task_id, created, updated from pages where bot_id=?", (bot_id,)):
+            "select id, title, format, share_token, task_id, created, updated from pages where bot_id=? and coalesce(kind, 'page') != 'row'", (bot_id,)):
         put(f"page:{pid}", {"kind": "page", "ts": created, "updated": updated, "title": title, "page_id": pid,
                             "format": fmt, "shared": bool(token), "task_id": task_id, "chat_id": None, "msg_id": None})
 

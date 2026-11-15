@@ -18,6 +18,8 @@ conn.execute("""create table if not exists page_versions(
   id integer primary key, page_id integer, version integer, title text, content text, meta text,
   by text, ts_start real, ts real, label text default '')""")
 conn.execute("create index if not exists page_versions_page on page_versions(page_id, id)")
+if "props" not in {r[1] for r in conn.execute("pragma table_info(page_versions)")}:   # 数据库的行：那一版的属性（dbs.py）
+    conn.execute("alter table page_versions add column props text")
 conn.commit()
 
 GROUP_GAP = 600      # 同一个人隔这么久以内接着改，算同一版
@@ -132,6 +134,21 @@ def _commit(p: dict, title: str, work: list[dict], by: str, label: str = "",
     conn.commit()
     p.update(title=title, content=content, version=newv, updated=now)
     return work, merged
+
+
+def commit_props(p: dict, title: str, props: dict, props_meta: dict, by: str, label: str = ""):
+    """数据库的行改了属性（和标题）：版本号 +1、记一版历史，正文和段不动。p 是 load 出来的页面，被别人先提交了抛 Conflict。"""
+    newv, now = p["version"] + 1, time.time()
+    if not conn.execute("select 1 from page_versions where page_id=? limit 1", (p["id"],)).fetchone():
+        _baseline(p)
+    cur = conn.execute("update pages set title=?, props=?, props_meta=?, version=?, updated=? where id=? and version=?",
+                       (title, json.dumps(props, ensure_ascii=False), json.dumps(props_meta, ensure_ascii=False), newv, now, p["id"], p["version"]))
+    if cur.rowcount != 1:
+        conn.rollback()
+        raise Conflict(p["version"], [])
+    _snapshot(p["id"], newv, title, p["content"] or "", _meta(p["id"]), by, label, now)
+    conn.commit()
+    p.update(title=title, version=newv, updated=now)
 
 
 def _regroup(work: list[dict], canon: list[tuple[str, str]], by: str, newv: int, now: float):
@@ -347,21 +364,23 @@ def snapshot_html(pid: int, by: str, label: str = "", title: str | None = None, 
 # ---------- 版本历史 ----------
 def _baseline(p: dict):
     """旧页面第一次被改之前，先把原样记一版（label=base，不和后面的合并）。"""
-    r = conn.execute("select title, content, block_meta, updated from pages where id=?", (p["id"],)).fetchone()
+    r = conn.execute("select title, content, block_meta, updated, props from pages where id=?", (p["id"],)).fetchone()
     if r:
-        conn.execute("insert into page_versions(page_id, version, title, content, meta, by, ts_start, ts, label) values(?,?,?,?,?,?,?,?,?)",
-                     (p["id"], p["version"], r[0], r[1], r[2], f"bot:{p['bot_id']}" if p.get("bot_id") else "", r[3], r[3], "base"))
+        conn.execute("insert into page_versions(page_id, version, title, content, meta, by, ts_start, ts, label, props) values(?,?,?,?,?,?,?,?,?,?)",
+                     (p["id"], p["version"], r[0], r[1], r[2], f"bot:{p['bot_id']}" if p.get("bot_id") else "", r[3], r[3], "base", r[4]))
 
 
 def _snapshot(pid: int, version: int, title: str, content: str, meta, by: str, label: str, now: float):
+    """记一版（数据库的行连同页面现在的属性一起记）。调用前页面已经写好了。"""
     last = conn.execute("select id, by, label, ts_start, ts from page_versions where page_id=? order by id desc limit 1", (pid,)).fetchone()
     mj = json.dumps(meta, ensure_ascii=False) if meta is not None else None
+    props = (conn.execute("select props from pages where id=?", (pid,)).fetchone() or (None,))[0]
     if last and not label and not last[2] and last[1] == by and now - last[4] < GROUP_GAP and now - last[3] < GROUP_SPAN:
-        conn.execute("update page_versions set version=?, title=?, content=?, meta=?, ts=? where id=?",
-                     (version, title, content, mj, now, last[0]))
+        conn.execute("update page_versions set version=?, title=?, content=?, meta=?, ts=?, props=? where id=?",
+                     (version, title, content, mj, now, props, last[0]))
         return
-    conn.execute("insert into page_versions(page_id, version, title, content, meta, by, ts_start, ts, label) values(?,?,?,?,?,?,?,?,?)",
-                 (pid, version, title, content, mj, by, now, now, label))
+    conn.execute("insert into page_versions(page_id, version, title, content, meta, by, ts_start, ts, label, props) values(?,?,?,?,?,?,?,?,?,?)",
+                 (pid, version, title, content, mj, by, now, now, label, props))
     rows = conn.execute("select id, length(content) from page_versions where page_id=? order by id desc", (pid,)).fetchall()
     total, drop = 0, []
     for k, (vid, size) in enumerate(rows):
@@ -394,11 +413,13 @@ def _snap_blocks(content: str, meta, taken: set | None = None) -> list[dict]:
 
 
 def version(pid: int, vid: int) -> dict | None:
-    r = conn.execute("select id, version, title, content, meta, by, ts_start, ts, label from page_versions where id=? and page_id=?",
+    r = conn.execute("select id, version, title, content, meta, by, ts_start, ts, label, props from page_versions where id=? and page_id=?",
                      (vid, pid)).fetchone()
     if not r:
         return None
     out = {"id": r[0], "version": r[1], "title": r[2], "content": r[3], "by": r[5], "ts_start": r[6], "ts": r[7], "label": r[8]}
+    if r[9] is not None:   # 数据库的行：那一版的属性
+        out["props"] = json.loads(r[9])
     p = library.get_page(pid, False)
     if r[4] is not None or (p and p["format"] == "markdown"):
         out["blocks"] = [public(b) for b in _snap_blocks(r[3], r[4])]
@@ -407,9 +428,12 @@ def version(pid: int, vid: int) -> dict | None:
 
 def restore(pid: int, vid: int, by: str = "user") -> dict:
     """回到某一版：作为新的一版提交（label=restore:<版本>），当时的段编号回来，评论重新挂上。"""
-    r = conn.execute("select version, title, content, meta from page_versions where id=? and page_id=?", (vid, pid)).fetchone()
+    r = conn.execute("select version, title, content, meta, props from page_versions where id=? and page_id=?", (vid, pid)).fetchone()
     if not r:
         raise LookupError(i18n.t("没有这一版"))
+    if r[4] is not None:   # 数据库的行：属性也回到那一版（改了的键记成这次改的）
+        from . import dbs
+        dbs.restore_props(pid, json.loads(r[4]), by)
     label = f"restore:{r[0]}"
     p, cur = load(pid)
     if not p:
@@ -432,6 +456,9 @@ def render(pid: int, start: str | None = None, limit: int = READ_LIMIT) -> str:
     p, blks = load(pid)
     if not p:
         return f"没有页面 #{pid}"
+    from . import dbs
+    if p.get("kind") == "db":   # 数据库：表结构和前面的行
+        return dbs.render_db(pid, limit)
     owner = bots.get(p["bot_id"]) if p.get("bot_id") else None
     maker = f"「{owner['name']}」建的" if owner else f"「{name_of('agent:' + str(p['agent_id']))}」建的" if p.get("agent_id") else "用户建的"
     head = (f"《{p['title']}》{library.link(pid)} · 版本 {p['version']} · " + maker +
@@ -441,6 +468,8 @@ def render(pid: int, start: str | None = None, limit: int = READ_LIMIT) -> str:
         head += "\n" + "　".join(x for x in (
             "上级：" + " / ".join(f"#{a['id']}《{a['title']}》" for a in fam["ancestors"]) if fam["ancestors"] else "",
             "子页面：" + "、".join(f"#{c['id']}《{c['title']}》" for c in fam["children"][:30]) if fam["children"] else "") if x)
+    if p.get("kind") == "row":   # 数据库的一行：属性放在正文前面
+        head += "\n" + dbs.row_text(pid)
     from . import pagecomments
     tail = pagecomments.render(pid)
     tail = "\n\n" + tail if tail else ""
@@ -521,9 +550,9 @@ def image_place(pid, after) -> tuple[str | None, dict | None]:
     p, blks = load(pid) if isinstance(pid, int) and not isinstance(pid, bool) else (None, [])
     if not p:
         return f"没有页面 #{pid}", None
-    if p["format"] != "markdown":
-        return f"页面 #{pid} 是 html 页面，放不进图片", None
-    if p.get("locked"):
+    if p["format"] != "markdown" or p["kind"] == "db":
+        return f"页面 #{pid} 是 {'数据库' if p['kind'] == 'db' else 'html 页面'}，放不进图片", None
+    if p.get("locked") or _db_locked(p):
         return f"页面 #{pid}「{p['title']}」被用户锁定了，只能读", None
     bid = blocks.clean_id(after) if after else None
     if bid and bid not in {b["id"] for b in blks}:
@@ -569,7 +598,9 @@ def tool_edit(who: int | str, args: dict) -> tuple[str, dict | None]:
         return f"没有页面 #{pid}", None
     if p["format"] != "markdown":
         return f"没改：页面 #{pid} 是 html 页面，没有段，用 save_page 整页更新（只能更新自己建的）", None
-    if p.get("locked"):
+    if p["kind"] == "db":
+        return f"没改：#{pid} 是数据库，加行用 db_add、改属性用 db_update、改表结构用 db_schema；某一行的正文才用 edit_page", None
+    if p.get("locked") or _db_locked(p):
         return f"没改：页面 #{pid}「{p['title']}」被用户锁定了，只能读", None
     pid = p["id"]
     try:
@@ -584,6 +615,14 @@ def tool_edit(who: int | str, args: dict) -> tuple[str, dict | None]:
             + (f"涉及的段：{'、'.join(f'⟦{i}⟧' for i in added)}。" if added else "")
             + (f"有 {len(res['merged'])} 处相邻的段拼起来以后合成了一段。" if res["merged"] else ""))
     return text, event(pid, res, by)
+
+
+def _db_locked(p: dict) -> bool:
+    """数据库的行：库锁定了，行也只能读。"""
+    if p.get("kind") != "row" or p.get("parent_id") is None:
+        return False
+    db = library.get_page(p["parent_id"], False)
+    return bool(db and db["locked"])
 
 
 def event(pid: int, res: dict, by: str) -> dict:

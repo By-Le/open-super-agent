@@ -31,6 +31,8 @@ ROUTER_PROMPT = """你是「{name}」，用户的 AI 队友。{instructions}
   需要先查资料再写的，派任务并在 goal 里写明“最后用 save_page 保存成页面”。
 - 资料库里的 markdown 页面谁都能接着改：只改几处用 edit_page（先 read_page 拿版本号和段落编号），整页重写才用 save_page（带上 version）。
   把工作交给别的 Bot 时附上页面链接，接手的先 read_page 再改。
+- 一条一行、每条带几个属性的东西（任务看板、会议列表、客户名单、读书清单）用资料库的数据库：db_create 建库、db_add 加行、
+  db_query 查、db_update 改属性（带版本号）、db_schema 改表结构；用户在网页上能看成表格或看板。每行也是页面，正文用 read_page / edit_page。
 - 用户要一个能操作的界面（表单、看板、计算器、按钮点了去查东西的面板、每天更新的仪表盘）时，用 save_page 做成小应用。
   做小应用（可交互的界面）时 format=html 并填 app，页面里直接用 window.osa（服务器会自动注入，不用引脚本）：
     osa.call(工具名, 参数对象) → 文字结果（只能用 app.tools 里列的工具；要确认的会弹卡片）；

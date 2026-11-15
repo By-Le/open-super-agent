@@ -4,7 +4,7 @@
 每个工具只在这里写一次，Router 和 Worker 都从注册表（registry.py）找；在哪些场合给模型用、要不要走确认规则，都在 Tool 上写明。
 电脑工具、Router 自己的几个、botadmin 还没迁过来（见 registry.py 开头）。
 """
-from . import i18n, images, library, media, pagecomments, pagedoc, registry, routines, sandbox, search, skills, tools, videos
+from . import dbs, i18n, images, library, media, pagecomments, pagedoc, registry, routines, sandbox, search, skills, tools, videos
 from .registry import APPLET, ROUTER, WORKER, Call, Tool
 
 ctx = registry.Context("builtin")
@@ -48,6 +48,15 @@ async def _edit_page(call: Call) -> str:
         await registry.emit("page_changed", **event)
         await registry.emit("pages_changed")
     return out
+
+
+def _db_tool(fn):
+    """数据库的写工具（dbs.py）：做完发 db_changed / pages_changed。"""
+    async def run(call: Call) -> str:
+        out, ev = fn(call.bot_id, call.args)
+        await dbs.announce(ev, f"bot:{call.bot_id}")
+        return out
+    return run
 
 
 async def _comment_page(call: Call) -> str:
@@ -160,6 +169,21 @@ def load():
                   progress=lambda a: i18n.t("改页面 #{id}", id=a.get("page_id"))))
     ctx.tool(Tool("comment_page", pagecomments.COMMENT_PAGE, _comment_page, when=_not_draft,
                   progress=lambda a: i18n.t("评论页面 #{id}", id=a.get("page_id"))))
+    # 资料库的数据库（dbs.py）：查随时能用；建库、改结构、加行、改属性和 save_page 一样，后台任务只有正式的才能用
+    ctx.tool(Tool("db_query", dbs.DB_QUERY, lambda c: _sync(dbs.tool_query(c.args)), parallel=3,
+                  describe="查资料库里数据库的行：筛选、排序、只要几列",
+                  progress=lambda a: i18n.t("查数据库 #{id}", id=a.get("db_id"))))
+    ctx.tool(Tool("db_create", dbs.DB_CREATE, _db_tool(dbs.tool_create), when=_not_draft,
+                  describe="在资料库里建数据库（任务看板、会议列表这类一条一行、带属性的表）",
+                  progress=lambda a: i18n.t("建数据库：{title}", title=str(a.get("title", ""))[:40])))
+    ctx.tool(Tool("db_schema", dbs.DB_SCHEMA, _db_tool(dbs.tool_schema), when=_not_draft,
+                  progress=lambda a: i18n.t("改数据库 #{id} 的表结构", id=a.get("db_id"))))
+    ctx.tool(Tool("db_add", dbs.DB_ADD, _db_tool(dbs.tool_add), when=_not_draft,
+                  describe="往资料库的数据库里加行",
+                  progress=lambda a: i18n.t("往数据库 #{id} 加行", id=a.get("db_id"))))
+    ctx.tool(Tool("db_update", dbs.DB_UPDATE, _db_tool(dbs.tool_update), when=_not_draft,
+                  describe="改资料库数据库里几行的属性",
+                  progress=lambda a: i18n.t("改数据库的行")))
     from . import sources
     sources.register(ctx)
 

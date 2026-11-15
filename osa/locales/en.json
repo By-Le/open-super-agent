@@ -1247,5 +1247,16 @@
   "最多 {n} 个外部 Agent，先撤销一些": "At most {n} external agents. Revoke some first",
   "没有这个外部 Agent": "No such external agent",
   "演示服务器不开放外部 Agent": "External agents are not available on the demo server",
-  "token 不对或者已经撤销了：在 设置 → 外部 Agent 里新建一个": "Invalid or revoked token. Create a new one in Settings → External agents"
+  "token 不对或者已经撤销了：在 设置 → 外部 Agent 里新建一个": "Invalid or revoked token. Create a new one in Settings → External agents",
+  "查数据库 #{id}": "Querying database #{id}",
+  "建数据库：{title}": "Creating database: {title}",
+  "改数据库 #{id} 的表结构": "Changing the properties of database #{id}",
+  "往数据库 #{id} 加行": "Adding rows to database #{id}",
+  "改数据库的行": "Updating database rows",
+  "没有数据库 #{id}": "No database #{id}",
+  "一个数据库最多 {n} 行": "A database can have at most {n} rows",
+  "没有这一行 #{id}": "No row #{id}",
+  "数据库的行不能挪出数据库": "Database rows can't be moved out of their database",
+  "数据库的行只能在数据库里": "Database rows can only live in a database",
+  "数据库和它的行下面不能放子页面": "Databases and their rows can't have subpages"
 }

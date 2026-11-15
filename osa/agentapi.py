@@ -15,7 +15,7 @@ import json
 import logging
 import secrets
 import time
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from mcp.server.mcpserver import Context, MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
@@ -24,7 +24,7 @@ from mcp.server.transport_security import TransportSecuritySettings
 from mcp_types import ListToolsResult, ToolAnnotations
 from pydantic import BaseModel, Field
 
-from . import i18n, library, media, pagecomments, pagedoc, registry, search, security
+from . import dbs, i18n, library, media, pagecomments, pagedoc, registry, search, security
 from .memory import conn
 
 conn.execute("""create table if not exists agent_tokens(
@@ -122,9 +122,11 @@ INSTRUCTIONS = """这是 Open Super Agent（OSA）的资料库：用户和 OSA �
 - 都要带上 read_page 看到的版本号。你要改的段在你读过之后被别人改了，这一批都不写，结果里会告诉你它现在的内容，按新的版本号再提交就行。
 - 段落编号只给 edit_page / comment_page 用，不是正文，写内容时不要带上。
 - 用户在页面上的评论用 list_comments 看，用 comment_page 回复、标成已解决。你写的评论不会叫醒 OSA 里的 Bot。
-- 用户锁定的页面只能读和评论。"""
+- 用户锁定的页面只能读和评论。
+- 数据库（多维表：任务看板、会议列表这类一条一行、带属性的表）：read_page 读库会给出属性和前面的行；db_query 筛选、排序，
+  db_add 加行，db_update 改属性（带行的版本号），db_schema 改表结构，db_create 建库。每一行也是页面，正文用 read_page / edit_page。"""
 
-WRITE_TOOLS = {"create_page", "edit_page", "rewrite_page", "comment_page"}
+WRITE_TOOLS = {"create_page", "edit_page", "rewrite_page", "comment_page", "db_create", "db_schema", "db_add", "db_update"}
 _RO = ToolAnnotations(read_only_hint=True, open_world_hint=False)
 _RW = ToolAnnotations(read_only_hint=False, destructive_hint=False, open_world_hint=False)
 
@@ -379,3 +381,93 @@ class Endpoint:
 
 
 endpoint = Endpoint()
+
+
+# ---------- 数据库（dbs.py）：和 Bot 的 db_* 工具一样 ----------
+_TypeName = Literal[tuple(dbs._TYPE_ENUM)]
+_Format = Literal[tuple(dbs.FORMATS)]
+
+
+class DbProp(BaseModel):
+    name: str
+    type: _TypeName = Field(description=dbs._PROP_SPEC["properties"]["type"]["description"])
+    options: list[str] | None = Field(None, description="单选、多选、状态的选项（按顺序）；状态不给就是 未开始 / 进行中 / 已完成")
+    format: _Format | None = Field(None, description="数字的显示格式")
+
+
+class DbSchemaOp(BaseModel):
+    op: Literal["add", "update", "delete"]
+    prop: str | None = Field(None, description="update / delete：哪个属性（名字）")
+    name: str | None = Field(None, description="add：属性名；update：新名字")
+    type: _TypeName | None = None
+    options: list[str] | None = None
+    format: _Format | None = None
+
+
+class DbFilter(BaseModel):
+    prop: str = Field(description="属性名")
+    op: Literal[tuple(dbs.OPS)] = Field(description=dbs.DB_QUERY["function"]["parameters"]["properties"]["filter"]["items"]["properties"]["op"]["description"])
+    value: Any = Field(None, description="比的值，写法和 db_add 一样；日期能写 today / 今天 / 明天")
+
+
+class DbSort(BaseModel):
+    prop: str
+    desc: bool = False
+
+
+class DbNewRow(BaseModel):
+    title: str = Field("", description="名称")
+    props: dict[str, Any] = Field(default_factory=dict, description="{属性名: 值}")
+    content: str = Field("", description="可选：这一行的正文（Markdown）")
+
+
+class DbRowChange(BaseModel):
+    row_id: int
+    props: dict[str, Any] = Field(description="{属性名: 新值}")
+    version: int | None = Field(None, description="这一行的版本号")
+
+
+def _desc(spec: dict) -> str:
+    return spec["function"]["description"]
+
+
+async def _db_write(ctx: Context, fn, args: dict) -> str:
+    a = _agent(ctx, write=True)
+    out, ev = fn(_by(a), args)
+    await dbs.announce(ev, _by(a))
+    return out
+
+
+@_tool(_desc(dbs.DB_QUERY), read_only=True)
+async def db_query(db_id: int, ctx: Context,
+                   filter: list[DbFilter] | None = None, sort: list[DbSort] | None = None,
+                   view: Annotated[str | None, Field(description="可选：用这个视图（名字）的筛选和排序")] = None,
+                   props: Annotated[list[str] | None, Field(description="可选：只要这几列（名称总在）")] = None,
+                   limit: Annotated[int, Field(description="最多几行，默认 50", ge=1, le=200)] = 50) -> str:
+    _agent(ctx)
+    return dbs.tool_query({"db_id": db_id, "filter": [f.model_dump() for f in filter or []], "sort": [x.model_dump() for x in sort or []],
+                           "view": view, "props": props, "limit": limit})
+
+
+@_tool(_desc(dbs.DB_CREATE), read_only=False)
+async def db_create(title: str, ctx: Context,
+                    properties: Annotated[list[DbProp] | None, Field(description="名称以外的属性。不给就是：状态、负责人（人员）、日期")] = None,
+                    title_name: Annotated[str | None, Field(description="可选：名称这一列叫什么（默认“名称”）")] = None,
+                    parent_id: Annotated[int | None, Field(description="可选：放在哪个页面下面")] = None) -> str:
+    return await _db_write(ctx, dbs.tool_create, {"title": title, "title_name": title_name, "parent_id": parent_id,
+                                                  "properties": None if properties is None else [x.model_dump(exclude_none=True) for x in properties]})
+
+
+@_tool(_desc(dbs.DB_SCHEMA), read_only=False)
+async def db_schema(db_id: int, ops: list[DbSchemaOp], ctx: Context) -> str:
+    return await _db_write(ctx, dbs.tool_schema, {"db_id": db_id, "ops": [o.model_dump(exclude_none=True) for o in ops]})
+
+
+@_tool(_desc(dbs.DB_ADD), read_only=False)
+async def db_add(db_id: int, rows: list[DbNewRow], ctx: Context) -> str:
+    return await _db_write(ctx, dbs.tool_add, {"db_id": db_id, "rows": [r.model_dump() for r in rows]})
+
+
+@_tool(_desc(dbs.DB_UPDATE), read_only=False)
+async def db_update(rows: list[DbRowChange], ctx: Context) -> str:
+    return await _db_write(ctx, dbs.tool_update, {"rows": [r.model_dump() for r in rows]})

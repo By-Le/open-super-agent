@@ -19,7 +19,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.background import BackgroundTask
 from . import backup
 backup.apply_pending()   # 确认过的恢复：在打开数据库之前换上
-from . import agentapi, applets, approvals, auth, avatars, botadmin, bots, catalog, channels, computer, dm, events, groups, i18n, library, mcp_hub, media, memories, memory, push, router as rt, routines
+from . import agentapi, applets, approvals, auth, avatars, botadmin, bots, catalog, channels, computer, dbs, dm, events, groups, i18n, library, mcp_hub, media, memories, memory, push, router as rt, routines
 from . import generation, mcpapps, observe, outputs, pagecomments, pagedoc, prices, providers, search, security, settings, skills, tasklog, teach, templates, unfurl, vault, videos, websearch
 from .computer import link
 from .computer.base import HOSTS
@@ -68,6 +68,7 @@ _events.on("pages_changed", lambda: broadcast({"type": "pages_changed"}))
 _events.on("page_data", lambda page_id, data: broadcast({"type": "page_data", "page_id": page_id, "data": data}))
 _events.on("page_changed", lambda **kw: broadcast({"type": "page_changed", **kw}))
 _events.on("page_comments", lambda page_id: broadcast({"type": "page_comments", "page_id": page_id}))
+_events.on("db_changed", lambda **kw: broadcast({"type": "db_changed", **kw}))
 
 
 async def parent_watch(pid: int, every: float = 2):
@@ -914,7 +915,8 @@ def _raw(page: dict) -> Response:
 
 @app.get("/api/pages")
 async def list_pages():
-    return library.list_pages()
+    """资料库的页面（数据库的行不在这里，在 /api/dbs/<库>）。"""
+    return [p for p in library.list_pages() if p["kind"] != "row"]
 
 
 @app.post("/api/pages")
@@ -959,6 +961,7 @@ async def update_page(pid: int, data: dict = Body(...)):
     if p["version"] != old["version"]:   # 改了标题
         await broadcast({"type": "page_changed", "page_id": pid, "version": p["version"], "by": "user",
                          "title": p["title"], "updated": p["updated"], "changed": []})
+    await _row_touched(p)
     await broadcast({"type": "pages_changed"})
     return p
 
@@ -966,7 +969,7 @@ async def update_page(pid: int, data: dict = Body(...)):
 # ---------- 资料库：按段读写、版本历史（pagedoc.py）。网页编辑器用；用户改的不受锁定限制 ----------
 def _markdown_or_400(pid: int) -> dict:
     p = _page_or_404(pid)
-    if p["format"] != "markdown":
+    if p["format"] != "markdown" or p["kind"] == "db":
         raise HTTPException(400, i18n.t("只有 markdown 页面能按段改"))
     return p
 
@@ -1063,6 +1066,7 @@ async def restore_page(pid: int, vid: int):
         _err(e)
     await broadcast({"type": "page_changed", "page_id": pid, "version": p["version"], "by": "user",
                      "title": p["title"], "updated": p["updated"], "changed": []})
+    await _row_touched(p)   # 行回到某一版：属性也回去了
     await broadcast({"type": "pages_changed"})
     return p
 
@@ -1077,8 +1081,133 @@ async def share_page(pid: int, data: dict = Body(...)):
 
 @app.delete("/api/pages/{pid}")
 async def delete_page(pid: int, cascade: bool = False):
-    """删页面：子页面默认挪到上一级；cascade=true 连子页面一起删。"""
+    """删页面：子页面默认挪到上一级；cascade=true 连子页面一起删。数据库连行一起删。"""
+    p = library.get_page(pid, False)
     library.delete_page(pid, cascade)
+    if p:
+        await _row_touched(p)
+    await broadcast({"type": "pages_changed"})
+    return {"ok": True}
+
+
+# ---------- 资料库：数据库（dbs.py）。网页用；用户改的不受锁定限制 ----------
+async def _row_touched(p: dict, rows: list[int] | None = None):
+    """数据库的行改了（标题、恢复、删除）：开着的库重新取。"""
+    if p.get("kind") == "row" and p.get("parent_id") is not None:
+        await broadcast({"type": "db_changed", "db_id": p["parent_id"], "rows": rows or [p["id"]], "by": "user"})
+
+
+def _db_or_404(db_id: int) -> dict:
+    db = dbs.get_db(db_id)
+    if not db:
+        raise HTTPException(404, i18n.t("没有数据库 #{id}", id=db_id))
+    return db
+
+
+def _row_or_404(db_id: int, rid: int) -> dict:
+    r = dbs.get_row(rid)
+    if not r or r["db_id"] != db_id:
+        raise HTTPException(404, i18n.t("没有这一行 #{id}", id=rid))
+    return r
+
+
+@app.post("/api/dbs")
+async def create_db(data: dict = Body(...)):
+    """新建数据库：{title, parent_id?}，带默认的属性（名称、状态、负责人、日期）和表格、看板两个视图。"""
+    try:
+        db = dbs.create(data.get("title") or "", "user", schema=dbs.default_schema(), parent_id=data.get("parent_id"))
+    except (ValueError, TypeError) as e:
+        _err(e)
+    await broadcast({"type": "pages_changed"})
+    return dbs.public(db)
+
+
+@app.get("/api/dbs/{db_id}")
+async def get_db(db_id: int, view: str | None = None):
+    """库、表结构、视图，和按视图（view 是视图 id，不给就是第一个）筛选排序后的行。"""
+    try:
+        return dbs.public(_db_or_404(db_id), view)
+    except ValueError as e:
+        _err(e)
+
+
+async def _db_saved(db_id: int, rows: list[int] | None = None, schema: bool = False):
+    await broadcast({"type": "db_changed", "db_id": db_id, "rows": rows or [], "schema": schema, "by": "user"})
+
+
+@app.patch("/api/dbs/{db_id}/schema")
+async def change_db_schema(db_id: int, data: dict = Body(...)):
+    """改表结构：{ops: [{op: add | update | delete, …}]}（见 dbs.change_schema）。"""
+    _db_or_404(db_id)
+    try:
+        db = dbs.change_schema(db_id, data.get("ops"))
+    except (ValueError, TypeError) as e:
+        _err(e)
+    await _db_saved(db_id, schema=True)
+    return dbs.public(db, data.get("view"))
+
+
+@app.put("/api/dbs/{db_id}/views")
+async def set_db_views(db_id: int, data: dict = Body(...)):
+    """整个换掉视图列表：{views, view?}（view 是现在看的那个，返回按它筛选排序的行）。"""
+    _db_or_404(db_id)
+    try:
+        db = dbs.set_views(db_id, data.get("views"))
+    except (ValueError, TypeError) as e:
+        _err(e)
+    await _db_saved(db_id, schema=True)
+    return dbs.public(db, data.get("view"))
+
+
+@app.post("/api/dbs/{db_id}/rows")
+async def add_db_row(db_id: int, data: dict = Body(default={})):
+    """加一行：{props?: {key: 值}, title?, after?: 行号 | 0（最前）}。"""
+    _db_or_404(db_id)
+    try:
+        r = dbs.add_row(db_id, data.get("props") or {}, "user", str(data.get("title") or ""), after=data.get("after"))
+    except (ValueError, TypeError) as e:
+        _err(e)
+    await _db_saved(db_id, [r["id"]], schema=True)   # 可能顺手加了选项
+    await broadcast({"type": "pages_changed"})
+    return dbs.public_row(r)
+
+
+@app.patch("/api/dbs/{db_id}/rows/{rid}")
+async def update_db_row(db_id: int, rid: int, data: dict = Body(...)):
+    """改一行的属性：{props: {key: 值}（名称是 title）, version?}。要改的属性在 version 之后被别人改过：409，detail 是 {version, conflicts}。"""
+    _row_or_404(db_id, rid)
+    try:
+        r, changed = dbs.update_row(rid, data.get("props") or {}, "user", data.get("version"))
+    except dbs.Conflict as e:
+        raise HTTPException(409, {"version": e.version, "conflicts": e.items})
+    except (ValueError, TypeError, LookupError) as e:
+        _err(e)
+    if changed:
+        await _db_saved(db_id, [rid], schema=True)
+        if "title" in changed:
+            await broadcast({"type": "page_changed", "page_id": rid, "version": r["version"], "by": "user",
+                             "title": r["title"], "updated": r["updated"], "changed": []})
+            await broadcast({"type": "pages_changed"})
+    return dbs.public_row(r)
+
+
+@app.post("/api/dbs/{db_id}/rows/{rid}/move")
+async def move_db_row(db_id: int, rid: int, data: dict = Body(...)):
+    """手动排序：{after: 行号 | 0（最前）| null（最后）}。看板上拖到别的列另外用 PATCH 改那个属性。"""
+    _row_or_404(db_id, rid)
+    try:
+        library.move(rid, db_id, data.get("after"))
+    except (ValueError, TypeError) as e:
+        _err(e)
+    await _db_saved(db_id, [rid])
+    return {"ok": True}
+
+
+@app.delete("/api/dbs/{db_id}/rows/{rid}")
+async def delete_db_row(db_id: int, rid: int):
+    _row_or_404(db_id, rid)
+    library.delete_page(rid)
+    await _db_saved(db_id, [rid])
     await broadcast({"type": "pages_changed"})
     return {"ok": True}
 
@@ -1240,6 +1369,8 @@ async def shared_page(token: str):
     if not p:
         raise HTTPException(404, i18n.t("链接已失效"))
     b = bots.get(p["bot_id"]) if p["bot_id"] else None
+    if p["kind"] == "db":   # 分享的数据库：第一个视图的表格（只读）
+        p = {**p, "content": dbs.share_markdown(p["id"])}
     return {k: p[k] for k in ("title", "format", "content", "updated")} | (
         {"bot": {"name": b["name"], "avatar": b["avatar"]}} if b else {})
 

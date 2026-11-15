@@ -19,9 +19,11 @@ conn.execute("""create table if not exists pages(
 conn.execute("create unique index if not exists pages_token on pages(share_token)")
 _have = {r[1] for r in conn.execute("pragma table_info(pages)")}
 for _col, _type in (("app", "text"), ("block_meta", "text"), ("version", "integer default 0"), ("locked", "integer default 0"),
-                    ("parent_id", "integer"), ("pos", "real"), ("agent_id", "integer")):
+                    ("parent_id", "integer"), ("pos", "real"), ("agent_id", "integer"),
+                    ("kind", "text default 'page'"), ("schema", "text"), ("views", "text"), ("props", "text"), ("props_meta", "text")):
     if _col not in _have:   # block_meta / version / locked：按段编辑（pagedoc.py）；parent_id / pos：子页面和它们的顺序；
-        # agent_id：建它的外部 Agent（agentapi.py），这时 bot_id 是空的
+        # agent_id：建它的外部 Agent（agentapi.py），这时 bot_id 是空的；
+        # kind：page / db（数据库）/ row（数据库的一行）；schema / views 是库的表结构和视图，props / props_meta 是行的属性（见 dbs.py）
         conn.execute(f"alter table pages add column {_col} {_type}")
 conn.execute("""create table if not exists page_data(
   page_id integer, key text, value text, updated real, primary key(page_id, key))""")
@@ -37,15 +39,17 @@ RAW_CSP = ("sandbox allow-scripts allow-popups; default-src 'none'; script-src '
            "style-src 'unsafe-inline' https:; img-src https: data:; font-src https: data:; media-src https: data:; "
            "connect-src 'none'; frame-src 'none'; form-action 'none'")
 
-_COLS = "id, bot_id, title, format, share_token, pinned, task_id, created, updated, length(content), app, version, locked, parent_id, pos, agent_id"
+_COLS = ("id, bot_id, title, format, share_token, pinned, task_id, created, updated, length(content), app, version, locked, parent_id, pos, "
+         "agent_id, coalesce(kind, 'page')")
+KINDS = ("page", "db", "row")
 
 
 # ---------- 页面 ----------
 def _page(r, content: str | None = None) -> dict:
-    i, bot_id, title, fmt, token, pinned, task_id, created, updated, size, app, version, locked, parent_id, pos, agent_id = r
+    i, bot_id, title, fmt, token, pinned, task_id, created, updated, size, app, version, locked, parent_id, pos, agent_id, kind = r
     p = {"id": i, "bot_id": bot_id, "title": title, "format": fmt, "share_token": token, "pinned": bool(pinned),
          "task_id": task_id, "created": created, "updated": updated, "size": size or 0,
-         "app": json.loads(app) if app else None, "version": version or 0, "locked": bool(locked), "parent_id": parent_id, "pos": pos or 0, "agent_id": agent_id}
+         "app": json.loads(app) if app else None, "version": version or 0, "locked": bool(locked), "parent_id": parent_id, "pos": pos or 0, "agent_id": agent_id, "kind": kind}
     if content is not None:
         p["content"] = content
     return p
@@ -69,11 +73,13 @@ def by_token(token: str) -> dict | None:
 
 def save_page(bot_id: int | None, title: str, content: str, fmt: str = "markdown",
               pid: int | None = None, task_id: int | None = None, app=None, by: str | None = None,
-              base: int | None = None, allow_empty: bool = False, parent_id: int | None = None) -> dict:
+              base: int | None = None, allow_empty: bool = False, parent_id: int | None = None,
+              kind: str = "page", props: dict | None = None) -> dict:
     """新建，或者给 pid 时更新内容。app 是小应用的清单（见 applets.manifest），只对 html 有效；更新时不给就保留原来的。
     by 是谁改的（默认 bot_id 对应的 Bot，没有就是用户；agent:<id> 是外部 Agent，新建时记进 agent_id）。markdown 页面更新时按段对齐（pagedoc.rewrite），没变的段保留编号和作者；
     给了 base（调用方读到的版本号），会覆盖掉 base 之后别人改过的段就抛 pagedoc.Conflict。allow_empty：用户新建的空白页面。
-    parent_id 只在新建时有用：放在哪个页面下面（排在最后）。"""
+    parent_id 只在新建时有用：放在哪个页面下面（排在最后）。kind、props 也只在新建时有用：数据库（db）和它的行（row），见 dbs.py；
+    行的属性先写好再记第一版历史，第一版里就有属性。"""
     from . import applets, pagedoc
     title = " ".join((title or "").split())[:120] or i18n.t("未命名页面")
     fmt = fmt if fmt in FORMATS else "markdown"
@@ -99,15 +105,18 @@ def save_page(bot_id: int | None, title: str, content: str, fmt: str = "markdown
                          (fmt, json.dumps(app, ensure_ascii=False) if app else None, pid))
             pagedoc.snapshot_html(pid, by, title=title, content=content)
     else:
-        if conn.execute("select count(*) from pages").fetchone()[0] >= MAX_PAGES:
-            raise ValueError(i18n.t("资料库最多 {n} 个页面，先删掉一些", n=MAX_PAGES))
-        if parent_id is not None:
-            _check_parent(parent_id)
+        if kind not in KINDS:
+            raise ValueError(f"kind 只能是 {' / '.join(KINDS)}")
+        if kind != "row" and conn.execute("select count(*) from pages where coalesce(kind, 'page') != 'row'").fetchone()[0] >= MAX_PAGES:
+            raise ValueError(i18n.t("资料库最多 {n} 个页面，先删掉一些", n=MAX_PAGES))   # 数据库的行另算（dbs.MAX_ROWS）
+        if parent_id is not None or kind == "row":
+            _check_parent(parent_id, kind=kind)
         agent_id = int(by[6:]) if by.startswith("agent:") and by[6:].isdigit() else None
-        pid = conn.execute("insert into pages(bot_id, title, format, content, task_id, created, updated, app, parent_id, pos, agent_id) "
-                           "values(?,?,?,?,?,?,?,?,?,?,?)", (bot_id, title, fmt, content, task_id, now, now,
-                                                             json.dumps(app, ensure_ascii=False) if app else None,
-                                                             parent_id, _end_pos(parent_id), agent_id)).lastrowid
+        pid = conn.execute("insert into pages(bot_id, title, format, content, task_id, created, updated, app, parent_id, pos, agent_id, kind, props) "
+                           "values(?,?,?,?,?,?,?,?,?,?,?,?,?)", (bot_id, title, fmt, content, task_id, now, now,
+                                                                 json.dumps(app, ensure_ascii=False) if app else None,
+                                                                 parent_id, _end_pos(parent_id), agent_id, kind,
+                                                                 json.dumps(props, ensure_ascii=False) if props is not None else None)).lastrowid
         conn.commit()
         if fmt == "markdown":
             pagedoc.init(pid, by)
@@ -141,12 +150,12 @@ def share(pid: int, on: bool) -> dict:
 
 
 def delete_page(pid: int, cascade: bool = False):
-    """删页面。子页面默认挪到上一级、排在它原来的位置；cascade 就连子页面一起删。"""
+    """删页面。子页面默认挪到上一级、排在它原来的位置；cascade 就连子页面一起删。数据库总是连行一起删（行不能离开库）。"""
     from . import pagecomments, pagedoc   # noqa: F401  确保版本历史、评论的表已经建好
     p = get_page(pid, False)
     if p:
         kids = _children(pid)
-        if cascade:
+        if cascade or p["kind"] == "db":
             for k in kids:
                 delete_page(k[0], cascade=True)
         elif kids:
@@ -186,10 +195,15 @@ def descendants(pid: int) -> set[int]:
     return out
 
 
-def _check_parent(parent_id: int, pid: int | None = None):
+def _check_parent(parent_id: int | None, pid: int | None = None, kind: str = "page"):
+    """行只能在数据库下面；别的页面只能放在普通的 markdown 页面下面（数据库、行下面不放子页面）。"""
     parent = get_page(parent_id, False) if isinstance(parent_id, int) and not isinstance(parent_id, bool) else None
     if not parent:
         raise ValueError(i18n.t("没有页面 #{id}", id=parent_id))
+    if kind == "row" or parent["kind"] != "page":
+        if kind == "row" and parent["kind"] == "db":
+            return
+        raise ValueError(i18n.t("数据库的行只能在数据库里") if kind == "row" else i18n.t("数据库和它的行下面不能放子页面"))
     if parent["format"] != "markdown":
         raise ValueError(i18n.t("html 页面下面不能放子页面"))
     if pid is not None and (parent_id == pid or parent_id in descendants(pid)):
@@ -197,11 +211,15 @@ def _check_parent(parent_id: int, pid: int | None = None):
 
 
 def move(pid: int, parent_id: int | None, after: int | None = None) -> dict:
-    """挪到 parent_id 下面（None 是最上层），排在 after 后面（None 是排在最后，0 是排在最前）。"""
-    if not get_page(pid, False):
+    """挪到 parent_id 下面（None 是最上层），排在 after 后面（None 是排在最后，0 是排在最前）。
+    数据库的行只能在自己的库里换顺序。"""
+    p = get_page(pid, False)
+    if not p:
         raise ValueError(i18n.t("没有页面 #{id}", id=pid))
+    if p["kind"] == "row" and parent_id != p["parent_id"]:
+        raise ValueError(i18n.t("数据库的行不能挪出数据库"))
     if parent_id is not None:
-        _check_parent(parent_id, pid)
+        _check_parent(parent_id, pid, p["kind"])
     kids = [(k, p) for k, p in _children(parent_id) if k != pid]
     if after is None:
         pos = (kids[-1][1] + 1) if kids else 1.0
@@ -226,8 +244,8 @@ def family(pid: int) -> dict:
         p = get_page(p["parent_id"], False)
         if p:
             ancestors.insert(0, {"id": p["id"], "title": p["title"]})
-    kids = [get_page(k, False) for k, _ in _children(pid)]
-    return {"ancestors": ancestors, "children": [{"id": k["id"], "title": k["title"], "format": k["format"]} for k in kids if k]}
+    kids = [get_page(k, False) for k, _ in _children(pid)] if (p0 := get_page(pid, False)) and p0["kind"] == "page" else []   # 库的行不算子页面
+    return {"ancestors": ancestors, "children": [{"id": k["id"], "title": k["title"], "format": k["format"], "kind": k["kind"]} for k in kids if k]}
 
 
 # ---------- 小应用的数据 ----------
@@ -344,10 +362,12 @@ def tool_save_page(bot_id: int, args: dict, task_id: int | None = None, saved: l
         if not (old := get_page(pid, False)):
             return f"没保存：页面 #{pid} 不存在"
         fmt = fmt or old["format"]
+        if old["kind"] == "db":
+            return f"没保存：#{pid} 是数据库，加行用 db_add、改属性用 db_update、改表结构用 db_schema"
         if "html" in (fmt, old["format"]):
             if old["bot_id"] != bot_id:
                 return f"没保存：页面 #{pid} 是 html 页面 / 小应用，只有建它的 Bot 能更新"
-        elif old["locked"]:
+        elif old["locked"] or pagedoc._db_locked(old):
             return f"没保存：页面 #{pid}「{old['title']}」被用户锁定了，只能读"
         elif args.get("version") is None and (who := pagedoc.last_by(pid)) != f"bot:{bot_id}":
             return (f"没保存：页面 #{pid} 最近是「{pagedoc.name_of(who)}」改的。先用 read_page 看现在的内容，"

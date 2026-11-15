@@ -1,0 +1,320 @@
+"""资料库的数据库（osa/dbs.py）：值的写法、加行改行、按键冲突、历史、筛选排序、改表结构、视图、工具、read_page、接口和事件、分享、搜索。"""
+from datetime import date, timedelta
+
+import httpx
+import pytest
+from osa import bots, dbs, library, pagedoc, search, server
+
+TODAY = date.today()
+
+
+def http():
+    return httpx.AsyncClient(transport=httpx.ASGITransport(app=server.app), base_url="http://127.0.0.1")
+
+
+@pytest.fixture
+def made():
+    """测试里建的库，结束时删掉（连行）。"""
+    ids: list[int] = []
+    yield ids
+    for i in ids:
+        if library.get_page(i, False):
+            library.delete_page(i)
+
+
+@pytest.fixture
+def bot(make_bot):
+    out = []
+
+    def make(name: str = "") -> dict:
+        out.append(make_bot(name))
+        return out[-1]
+    yield make
+    for b in out:
+        bots.delete(b["id"])
+
+
+def new_db(made, props=None, title="任务") -> dict:
+    db = dbs.create(title, "user", schema=dbs.default_schema()) if props is None else dbs.create(title, "user", properties=props)
+    made.append(db["id"])
+    return db
+
+
+def P(db, name):
+    return dbs.prop_of(dbs.get_db(db["id"]), name)
+
+
+# ---------- 值 ----------
+def test_values(made, bot):
+    b = bot("Writer")
+    db = new_db(made, [{"name": "数", "type": "number", "format": "cny"}, {"name": "标签", "type": "multi_select", "options": ["甲", "乙"]},
+                       {"name": "状态", "type": "status"}, {"name": "人", "type": "person"}, {"name": "日", "type": "date"},
+                       {"name": "好", "type": "checkbox"}, {"name": "网", "type": "url"}, {"name": "信", "type": "email"},
+                       {"name": "选", "type": "select"}])
+    n = lambda name, v: dbs.normalize(P(db, name), v)   # noqa: E731
+    assert n("数", "¥1,200") == 1200 and n("数", 3.5) == 3.5 and n("数", None) is None
+    with pytest.raises(ValueError):
+        n("数", "很多")
+    tags = P(db, "标签")
+    assert dbs.normalize(tags, "甲、乙") == [o["id"] for o in tags["options"]]
+    assert len(tags["options"]) == 2
+    dbs.normalize(tags, ["丙"])
+    assert [o["name"] for o in tags["options"]] == ["甲", "乙", "丙"]   # 没有的选项自动加（改的是 prop 本身）
+    st = P(db, "状态")
+    assert [(o["name"], o["group"]) for o in st["options"]] == [("未开始", "todo"), ("进行中", "doing"), ("已完成", "done")]
+    assert dbs.normalize(st, "进行中") == st["options"][1]["id"] and dbs.normalize(st, st["options"][2]["id"]) == st["options"][2]["id"]
+    with pytest.raises(ValueError, match="可选：未开始"):
+        dbs.normalize(st, "搁置")   # 状态不自动加
+    assert n("人", ["用户", "Writer"]) == ["user", f"bot:{b['id']}"] and n("人", f"bot:{b['id']}") == [f"bot:{b['id']}"]
+    with pytest.raises(ValueError, match="没有叫"):
+        n("人", "不存在的人")
+    assert n("日", "2026/11/5") == {"start": "2026-11-05"} and n("日", "2026-11-15 9:30") == {"start": "2026-11-15 09:30"}
+    assert n("日", "2026-11-15 → 2026-11-20") == {"start": "2026-11-15", "end": "2026-11-20"}
+    assert n("日", {"start": "today"}) == {"start": TODAY.isoformat()}
+    with pytest.raises(ValueError):
+        n("日", "下周")
+    with pytest.raises(ValueError, match="前面"):
+        n("日", {"start": "2026-11-20", "end": "2026-11-01"})
+    assert n("好", "是") is True and n("好", False) is None
+    assert n("网", "example.com") == "https://example.com"
+    with pytest.raises(ValueError):
+        n("信", "not-an-email")
+    with pytest.raises(ValueError, match="自动算"):
+        dbs.normalize({"key": "x", "name": "创建时间", "type": "created_time"}, 1)
+    assert dbs.display(P(db, "数"), 1200) == "¥1,200" and dbs.display(P(db, "日"), {"start": "2026-11-15", "end": "2026-11-20"}) == "2026-11-15 → 2026-11-20"
+    assert dbs.display(P(db, "人"), ["user", f"bot:{b['id']}"]) == "用户, Writer"
+
+
+# ---------- 行 ----------
+def test_rows_and_conflicts(made):
+    db = new_db(made)
+    r = dbs.add_row(db["id"], {"名称": "写周报", "状态": "进行中", "负责人": ["用户"], "日期": "2026-11-15"}, "user")
+    assert r["title"] == "写周报" and r["version"] == 1 and r["created_by"] == "user"
+    st = P(db, "状态")
+    assert r["props"] == {"status": st["options"][1]["id"], "owner": ["user"], "due": {"start": "2026-11-15"}}
+    p = library.get_page(r["id"], False)
+    assert p["kind"] == "row" and p["parent_id"] == db["id"]
+    assert pagedoc.version(r["id"], pagedoc.versions(r["id"])[0]["id"])["props"] == r["props"]   # 第一版就有属性
+    assert r["id"] not in [x["id"] for x in library.family(db["id"])["children"]]   # 行不算子页面
+
+    r2, changed = dbs.update_row(r["id"], {"状态": "已完成"}, "bot:1", base=1)
+    assert changed == ["status"] and r2["version"] == 2 and r2["props"]["status"] == st["options"][2]["id"]
+    assert dbs.update_row(r["id"], {"状态": "已完成"}, "user")[1] == []   # 没变不涨版本
+    # 用户拿着版本 1 改同一个键：冲突，告诉他现在的值；改别的键不冲突
+    with pytest.raises(dbs.Conflict) as e:
+        dbs.update_row(r["id"], {"状态": "未开始"}, "user", base=1)
+    assert e.value.items[0]["name"] == "状态" and e.value.items[0]["current"] == "已完成" and e.value.version == 2
+    assert "被「" in dbs.conflict_text(e.value) and "version=2" in dbs.conflict_text(e.value)
+    r3, changed = dbs.update_row(r["id"], {"负责人": None, "名称": "写周报（改）"}, "user", base=1)
+    assert set(changed) == {"owner", "title"} and "owner" not in r3["props"] and r3["title"] == "写周报（改）"
+    assert r3["meta"]["title"]["by"] == "user" and r3["updated_by"] == "user"
+    # 自己改过的键，自己拿旧版本再改不算冲突
+    assert dbs.update_row(r["id"], {"状态": "进行中"}, "bot:1", base=1)[1] == ["status"]
+    with pytest.raises(ValueError, match="版本号"):
+        dbs.update_row(r["id"], {"状态": "进行中"}, "user", base=99)
+
+    # 历史：回到第 2 版，属性和标题一起回去
+    v2 = next(v for v in pagedoc.versions(r["id"]) if v["version"] == 2)
+    pagedoc.restore(r["id"], v2["id"])
+    back = dbs.get_row(r["id"])
+    assert back["props"]["status"] == st["options"][2]["id"] and back["props"]["owner"] == ["user"] and back["title"] == "写周报"
+    assert back["meta"]["status"]["v"] == back["version"]
+
+    # 顺序：after=0 放最前；行不能挪出库
+    a = dbs.add_row(db["id"], {}, "user", "第二行")
+    first = dbs.add_row(db["id"], {}, "user", "最前面", after=0)
+    assert [x["title"] for x in dbs.rows(db["id"])] == ["最前面", "写周报", "第二行"]
+    with pytest.raises(ValueError, match="挪出"):
+        library.move(a["id"], None)
+    with pytest.raises(ValueError):
+        library.save_page(None, "子页面", "x", parent_id=first["id"])   # 行下面不放子页面
+    with pytest.raises(ValueError):
+        library.save_page(None, "子页面", "x", parent_id=db["id"])   # 库下面也不放
+
+
+def test_delete_db_cascades(made):
+    db = new_db(made)
+    rs = [dbs.add_row(db["id"], {}, "user", f"r{k}")["id"] for k in range(3)]
+    library.delete_page(db["id"])
+    assert all(library.get_page(r, False) is None for r in rs)
+
+
+# ---------- 筛选、排序 ----------
+def test_query(made):
+    db = new_db(made, [{"name": "状态", "type": "status"}, {"name": "分", "type": "number"}, {"name": "标签", "type": "multi_select"},
+                       {"name": "截止", "type": "date"}, {"name": "完成", "type": "checkbox"}, {"name": "备注", "type": "text"},
+                       {"name": "人", "type": "person"}])
+    y, t = (TODAY - timedelta(days=1)).isoformat(), (TODAY + timedelta(days=1)).isoformat()
+    for title, props in [("甲", {"状态": "进行中", "分": 3, "标签": "a, b", "截止": y, "完成": True, "备注": "Hello World", "人": "用户"}),
+                         ("乙", {"状态": "未开始", "分": 10, "标签": "b", "截止": t}),
+                         ("丙", {"状态": "已完成", "分": -1}),
+                         ("丁", {})]:
+        dbs.add_row(db["id"], props, "user", title)
+    db = dbs.get_db(db["id"])
+    items = dbs.rows(db["id"])
+    q = lambda f=None, s=None: [r["title"] for r in dbs.query(db, items, f, s)]   # noqa: E731
+    assert q([{"prop": "状态", "op": "eq", "value": "进行中"}]) == ["甲"]
+    assert q([{"prop": "状态", "op": "neq", "value": "进行中"}]) == ["乙", "丙", "丁"]
+    assert q([{"prop": "标签", "op": "contains", "value": "b"}]) == ["甲", "乙"]
+    assert q([{"prop": "分", "op": "gt", "value": 0}]) == ["甲", "乙"]
+    assert q([{"prop": "截止", "op": "lt", "value": "today"}]) == ["甲"]
+    assert q([{"prop": "截止", "op": "gte", "value": "今天"}]) == ["乙"]
+    assert q([{"prop": "完成", "op": "eq", "value": True}]) == ["甲"] and q([{"prop": "完成", "op": "eq", "value": False}]) == ["乙", "丙", "丁"]
+    assert q([{"prop": "备注", "op": "contains", "value": "world"}]) == ["甲"]
+    assert q([{"prop": "人", "op": "contains", "value": "用户"}]) == ["甲"]
+    assert q([{"prop": "分", "op": "empty"}]) == ["丁"] and q([{"prop": "标签", "op": "not_empty"}]) == ["甲", "乙"]
+    assert q([{"prop": "名称", "op": "eq", "value": "丙"}]) == ["丙"]
+    assert q([{"prop": "分", "op": "gte", "value": 0}, {"prop": "标签", "op": "contains", "value": "a"}]) == ["甲"]   # 都要满足
+    assert q(s=[{"prop": "分", "desc": True}]) == ["乙", "甲", "丙", "丁"]   # 空的在最后
+    assert q(s=[{"prop": "状态"}]) == ["乙", "甲", "丙", "丁"]   # 按选项的顺序
+    assert q(s=[{"prop": "名称", "desc": True}]) == ["甲", "乙", "丙", "丁"]   # 文字按码位
+    with pytest.raises(ValueError, match="没有属性"):
+        q([{"prop": "不存在", "op": "eq", "value": 1}])
+    with pytest.raises(ValueError, match="没有选项"):
+        q([{"prop": "状态", "op": "eq", "value": "搁置"}])
+
+    out = dbs.tool_query({"db_id": db["id"], "filter": [{"prop": "分", "op": "gt", "value": 0}], "sort": [{"prop": "分"}],
+                          "props": ["分"]})
+    lines = out.splitlines()
+    assert "共 4 行，符合条件的 2 行" in lines[0] and lines[1] == "| 行 | 版本 | 名称 | 分 |" and "| 甲 | 3 |" in lines[3]
+    assert "没有符合条件的行" in dbs.tool_query({"db_id": db["id"], "filter": [{"prop": "分", "op": "gt", "value": 100}]})
+    assert "没有属性" in dbs.tool_query({"db_id": db["id"], "props": ["不存在"]})
+    assert "不是数据库" in dbs.tool_query({"db_id": items[0]["id"]})
+
+
+# ---------- 表结构 ----------
+def test_schema_changes(made):
+    db = new_db(made, [{"name": "备注", "type": "text"}, {"name": "标签", "type": "multi_select", "options": ["a", "b"]},
+                       {"name": "分", "type": "number"}, {"name": "级", "type": "select", "options": ["高", "低"]}])
+    r = dbs.add_row(db["id"], {"备注": "紧急", "标签": "a, b", "分": 7, "级": "高"}, "user", "行")
+    db = dbs.change_schema(db["id"], [{"op": "add", "name": "完成", "type": "checkbox"}, {"op": "update", "prop": "备注", "name": "说明"},
+                                      {"op": "update", "prop": "说明", "type": "select"}, {"op": "update", "prop": "标签", "type": "select"},
+                                      {"op": "update", "prop": "分", "type": "text"}])
+    row = dbs.get_row(r["id"])
+    vals = {p["name"]: dbs.display(p, dbs.value_of(row, p)) for p in db["schema"]}
+    assert vals == {"名称": "行", "说明": "紧急", "标签": "a", "分": "7", "级": "高", "完成": ""}   # 文字变单选加了选项，多选变单选留第一个
+    assert [o["name"] for o in dbs.prop_of(db, "说明")["options"]] == ["紧急"]
+    # 改选项：去掉的选项从各行清掉；改成数字转不了的清空
+    db = dbs.change_schema(db["id"], [{"op": "update", "prop": "级", "options": ["低", "中"]}, {"op": "update", "prop": "说明", "type": "number"}])
+    row = dbs.get_row(r["id"])
+    assert "级" not in [p["name"] for p in db["schema"] if dbs.value_of(row, p)] and dbs.value_of(row, dbs.prop_of(db, "说明")) is None
+    assert [o["name"] for o in dbs.prop_of(db, "级")["options"]] == ["低", "中"]
+    # 删属性：值也清掉；看板按它分列的退回别的单选
+    views = [{"id": "v1", "name": "表格", "type": "table", "hidden": ["p0"]}, {"id": "b", "name": "看板", "type": "board", "group_by": dbs.prop_of(db, "标签")["key"]}]
+    dbs.set_views(db["id"], views)
+    db = dbs.change_schema(db["id"], [{"op": "delete", "prop": "标签"}])
+    assert dbs.prop_of(db, "标签") is None and dbs.get_db(db["id"])["views"][1]["group_by"] == dbs.prop_of(db, "级")["key"]
+    db = dbs.change_schema(db["id"], [{"op": "delete", "prop": "级"}])
+    assert dbs.get_db(db["id"])["views"][1]["type"] == "table"   # 没有能分列的属性了
+    for bad, msg in [([{"op": "delete", "prop": "名称"}], "不能删"), ([{"op": "add", "name": "说明", "type": "text"}], "已经有"),
+                     ([{"op": "add", "name": "x", "type": "formula"}], "不认识"), ([{"op": "update", "prop": "完成", "options": ["a"]}], "没有选项"),
+                     ([{"op": "add", "name": "ok", "type": "text"}, {"op": "delete", "prop": "nope"}], "没有属性")]:
+        with pytest.raises(ValueError, match=msg):
+            dbs.change_schema(db["id"], bad)
+    assert dbs.prop_of(dbs.get_db(db["id"]), "ok") is None   # 有一个不行整批不做
+    assert dbs.prop_of(dbs.change_schema(db["id"], [{"op": "add", "name": "人", "type": "人员"}]), "人")["type"] == "person"   # 中文的类型名也认
+
+
+def test_views(made):
+    db = new_db(made)
+    assert [(v["name"], v["type"], v.get("group_by")) for v in db["views"]] == [("表格", "table", None), ("看板", "board", "status")]
+    for bad in ([], [{"type": "gallery"}], [{"type": "board", "group_by": "due"}],
+                [{"type": "table", "filter": [{"prop": "status", "op": "like"}]}]):
+        with pytest.raises(ValueError):
+            dbs.set_views(db["id"], bad)
+    db = dbs.set_views(db["id"], [{"id": "v1", "name": "  我的  ", "type": "table", "sort": [{"prop": "due", "desc": True}, {"prop": "nope"}],
+                                   "hidden": ["title", "owner"], "widths": {"due": 9999}}])
+    v = db["views"][0]
+    assert v["name"] == "我的" and v["sort"] == [{"prop": "due", "desc": True}] and v["hidden"] == ["owner"] and v["widths"] == {"due": 800}
+
+
+# ---------- 工具、锁定、read_page ----------
+def test_tools(made, bot):
+    b = bot("Nova2")
+    out, ev = dbs.tool_create(b["id"], {"title": "会议", "properties": [{"name": "时间", "type": "date"}, {"name": "类型", "type": "select", "options": ["周会"]}]})
+    db_id = ev["db_id"]
+    made.append(db_id)
+    assert out.startswith(f"已建数据库 #{db_id}") and "类型（单选：周会）" in out
+    assert library.get_page(db_id, False)["bot_id"] == b["id"]
+    out, ev = dbs.tool_add(b["id"], {"db_id": db_id, "rows": [{"title": "周会", "props": {"时间": "2026-11-16", "类型": "周会"}, "content": "## 议程"},
+                                                             {"title": "复盘", "props": {"类型": "复盘会"}}, {"title": "坏的", "props": {"时间": "下周"}}]})
+    assert "加了 2 行" in out and "第 3 行没加" in out and len(ev["rows"]) == 2
+    rid = ev["rows"][0]
+    assert [o["name"] for o in dbs.prop_of(dbs.get_db(db_id), "类型")["options"]] == ["周会", "复盘会"]   # 自动加的选项存下来了
+    assert dbs.get_row(rid)["created_by"] == f"bot:{b['id']}"
+    text = pagedoc.render(rid)
+    assert f"数据库《会议》#{db_id} 的一行" in text and "时间：2026-11-16" in text and "## 议程" in text
+    text = library.tool_read_page({"page_id": db_id})
+    assert text.startswith("数据库《会议》") and "| 周会 |" in text and "db_update" in text
+    out, ev = dbs.tool_update(b["id"], {"rows": [{"row_id": rid, "props": {"类型": "复盘会"}, "version": 1}, {"row_id": 999999, "props": {}}]})
+    assert "改了 类型，现在是版本 2" in out and "没有这一行" in out and ev == {"db_id": db_id, "rows": [rid]}
+    out, _ = dbs.tool_update("user", {"rows": [{"row_id": rid, "props": {"类型": "周会"}, "version": 1}]})
+    assert "被「Nova2」改成了：复盘会" in out
+    out, ev = dbs.tool_schema(b["id"], {"db_id": db_id, "ops": [{"op": "add", "name": "纪要人", "type": "person"}]})
+    assert "纪要人（人员）" in out and ev
+    # 编辑、整页保存数据库页面都不行；行的正文能 edit_page
+    assert "数据库" in pagedoc.tool_edit(b["id"], {"page_id": db_id, "version": 1, "ops": [{"op": "append", "markdown": "x"}]})[0]
+    assert "数据库" in library.tool_save_page(b["id"], {"page_id": db_id, "title": "x", "content": "y"})
+    v = dbs.get_row(rid)["version"]
+    assert pagedoc.tool_edit(b["id"], {"page_id": rid, "version": v, "ops": [{"op": "append", "markdown": "- 第一项"}]})[0].startswith("已改")
+    assert dbs.get_row(rid)["props"]   # 改正文不动属性
+    # 锁定的库：Bot 只能读
+    library.update_page(db_id, locked=True)
+    assert "锁定" in dbs.tool_add(b["id"], {"db_id": db_id, "rows": [{"title": "x"}]})[0]
+    assert "锁定" in dbs.tool_update(b["id"], {"rows": [{"row_id": rid, "props": {"类型": "周会"}}]})[0]
+    assert "锁定" in dbs.tool_schema(b["id"], {"db_id": db_id, "ops": [{"op": "delete", "prop": "时间"}]})[0]
+    assert "锁定" in pagedoc.tool_edit(b["id"], {"page_id": rid, "version": dbs.get_row(rid)["version"], "ops": [{"op": "append", "markdown": "x"}]})[0]
+    assert "周会" in dbs.tool_query({"db_id": db_id}) and "已锁定" in dbs.tool_query({"db_id": db_id})
+    # 默认的属性
+    out, ev = dbs.tool_create(b["id"], {"title": "默认", "title_name": "任务"})
+    made.append(ev["db_id"])
+    assert "任务（名称）、状态（状态：未开始 / 进行中 / 已完成）、负责人（人员）、日期（日期）" in out
+
+
+# ---------- 接口、事件、分享、搜索 ----------
+async def test_api(made, events):
+    async with http() as c:
+        r = await c.post("/api/dbs", json={"title": "看板"})
+        db = r.json()
+        made.append(db["id"])
+        assert [p["name"] for p in db["schema"]] == ["名称", "状态", "负责人", "日期"] and db["rows"] == [] and db["view"] == "v1"
+        assert any(p["id"] == db["id"] and p["kind"] == "db" for p in (await c.get("/api/pages")).json())
+        st = db["schema"][1]["options"]
+        row = (await c.post(f"/api/dbs/{db['id']}/rows", json={"title": "做设计", "props": {"status": st[0]["id"]}})).json()
+        assert row["props"] == {"status": st[0]["id"]} and row["version"] == 1
+        assert not any(p["id"] == row["id"] for p in (await c.get("/api/pages")).json())   # 行不在页面列表里
+        assert any(e["db_id"] == db["id"] and row["id"] in e["rows"] for e in events.of("db_changed"))
+        r = await c.patch(f"/api/dbs/{db['id']}/rows/{row['id']}", json={"props": {"status": st[1]["id"], "title": "做设计稿"}, "version": 1})
+        assert r.status_code == 200 and r.json()["version"] == 2 and r.json()["title"] == "做设计稿"
+        dbs.update_row(row["id"], {"status": st[2]["id"]}, "bot:1")
+        r = await c.patch(f"/api/dbs/{db['id']}/rows/{row['id']}", json={"props": {"status": st[0]["id"]}, "version": 2})
+        assert r.status_code == 409 and r.json()["detail"]["conflicts"][0]["current"] == "已完成"
+        assert (await c.patch(f"/api/dbs/{db['id']}/rows/{row['id']}", json={"props": {"nope": 1}})).status_code == 400
+        r2 = (await c.post(f"/api/dbs/{db['id']}/rows", json={"title": "第二", "after": 0})).json()
+        assert [x["id"] for x in (await c.get(f"/api/dbs/{db['id']}")).json()["rows"]] == [r2["id"], row["id"]]
+        await c.post(f"/api/dbs/{db['id']}/rows/{r2['id']}/move", json={"after": row["id"]})
+        got = (await c.get(f"/api/dbs/{db['id']}")).json()
+        assert [x["id"] for x in got["rows"]] == [row["id"], r2["id"]] and got["total"] == 2
+        r = await c.patch(f"/api/dbs/{db['id']}/schema", json={"ops": [{"op": "add", "name": "优先级", "type": "select", "options": ["高", "低"]}]})
+        assert r.json()["schema"][-1]["name"] == "优先级" and any(e.get("schema") for e in events.of("db_changed"))
+        views = got["views"] + [{"name": "进行中", "type": "table", "filter": [{"prop": "status", "op": "eq", "value": st[2]["id"]}]}]
+        got = (await c.put(f"/api/dbs/{db['id']}/views", json={"views": views, "view": None})).json()
+        vid = got["views"][-1]["id"]
+        assert [x["id"] for x in (await c.get(f"/api/dbs/{db['id']}", params={"view": vid})).json()["rows"]] == [row["id"]]
+        # 分享：只读的表格
+        token = (await c.post(f"/api/pages/{db['id']}/share", json={"on": True})).json()["share_token"]
+        shared = (await c.get(f"/api/shared/{token}")).json()
+        assert shared["format"] == "markdown" and shared["content"].startswith("| 名称 | 状态 | 负责人 | 日期 | 优先级 |") and "| 做设计稿 | 已完成 |" in shared["content"]
+        # 按段改的接口不收数据库；删一行
+        assert (await c.post(f"/api/pages/{db['id']}/blocks", json={"version": 1, "ops": []})).status_code == 400
+        assert (await c.delete(f"/api/dbs/{db['id']}/rows/{r2['id']}")).status_code == 200
+        assert (await c.get(f"/api/dbs/{db['id']}")).json()["total"] == 1
+        assert (await c.get(f"/api/dbs/{row['id']}")).status_code == 404
+        assert (await c.delete(f"/api/dbs/{db['id']}/rows/{r2['id']}")).status_code == 404
+
+
+async def test_search(made):
+    db = new_db(made, [{"name": "客户", "type": "select"}])
+    r = dbs.add_row(db["id"], {"客户": "猕猴桃果业"}, "user", "续约")
+    hits = await search.search("猕猴桃果业", None, ("page",))
+    assert any(h["ref"] == r["id"] for h in hits)
