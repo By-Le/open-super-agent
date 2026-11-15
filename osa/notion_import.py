@@ -487,10 +487,17 @@ class Import:
         plain = [v for v in views if not v.get("filter") and not v.get("filters")]   # 带筛选的视图查不全
         view = (plain or views or [{}])[0].get("url")
         if view:
-            got = json.loads(await call("notion-query-data-sources", {"data": {"mode": "view", "view_url": view}}))
-            if got.get("has_more"):
-                self.note(f"「{d['title']}」行太多，只导了前 {len(got.get('results') or [])} 行")
-            return got.get("results") or []
+            rows, cursor = [], None
+            while True:   # 一次最多给 100 行，has_more 时接着 next_cursor 往下取
+                q = {"mode": "view", "view_url": view, **({"start_cursor": cursor} if cursor else {})}
+                got = json.loads(await call("notion-query-data-sources", {"data": q}))
+                rows += got.get("results") or []
+                cursor = got.get("next_cursor")
+                if not got.get("has_more") or not cursor:
+                    return rows
+                if len(rows) >= dbs.MAX_ROWS:
+                    self.note(f"「{d['title']}」超过 {dbs.MAX_ROWS} 行，后面的没导")
+                    return rows[:dbs.MAX_ROWS]
         src = d["sources"][0]["url"]
         rows, offset = [], 0
         while True:

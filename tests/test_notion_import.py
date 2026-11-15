@@ -116,6 +116,9 @@ class FakeNotion:
             return json.dumps({"results": [{"id": "user://abc", "name": "Kada"}]})
         if tool == "notion-query-data-sources":
             assert args["data"]["mode"] == "view" and args["data"]["view_url"] == "view://x"   # 按视图查，不用 SQL（免费版有限额）
+            if not args["data"].get("start_cursor"):   # 分两页给
+                return json.dumps({"results": [], "has_more": True, "next_cursor": "c2"})
+            assert args["data"]["start_cursor"] == "c2"
             rows = [{"url": f"https://app.notion.com/{R2}", "createdTime": "2026-10-14 07:23:25Z", "标题": "写周报", "编号": "7", "状态": self.status[R2],
                      "接手人": "Forge", "date:截止日期:start": "2026-11-20", "date:截止日期:end": None, "date:截止日期:is_datetime": 0,
                      "要": "__YES__", "分": "3", "产出位置": f'见 <mention url="https://app.notion.com/p/{R1}">做设计</mention>', "人": '["user://abc"]'},
