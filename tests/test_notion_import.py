@@ -49,6 +49,8 @@ def test_to_markdown():
         f'见 <mention url="https://app.notion.com/p/{"a" * 32}" type="database">任务卡</mention>，外面的 <mention url="https://app.notion.com/p/{"b" * 32}">别处</mention>',
         f"原文链接 https://app.notion.com/p/{'a' * 32} 和 [文](https://www.notion.so/x-{'a' * 32})",
         '日期 <date start="2026-04-24" start-time="11:35" time-zone="Asia/Shanghai" /> · <mention-user url="user://1">Kada</mention-user>',
+        f'总页见 <mention url="https://app.notion.com/p/{"a" * 32}" />，另见 <mention url="https://app.notion.com/p/{"b" * 32}">别处二</mention>。',
+        "提示词：0–5s: <wooden door creaking open> <birds>，主角来自 <<<image_1>>>，a < b",
         "## 标题 {color=\"blue\"}",
         '<callout icon="⚠️" color="yellow_bg">',
         "<b>结论</b>：注意",
@@ -60,14 +62,16 @@ def test_to_markdown():
         f'<page url="https://app.notion.com/p/{"a" * 32}">', "子页面", "</page>",
         f'<database url="{{{{https://app.notion.com/p/{"c" * 32}}}}}" inline="true">', "内嵌库", "</database>",
     ])
-    md = to_markdown(src, link)
+    md = to_markdown(src, link, lambda url: "任务卡库" if notion_import.nid(url) == "a" * 32 else None)
     assert "**唯一账本 = 任务卡**（见下）" in md
     assert "； **「已发布」** 的才算" in md or "；**「已发布」** 的才算" in md   # 标点挨着时补空格，不然认不出粗体
     assert "*斜体*、~~划掉~~、红字" in md
     assert '`codex exec --add-dir <skill目录> "<提示词>" </dev/null`' in md and "``a`b``" in md
     assert "[任务卡](/library/pages/7)" in md and f"[别处](https://app.notion.com/p/{'b' * 32})" in md
-    assert "原文链接 [页面](/library/pages/7) 和 [文](/library/pages/7)" in md
+    assert "原文链接 [任务卡库](/library/pages/7) 和 [文](/library/pages/7)" in md
     assert "日期 2026-04-24 11:35 · @Kada" in md and "## 标题\n" in md
+    assert f"总页见 [任务卡库](/library/pages/7)，另见 [别处二](https://app.notion.com/p/{'b' * 32})。" in md   # 没写标题的提及不吞掉后面的
+    assert "0–5s: \\<wooden door creaking open> \\<birds>，主角来自 \\<\\<\\<image_1>>>，a < b" in md
     assert "> [!WARNING]\n> **结论**：注意" in md
     assert "<details><summary>展开看</summary>\n\n里面一行\n\n</details>" in md
     assert "| 名 | 值\\|竖线 |\n| --- | --- |\n| a | 1 |" in md

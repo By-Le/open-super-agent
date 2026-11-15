@@ -159,8 +159,9 @@ def _table(html: str) -> str:
     return "\n".join(["| " + " | ".join(head) + " |", "|" + " --- |" * n] + ["| " + " | ".join(r) + " |" for r in body])
 
 
-def to_markdown(content: str, link=lambda url: None) -> str:
-    """Notion 正文 → Markdown。link(网址) 给资料库里的地址（导入了的页面），None 就留原来的网址。"""
+def to_markdown(content: str, link=lambda url: None, name=lambda url: None) -> str:
+    """Notion 正文 → Markdown。link(网址) 给资料库里的地址（导入了的页面），None 就留原来的网址；
+    name(网址) 给那个页面的标题（没写标题的提及用它）。"""
     keep: list[str] = []
 
     def protect(s: str) -> str:
@@ -206,9 +207,10 @@ def to_markdown(content: str, link=lambda url: None) -> str:
     text = re.sub(r"<(?:empty-block|p|table_of_contents|breadcrumb)\s*/>", "", text)
     text = re.sub(r"[ \t]*\{(?:color|toggle)=\"[^\"]*\"\}[ \t]*$", "", text, flags=re.M)
     # 行内
+    # 先换没写标题的（<mention url=… />），不然会被当成开头、一直匹配到后面别的提及的结尾
+    text = re.sub(r'<mention(?:-page|-database)?\s+url="\{*([^"}]+)\}*"[^>]*/>', lambda m: f"[{name(m.group(1)) or '页面'}]({href(m.group(1))})", text)
     text = re.sub(r'<mention(?:-page|-database)?\s+url="\{*([^"}]+)\}*"[^>]*>(.*?)</mention(?:-page|-database)?>',
-                  lambda m: f"[{m.group(2).strip() or '无标题'}]({href(m.group(1))})", text, flags=re.S)
-    text = re.sub(r'<mention(?:-page|-database)?\s+url="\{*([^"}]+)\}*"[^>]*/>', lambda m: f"[页面]({href(m.group(1))})", text)
+                  lambda m: f"[{m.group(2).strip() or name(m.group(1)) or '无标题'}]({href(m.group(1))})", text, flags=re.S)
     text = re.sub(r"<mention-user[^>]*>(.*?)</mention-user>", lambda m: f"@{m.group(1).strip()}", text, flags=re.S)
     text = re.sub(r"<mention-user[^>]*/>", "", text)
 
@@ -227,8 +229,10 @@ def to_markdown(content: str, link=lambda url: None) -> str:
     text = re.sub(r"<br\s*/?>", "<br>", text)
     # 链接：Notion 的网址换成资料库里的
     text = re.sub(r"\]\((https?://[^)\s]*notion\.(?:so|site|com)[^)\s]*)\)", lambda m: f"]({href(m.group(1))})", text)
-    text = re.sub(r"(?<![(<\[])(https?://(?:www\.|app\.)?notion\.(?:so|com)/[^\s)<>\]]+)",
-                  lambda m: f"[页面]({l})" if (l := link(m.group(1))) else m.group(1), text)
+    text = re.sub(r'(?<![(<\["=])(https?://(?:www\.|app\.)?notion\.(?:so|com)/[^\s)<>\]"]+)',
+                  lambda m: f"[{name(m.group(1)) or '页面'}]({l})" if (l := link(m.group(1))) else m.group(1), text)
+    # 剩下的 < 是正文里的字（提示词里的 <门开的声音>、<<<image_1>>>）：转义，不然会被当成 HTML
+    text = re.sub(r"<(?=[A-Za-z!?/<])(?!/?(?:br|details|summary)\b)(?!https?:)", r"\\<", text)
     text = re.sub(r"\x00(\d+)\x00", lambda m: keep[int(m.group(1))], text)
     text = re.sub(r"\n{3,}", "\n\n", text)
     return text.strip("\n") + "\n" if text.strip() else ""
@@ -353,7 +357,7 @@ def _inline(v: str, link) -> str:
     """属性里的文字也带 Notion 的标记（<mention>、加粗）：转成 Markdown，链接换成资料库里的，合成一行。"""
     if "<" not in v and "notion." not in v:
         return v
-    return " ".join(to_markdown(v, link).split("\n")).strip()
+    return " ".join(to_markdown(v, link).split("\n")).strip().replace("\\<", "<")   # 属性是纯文字，不用转义
 
 
 # ---------- 导入 ----------
@@ -407,6 +411,16 @@ class Import:
 
     def note(self, s: str):
         self.log.append(s)
+
+    def name(self, url: str) -> str | None:
+        n = nid(url)
+        if not n:
+            return None
+        n = self.alias.get(n, n)
+        if n in self.nodes:
+            return self.nodes[n]["title"] or None
+        pid = (self.rows.get(n) or {}).get("page_id") or mapped(n)
+        return (library.get_page(pid, False) or {}).get("title") or None if pid else None
 
     def link(self, url: str) -> str | None:
         n = nid(url)
@@ -545,7 +559,7 @@ class Import:
         for n in self.order:
             d = self.nodes[n]
             if d["type"] == "page":
-                self._write(d["page_id"], d["title"], to_markdown(d["content"], self.link))
+                self._write(d["page_id"], d["title"], to_markdown(d["content"], self.link, self.name))
         self.step = "relations"
         self._relations()
 
@@ -634,7 +648,7 @@ class Import:
             if fields:
                 conn.execute(f"update pages set {', '.join(fields)} where id=?", (*args, row_id))
                 conn.commit()
-            self._write(row_id, title, to_markdown(page["content"], self.link), "row")
+            self._write(row_id, title, to_markdown(page["content"], self.link, self.name), "row")
         # 自动编号：前缀用 Notion 显示的（TASK-），下一个号接着最大的
         db = dbs.get_db(d["page_id"])
         for p in db["schema"]:
