@@ -68,7 +68,9 @@ export const SlashCommands = Extension.create<object, Storage>({
   },
 })
 
-/** 斜杠菜单：贴着光标显示，下面放不下就往上翻。 */
+/** 斜杠菜单：贴着光标显示，下面放不下就往上翻。
+ *  “放不下”按看得见的区域（visualViewport）算：手机上键盘弹起时它比页面矮一大截。往上翻用 top + translateY(-100%)，
+ *  不用 bottom：fixed 的 bottom 是从整个页面的底边量的，键盘挡着的那块也算在里面，菜单会落到键盘后面。 */
 export function SlashMenu({ editor }: { editor: Editor }) {
   const [state, setState] = useState<SlashState>(null)
   const [cur, setCur] = useState(0)
@@ -91,9 +93,13 @@ export function SlashMenu({ editor }: { editor: Editor }) {
   }, [editor])
   useLayoutEffect(() => { box.current?.querySelector('.on')?.scrollIntoView({ block: 'nearest' }) }, [cur, state])
   if (!state?.rect) return null
-  const vh = window.visualViewport?.height ?? window.innerHeight
-  const up = state.rect.bottom + 300 > vh && state.rect.top > 300
-  const style = up ? { left: state.rect.left, bottom: vh - state.rect.top + 4 } : { left: state.rect.left, top: state.rect.bottom + 4 }
+  const vv = window.visualViewport
+  const visTop = vv?.offsetTop ?? 0, visBottom = vv ? vv.offsetTop + vv.height : window.innerHeight
+  const below = visBottom - state.rect.bottom - 8, above = state.rect.top - visTop - 8
+  const up = below < 300 && above > below
+  const left = Math.max(4, Math.min(state.rect.left, window.innerWidth - 224))
+  const maxHeight = Math.max(120, Math.min(300, up ? above : below))
+  const style = up ? { left, top: state.rect.top - 4, transform: 'translateY(-100%)', maxHeight } : { left, top: state.rect.bottom + 4, maxHeight }
   return (
     <div className="slash-menu" ref={box} style={style} data-no-swipe="" onMouseDown={e => e.preventDefault()}>
       {state.items.map((it, k) => (
@@ -112,6 +118,8 @@ export const safeHref = (href: string) => {
   return LINK_OK.test(h) ? h : /^[\w-]+(\.[\w-]+)+/.test(h) ? 'https://' + h : ''
 }
 
+const TOUCH = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches
+
 /** 选中文字时的格式菜单：粗体、斜体、删除线、行内代码、链接。 */
 export function Toolbar({ editor, onComment }: { editor: Editor; onComment?: () => void }) {
   const [link, setLink] = useState<string | null>(null)
@@ -126,7 +134,8 @@ export function Toolbar({ editor, onComment }: { editor: Editor; onComment?: () 
       // 焦点去了别处（比如点“评论”以后在评论框里打字）就收起；填链接的输入框在菜单里，算菜单自己的焦点
       shouldShow={({ editor: e, state, view, element }) => e.isEditable && !state.selection.empty && !e.isActive('codeBlock') && !e.isActive('rawBlock')
         && (view.hasFocus() || element.contains(document.activeElement))}
-      options={{ placement: 'top', onHide: () => setLink(null) }}>
+      // 手机上离选区远一点：iOS 选区两头的拖动把手伸出来一截，贴太近一拖把手就点到了菜单上的按钮
+      options={{ placement: 'top', offset: TOUCH ? 20 : 8, onHide: () => setLink(null) }}>
       {link !== null ? (
         <span className="doc-link-box">
           <input autoFocus value={link} placeholder="https://" onChange={e => setLink(e.target.value)}   // i18n-ignore
