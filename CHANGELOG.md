@@ -3,6 +3,8 @@
 格式参照 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
 ## [未发布]
+
+## [0.23.0] - 2026-11-15
 ### 新增
 - **资料库里能建数据库**：Notion 那样的多维表，适合任务看板、会议列表、客户名单。属性有文本、数字、单选、多选、状态、日期、人员、勾选、网址、邮箱、电话、文件和自动算的创建/编辑时间、人，还有公式（写法参考 Notion）、关联（可以双向）、汇总、自动编号、按钮（点了改属性、写评论叫 Bot）；能看成表格或看板（按状态或单选分列，拖动换列，手机上长按拖或点卡片的“⋯”），每个视图有自己的筛选、排序、显示的列；上万行的库网页上往下滚接着加载；每一行也是页面，能写正文、评论、看历史（历史里看得到每一版属性改了什么，能只恢复一个属性）。Bot 有 `db_create`、`db_query`、`db_add`、`db_update`、`db_schema` 五个工具（外部 Agent 的 MCP 也有），改属性按属性查冲突；删列、改类型、改选项会清掉的值和视图的改动都记在库的“历史”里，能一条条撤销。写法见 [配置](docs/configuration.md#数据库)
 - **资料库有回收站**：删掉的页面、数据库、行连同版本历史和评论放 30 天，能放回原处
@@ -668,7 +670,8 @@
 - 按角色、任务和天统计费用，区分高峰和空闲价格；每日预算
 - MCP 应用接入；写操作前的确认卡片
 
-[未发布]: https://github.com/kadaliao/open-super-agent/compare/v0.22.0...HEAD
+[未发布]: https://github.com/kadaliao/open-super-agent/compare/v0.23.0...HEAD
+[0.23.0]: https://github.com/kadaliao/open-super-agent/compare/v0.22.0...v0.23.0
 [0.22.0]: https://github.com/kadaliao/open-super-agent/compare/v0.21.1...v0.22.0
 [0.21.1]: https://github.com/kadaliao/open-super-agent/compare/v0.21.0...v0.21.1
 [0.21.0]: https://github.com/kadaliao/open-super-agent/compare/v0.20.0...v0.21.0
