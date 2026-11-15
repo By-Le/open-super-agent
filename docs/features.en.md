@@ -75,6 +75,7 @@ The README lists the highlights; this is the full list. For setup see [Configura
   Each block shows which Bot wrote it; a Bot's edits appear live, and you're asked to choose when you and a Bot change the same block. Only formats Markdown can store are offered, so a Bot's original text is never rewritten.
 - **Subpages**: pages can contain subpages, the library list is a collapsible tree, and pages can be moved under other pages.
 - **Comments wake Bots**: comment on a block and the Bot that wrote it makes the change, replies in the thread and resolves it when done. You can also @ another Bot or ask nobody.
+- **Outside agents can write too**: connect Claude Code or Codex to the library over MCP (create a token in Settings → External agents). They can search, read and edit pages block by block and reply to comments; what they write is signed with their name and shows up live. See [Configuration](configuration.md#让外面的-agent-读写资料库) (Chinese).
 - **Each Bot's library**: the Library tab in the side panel lists everything that Bot has handed you, newest first: pages, files it sent, images it drew and links in its replies. Filter by kind, search, open the original, and jump to the task that made it.
 - **Images and files**:
   - Attach files in chat: images show as thumbnails, other files as cards.

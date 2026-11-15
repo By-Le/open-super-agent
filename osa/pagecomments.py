@@ -200,8 +200,10 @@ COMMENT_PAGE = {"type": "function", "function": {
         "required": ["page_id"]}}}
 
 
-def tool_comment(bot_id: int, args: dict) -> tuple[str, int | None]:
-    """comment_page：返回 (给模型的结果, 改了评论的页面编号)。"""
+def tool_comment(who: int | str, args: dict) -> tuple[str, int | None]:
+    """comment_page：返回 (给模型的结果, 改了评论的页面编号)。who 是 Bot 的编号，或者作者（agent:<id>，外部 Agent）。
+    都走 add，不叫醒任何 Bot。"""
+    by = who if isinstance(who, str) else f"bot:{who}"
     pid = args.get("page_id")
     p = library.get_page(pid, False) if isinstance(pid, int) else None
     if not p:
@@ -214,7 +216,7 @@ def tool_comment(bot_id: int, args: dict) -> tuple[str, int | None]:
     try:
         out = []
         if text:
-            c = add(pid, f"bot:{bot_id}", text, args.get("block"), None, reply_to)
+            c = add(pid, by, text, args.get("block"), None, reply_to)
             out.append(f"已在页面 #{pid}「{p['title']}」{'回复评论 #' + str(c['parent_id']) if c['parent_id'] else '写了评论'}（#{c['id']}）")
         if args.get("resolve"):
             if reply_to is None:
@@ -226,16 +228,16 @@ def tool_comment(bot_id: int, args: dict) -> tuple[str, int | None]:
     return "；".join(out), pid
 
 
-def render(pid: int, limit_threads: int = 20) -> str:
-    """read_page 末尾附上的未处理评论（每条截 300 字，最多 limit_threads 串）。"""
-    open_ = comments(pid, open_only=True)
+def render(pid: int, limit_threads: int = 20, resolved: bool = False) -> str:
+    """read_page 末尾附上的未处理评论（每条截 300 字，最多 limit_threads 串）。resolved：已经解决的也列出来（外部 Agent 的 list_comments）。"""
+    open_ = comments(pid, open_only=not resolved)
     roots = [c for c in open_ if c["parent_id"] is None]
     if not roots:
         return ""
-    lines = [f"未处理的评论（{len(roots)}）："]
+    lines = [f"评论（{len(roots)} 串）：" if resolved else f"未处理的评论（{len(roots)}）："]
     for r in roots[:limit_threads]:
         where = f"⟦{r['block_id']}⟧ " if r["block_id"] else "整页 "
-        lines.append(f"#{r['id']} {where}{pagedoc.name_of(r['by'])}：{r['text'][:300]}")
+        lines.append(f"#{r['id']} {where}{'（已解决）' if r['resolved'] else ''}{pagedoc.name_of(r['by'])}：{r['text'][:300]}")
         lines += [f"  #{c['id']} {pagedoc.name_of(c['by'])}：{c['text'][:300]}" for c in open_ if c["parent_id"] == r["id"]]
     if len(roots) > limit_threads:
         lines.append(f"…还有 {len(roots) - limit_threads} 串没显示")

@@ -47,8 +47,10 @@ export default function Library() {
   )
 }
 
-function BotTag({ id }: { id: number | null }) {
+function BotTag({ id, agent }: { id: number | null; agent?: number | null }) {
   const bot = useStore(s => s.bots.find(b => b.id === id))
+  const ext = useStore(s => s.agents.find(a => a.id === agent))   // 外部 Agent 建的（osa/agentapi.py）
+  if (!id && agent) return <span className="muted small">{ext?.name || t('一个外部 Agent')}</span>
   if (!id) return <span className="muted small">{t('你建的')}</span>
   if (!bot) return <span className="muted small">{t('已删除的 Bot')}</span>
   return <span className="bot-tag"><BotAvatar avatar={bot.avatar} size={16} />{bot.name}</span>
@@ -104,7 +106,7 @@ function Pages() {
         <span className="lib-icon">{p.app ? '▣' : p.format === 'html' ? '◧' : '▤'}</span>
         <span className="lib-main">
           <b>{p.pinned && <span className="pin-mark">📌 </span>}{p.title}</b>
-          <span className="lib-meta"><BotTag id={p.bot_id} /> · {when(p.updated)}{p.app && <span className="tag">{t('小应用')}</span>}{p.share_token && <span className="tag">{t('已分享')}</span>}</span>
+          <span className="lib-meta"><BotTag id={p.bot_id} agent={p.agent_id} /> · {when(p.updated)}{p.app && <span className="tag">{t('小应用')}</span>}{p.share_token && <span className="tag">{t('已分享')}</span>}</span>
         </span>
       </>} />}
       {moving && <MoveDialog page={moving} list={list} onClose={() => setMoving(null)} />}
@@ -177,7 +179,7 @@ function PageView({ id }: { id: number }) {
             <button className="link-btn" onClick={() => openLibrary()}>{t('资料库')}</button>
             {p.ancestors.map(a => <span key={a.id}> / <button className="link-btn" onClick={() => openLibrary(a.id)}>{a.title}</button></span>)}
           </div>}
-          {p.format !== 'html' && <div className="page-info muted small"><BotTag id={p.bot_id} /> · {t('更新于 {time}', { time: when(p.updated) })}{p.task_id ? ' · ' + t('来自任务 #{id}', { id: p.task_id }) : ''}
+          {p.format !== 'html' && <div className="page-info muted small"><BotTag id={p.bot_id} agent={p.agent_id} /> · {t('更新于 {time}', { time: when(p.updated) })}{p.task_id ? ' · ' + t('来自任务 #{id}', { id: p.task_id }) : ''}
             {p.share_token && <> · {t('任何拿到链接的人都能看')}</>}{p.locked && <> · {t('已锁定：Bot 只能读')}</>}</div>}
           {p.format === 'markdown'
             ? <DocPage id={id} content={p.content || ''} />

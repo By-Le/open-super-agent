@@ -3,7 +3,8 @@
 - 正文只有 pages.content 一份（Markdown）。段从正文切出来（blocks.split）；pages.block_meta 只记每段的编号、谁写的（by）、
   在哪个版本改的（v），按位置和切出来的段一一对应，带着每段的指纹（h）。指纹对不上（旧版本改过正文、恢复了旧备份）
   就按指纹对齐重建：没变的段编号不变，评论还挂在上面。重建不涨版本号、不改更新时间，搜索索引不用重做。
-- by：user（用户在网页上改的）、bot:<id>、空串（不知道是谁：旧页面里被外面改过的段）。Bot 的编号不会复用。
+- by：user（用户在网页上改的）、bot:<id>、agent:<id>（外面的 Agent，经 /mcp，见 agentapi.py）、
+  空串（不知道是谁：旧页面里被外面改过的段）。Bot 和外部 Agent 的编号都不会复用。
 - 改动按段检查冲突：要改的段在调用方读过之后（v > base）又被别人改过，就整批不写，把那几段现在的内容告诉调用方。
   没碰到的段不管：用户在上面改、Bot 在下面加，互不影响。
 - 每次提交版本号 +1，同时记一版历史（page_versions）。同一个人 10 分钟内接着改就并进同一版，免得自动保存刷出几百版。
@@ -43,6 +44,9 @@ def name_of(by: str) -> str:
     if by.startswith("bot:") and by[4:].isdigit():
         b = bots.get(int(by[4:]))
         return b["name"] if b else "已删除的 Bot"
+    if by.startswith("agent:") and by[6:].isdigit():
+        from . import agentapi
+        return f"{agentapi.name(int(by[6:])) or '已删除的'}（外部 Agent）"
     return "不知道是谁"
 
 
@@ -429,7 +433,8 @@ def render(pid: int, start: str | None = None, limit: int = READ_LIMIT) -> str:
     if not p:
         return f"没有页面 #{pid}"
     owner = bots.get(p["bot_id"]) if p.get("bot_id") else None
-    head = (f"《{p['title']}》{library.link(pid)} · 版本 {p['version']} · " + (f"「{owner['name']}」建的" if owner else "用户建的") +
+    maker = f"「{owner['name']}」建的" if owner else f"「{name_of('agent:' + str(p['agent_id']))}」建的" if p.get("agent_id") else "用户建的"
+    head = (f"《{p['title']}》{library.link(pid)} · 版本 {p['version']} · " + maker +
             f" · {time.strftime('%Y-%m-%d', time.localtime(p['updated']))} 更新" + (" · 已锁定（只有用户能改，有意见用 comment_page）" if p.get("locked") else ""))
     fam = library.family(pid)
     if fam["ancestors"] or fam["children"]:
@@ -555,8 +560,9 @@ def conflict_text(e: Conflict, head: str = "没改") -> str:
     return "\n".join(lines)
 
 
-def tool_edit(bot_id: int, args: dict) -> tuple[str, dict | None]:
-    """edit_page：返回 (给模型的结果, 提交了就是页面改动事件的内容)。"""
+def tool_edit(who: int | str, args: dict) -> tuple[str, dict | None]:
+    """edit_page：返回 (给模型的结果, 提交了就是页面改动事件的内容)。who 是 Bot 的编号，或者作者（agent:<id>，外部 Agent）。"""
+    by = who if isinstance(who, str) else f"bot:{who}"
     pid = args.get("page_id")
     p = library.get_page(pid, False) if isinstance(pid, int) else None
     if not p:
@@ -567,7 +573,7 @@ def tool_edit(bot_id: int, args: dict) -> tuple[str, dict | None]:
         return f"没改：页面 #{pid}「{p['title']}」被用户锁定了，只能读", None
     pid = p["id"]
     try:
-        res = apply(pid, args.get("version"), _bot_ops(args.get("ops")), f"bot:{bot_id}")
+        res = apply(pid, args.get("version"), _bot_ops(args.get("ops")), by)
     except Conflict as e:
         return conflict_text(e), None
     except (ValueError, TypeError) as e:
@@ -577,7 +583,7 @@ def tool_edit(bot_id: int, args: dict) -> tuple[str, dict | None]:
             + (f"、删掉 {len(res['removed'])} 段" if res["removed"] else "") + "。"
             + (f"涉及的段：{'、'.join(f'⟦{i}⟧' for i in added)}。" if added else "")
             + (f"有 {len(res['merged'])} 处相邻的段拼起来以后合成了一段。" if res["merged"] else ""))
-    return text, event(pid, res, f"bot:{bot_id}")
+    return text, event(pid, res, by)
 
 
 def event(pid: int, res: dict, by: str) -> dict:

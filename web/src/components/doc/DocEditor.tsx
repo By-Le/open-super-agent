@@ -13,14 +13,12 @@ import { HistoryPanel, HistoryView, type Version } from './history'
 import type { Row } from './diff'
 import { blocksOf } from './markdown'
 import { isPhone } from '../../swipe'
+import { useAuthors, who } from '../../authors'
 
 const when = (ts: number) => new Date(ts * 1000).toLocaleString(locale, { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
 
 export default function DocEditor({ id, fallback }: { id: number; fallback: string }) {
-  const bots = useStore(s => s.bots)
   const connected = useStore(s => s.connected)
-  const botsRef = useRef(bots)
-  botsRef.current = bots
   const [status, setStatus] = useState<Status>('saved')
   const [conflicts, setConflicts] = useState<Conflict[]>([])
   const [editing, setEditing] = useState<string | null>(null)
@@ -37,20 +35,8 @@ export default function DocEditor({ id, fallback }: { id: number; fallback: stri
   const sync = useRef<DocSync | null>(null)
   const loadComments = () => api(`/api/pages/${id}/comments`).then(setComments).catch(() => {})
 
-  const nameOf = (by: string) => {
-    const m = by.match(/^bot:(\d+)$/)
-    if (!m) return by === 'user' ? t('你') : t('有人')
-    return botsRef.current.find(b => b.id === Number(m[1]))?.name || t('已删除的 Bot')
-  }
-  const exts = useMemo(() => extensions({
-    who: by => {
-      const m = by.match(/^bot:(\d+)$/)
-      if (!m) return null
-      const b = botsRef.current.find(x => x.id === Number(m[1]))
-      return { name: b?.name || t('已删除的 Bot'), color: b?.avatar.color || 'var(--fg3)' }
-    },
-    when,
-  }), [])
+  const nameOf = useAuthors()
+  const exts = useMemo(() => extensions({ who, when }), [])   // 作者条按现在的 store 取名字（Bot 和外部 Agent，见 authors.ts）
 
   // 挂上以后再建编辑器：渲染时就建的那个会在 effect 跑之前被 useEditor 销毁重建（Tiptap 的 1 毫秒延迟销毁）
   const editor = useEditor({

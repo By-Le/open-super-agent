@@ -2,11 +2,12 @@
 // 点开一版在正文的位置显示和现在 / 和上一版的差别，或者只看这一版；能回到这一版，也能只恢复其中一段。
 // 手机上列表是整屏的：点开一版时列表收起来（不然对比被它盖在底下），对比上面有“← 历史”回到列表；左边缘右滑也是返回。
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { api, useStore } from '../../store'
+import { api } from '../../store'
 import { locale, t } from '../../i18n'
 import Markdown from '../Markdown'
 import { diffBlocks, type Row } from './diff'
 import { useBack } from '../../swipe'
+import { useAuthors } from '../../authors'
 
 export type Version = { id: number; version: number; title: string; by: string; ts_start: number; ts: number; label: string; size: number }
 type Snap = Version & { content: string; blocks?: { id: string; md: string }[] }
@@ -15,11 +16,8 @@ const when = (ts: number) => new Date(ts * 1000).toLocaleString(locale, { month:
 const clock = (ts: number) => new Date(ts * 1000).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' })
 
 function useName() {
-  const bots = useStore(s => s.bots)
-  return (by: string) => {
-    const m = by.match(/^bot:(\d+)$/)
-    return m ? bots.find(b => b.id === Number(m[1]))?.name || t('已删除的 Bot') : by === 'user' ? t('你') : t('原来的样子')
-  }
+  const nameOf = useAuthors()
+  return (by: string) => nameOf(by, t('原来的样子'))
 }
 
 const labelOf = (v: Version) => v.label === 'base' ? t('改之前的样子') : v.label.startsWith('restore:') ? t('回到了版本 {n}', { n: v.label.slice(8) }) : ''

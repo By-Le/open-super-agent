@@ -19,8 +19,9 @@ conn.execute("""create table if not exists pages(
 conn.execute("create unique index if not exists pages_token on pages(share_token)")
 _have = {r[1] for r in conn.execute("pragma table_info(pages)")}
 for _col, _type in (("app", "text"), ("block_meta", "text"), ("version", "integer default 0"), ("locked", "integer default 0"),
-                    ("parent_id", "integer"), ("pos", "real")):
-    if _col not in _have:   # block_meta / version / locked：按段编辑（pagedoc.py）；parent_id / pos：子页面和它们的顺序
+                    ("parent_id", "integer"), ("pos", "real"), ("agent_id", "integer")):
+    if _col not in _have:   # block_meta / version / locked：按段编辑（pagedoc.py）；parent_id / pos：子页面和它们的顺序；
+        # agent_id：建它的外部 Agent（agentapi.py），这时 bot_id 是空的
         conn.execute(f"alter table pages add column {_col} {_type}")
 conn.execute("""create table if not exists page_data(
   page_id integer, key text, value text, updated real, primary key(page_id, key))""")
@@ -36,15 +37,15 @@ RAW_CSP = ("sandbox allow-scripts allow-popups; default-src 'none'; script-src '
            "style-src 'unsafe-inline' https:; img-src https: data:; font-src https: data:; media-src https: data:; "
            "connect-src 'none'; frame-src 'none'; form-action 'none'")
 
-_COLS = "id, bot_id, title, format, share_token, pinned, task_id, created, updated, length(content), app, version, locked, parent_id, pos"
+_COLS = "id, bot_id, title, format, share_token, pinned, task_id, created, updated, length(content), app, version, locked, parent_id, pos, agent_id"
 
 
 # ---------- 页面 ----------
 def _page(r, content: str | None = None) -> dict:
-    i, bot_id, title, fmt, token, pinned, task_id, created, updated, size, app, version, locked, parent_id, pos = r
+    i, bot_id, title, fmt, token, pinned, task_id, created, updated, size, app, version, locked, parent_id, pos, agent_id = r
     p = {"id": i, "bot_id": bot_id, "title": title, "format": fmt, "share_token": token, "pinned": bool(pinned),
          "task_id": task_id, "created": created, "updated": updated, "size": size or 0,
-         "app": json.loads(app) if app else None, "version": version or 0, "locked": bool(locked), "parent_id": parent_id, "pos": pos or 0}
+         "app": json.loads(app) if app else None, "version": version or 0, "locked": bool(locked), "parent_id": parent_id, "pos": pos or 0, "agent_id": agent_id}
     if content is not None:
         p["content"] = content
     return p
@@ -70,7 +71,7 @@ def save_page(bot_id: int | None, title: str, content: str, fmt: str = "markdown
               pid: int | None = None, task_id: int | None = None, app=None, by: str | None = None,
               base: int | None = None, allow_empty: bool = False, parent_id: int | None = None) -> dict:
     """新建，或者给 pid 时更新内容。app 是小应用的清单（见 applets.manifest），只对 html 有效；更新时不给就保留原来的。
-    by 是谁改的（默认 bot_id 对应的 Bot，没有就是用户）。markdown 页面更新时按段对齐（pagedoc.rewrite），没变的段保留编号和作者；
+    by 是谁改的（默认 bot_id 对应的 Bot，没有就是用户；agent:<id> 是外部 Agent，新建时记进 agent_id）。markdown 页面更新时按段对齐（pagedoc.rewrite），没变的段保留编号和作者；
     给了 base（调用方读到的版本号），会覆盖掉 base 之后别人改过的段就抛 pagedoc.Conflict。allow_empty：用户新建的空白页面。
     parent_id 只在新建时有用：放在哪个页面下面（排在最后）。"""
     from . import applets, pagedoc
@@ -102,10 +103,11 @@ def save_page(bot_id: int | None, title: str, content: str, fmt: str = "markdown
             raise ValueError(i18n.t("资料库最多 {n} 个页面，先删掉一些", n=MAX_PAGES))
         if parent_id is not None:
             _check_parent(parent_id)
-        pid = conn.execute("insert into pages(bot_id, title, format, content, task_id, created, updated, app, parent_id, pos) "
-                           "values(?,?,?,?,?,?,?,?,?,?)", (bot_id, title, fmt, content, task_id, now, now,
-                                                           json.dumps(app, ensure_ascii=False) if app else None,
-                                                           parent_id, _end_pos(parent_id))).lastrowid
+        agent_id = int(by[6:]) if by.startswith("agent:") and by[6:].isdigit() else None
+        pid = conn.execute("insert into pages(bot_id, title, format, content, task_id, created, updated, app, parent_id, pos, agent_id) "
+                           "values(?,?,?,?,?,?,?,?,?,?,?)", (bot_id, title, fmt, content, task_id, now, now,
+                                                             json.dumps(app, ensure_ascii=False) if app else None,
+                                                             parent_id, _end_pos(parent_id), agent_id)).lastrowid
         conn.commit()
         if fmt == "markdown":
             pagedoc.init(pid, by)

@@ -1491,3 +1491,15 @@ textarea.newbot-role.edit { display: block; width: 100%; max-height: 360px; resi
 .ev-multi .check { margin: 4px 0; font-size: 13px; }
 .ev-tag { margin: 0 6px 0 0; }
 .routine .warn { color: #d97706; }
+
+/* 设置 → 外部 Agent（AgentTokens.tsx） */
+.agent-made { border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; margin: 10px 0 4px; background: var(--bg2); }
+.agent-made p { margin: 0 0 8px; }
+.agent-made h4 { margin: 14px 0 4px; }
+.agent-snippet { display: flex; gap: 8px; align-items: flex-start; margin: 4px 0 6px; }
+.agent-snippet pre { flex: 1; min-width: 0; margin: 0; padding: 7px 10px; border-radius: 7px; background: var(--bg); border: 1px solid var(--line);
+  font: 12px/1.5 var(--mono, ui-monospace, monospace); white-space: pre-wrap; word-break: break-all; user-select: all; }
+.agent-row { align-items: center; }
+.agent-row .chip { margin-left: 4px; }
+.agent-row-side { display: flex; gap: 10px; align-items: center; flex-shrink: 0; }
+.agent-row.revoked b { color: var(--fg3); font-weight: 500; text-decoration: line-through; }

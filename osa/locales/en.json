@@ -1241,5 +1241,11 @@
   "用户在页面上的评论": "the user's comment on a page",
   "html 页面下面不能放子页面": "HTML pages can't have subpages",
   "不能挪到它自己或者它的子页面下面": "A page can't be moved under itself or one of its subpages",
-  "页面 #{id} 不在那一层": "Page #{id} isn't at that level"
+  "页面 #{id} 不在那一层": "Page #{id} isn't at that level",
+  "给它起个名字，比如 Claude Code": "Give it a name, e.g. Claude Code",
+  "权限只能是只读或可写": "Access must be read-only or read-write",
+  "最多 {n} 个外部 Agent，先撤销一些": "At most {n} external agents. Revoke some first",
+  "没有这个外部 Agent": "No such external agent",
+  "演示服务器不开放外部 Agent": "External agents are not available on the demo server",
+  "token 不对或者已经撤销了：在 设置 → 外部 Agent 里新建一个": "Invalid or revoked token. Create a new one in Settings → External agents"
 }

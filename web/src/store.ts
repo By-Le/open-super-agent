@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from 'react'
 import { syncLang, t } from './i18n'
-import type { App, Approval, Attachment, Bot, CatalogItem, Chat, ComputerState, Message, OpenThread, Settings, Skill, Stream, Task, TaskInfo, TaskStep, Teach, TeachDraft, ThreadInfo, ThreadSummary, MacState } from './types'
+import type { AgentInfo, App, Approval, Attachment, Bot, CatalogItem, Chat, ComputerState, Message, OpenThread, Settings, Skill, Stream, Task, TaskInfo, TaskStep, Teach, TeachDraft, ThreadInfo, ThreadSummary, MacState } from './types'
 import { ask, notice } from './components/Dialog'
 import { desktop, phone } from './desktop'
 
@@ -8,6 +8,7 @@ type State = {
   ready: boolean
   connected: boolean
   bots: Bot[]
+  agents: AgentInfo[]                // 外部 Agent 的名字（段、评论的作者 agent:<id>）
   chats: Chat[]
   settings: Settings | null
   shapes: string[]
@@ -43,7 +44,7 @@ type State = {
 }
 
 let state: State = {
-  ready: false, connected: false, bots: [], chats: [], settings: null, shapes: [], colors: [],
+  ready: false, connected: false, bots: [], agents: [], chats: [], settings: null, shapes: [], colors: [],
   active: null, thread: null, threads: {}, visible: document.visibilityState === 'visible', messages: {}, hasMore: {}, streams: {}, tasks: {}, taskSteps: {}, openTask: null, approvals: {}, unread: {}, errors: {}, computers: {}, macs: null, apps: [], catalog: [], categories: [], oauthCallback: '', skills: {},
   view: 'chat', libraryPage: null, teach: null, teachDraft: null, auth: false, onboarding: false, newBuild: false, appUpdate: null,
 }
@@ -109,7 +110,7 @@ export async function bootstrap() {
   if (fromUrl) history.replaceState(null, '', location.pathname)
   const saved = fromUrl || Number(localStorage.getItem('osa.active'))
   const active = b.chats.some((c: Chat) => c.id === saved) ? saved : b.bots[0]?.chat_id ?? null
-  set({ bots: b.bots, chats: b.chats, unread: unreadOf(b.chats), settings: b.settings, shapes: b.shapes, colors: b.colors, threads: byId(b.threads),
+  set({ bots: b.bots, agents: b.agents || [], chats: b.chats, unread: unreadOf(b.chats), settings: b.settings, shapes: b.shapes, colors: b.colors, threads: byId(b.threads),
         tasks, approvals, apps: b.apps || [], catalog: b.catalog || [], categories: b.categories || [], oauthCallback: b.oauth_callback || '', teach: b.teach || null, auth: !!b.auth, onboarding: !!b.onboarding, ready: true })
   sawBuild(b.build)
   watchAppUpdate()
@@ -209,7 +210,7 @@ function watchAppUpdate() {
 
 export async function refreshLists() {
   const b = await api('/api/bootstrap')
-  set({ bots: b.bots, chats: b.chats, unread: unreadOf(b.chats), settings: b.settings, apps: b.apps || [] })
+  set({ bots: b.bots, agents: b.agents || [], chats: b.chats, unread: unreadOf(b.chats), settings: b.settings, apps: b.apps || [] })
 }
 
 export async function refreshApps() {
@@ -525,6 +526,9 @@ function handle(d: any) {
       break
     case 'bots_changed':
       refreshLists()
+      break
+    case 'agents_changed':
+      set({ agents: d.agents })
       break
     case 'skills_changed':
       Object.keys(state.skills).forEach(id => loadSkills(Number(id)))

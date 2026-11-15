@@ -5,6 +5,7 @@ import { desktop, phone } from '../desktop'
 import { Icon } from '../icons'
 import { lang, syncLang, t, tc, tn } from '../i18n'
 import type { Routine, Rule, Settings as S } from '../types'
+import AgentTokens from './AgentTokens'
 import Backup from './Backup'
 import BotAvatar from './BotAvatar'
 import { describe, STATUS, when } from './Routines'
@@ -22,7 +23,7 @@ const GROUPS: { name: string; items: [string, string, string][] }[] = [
   { name: t('模型与费用'), items: [['models', t('模型'), 'sparkles'], ['web', t('搜索和读网页'), 'search'], ['limits', t('限制与预算'), 'gauge']] },
   { name: t('电脑'), items: [['computer', t('Bot 用的电脑'), 'monitor']] },
   { name: t('安全'), items: [['rules', t('确认规则'), 'shield'], ['vault', t('保险库'), 'key']] },
-  { name: tc('nav', '连接'), items: [['channels', t('聊天软件'), 'message'], ['notify', t('通知'), 'bell'], ['mobile', t('手机 App'), 'smartphone']] },
+  { name: tc('nav', '连接'), items: [['channels', t('聊天软件'), 'message'], ['notify', t('通知'), 'bell'], ['mobile', t('手机 App'), 'smartphone'], ['agents', t('外部 Agent'), 'plug']] },
   { name: t('自动化'), items: [['triggers', t('定时任务'), 'clock'], ['events', t('事件'), 'zap']] },
   { name: t('数据'), items: [['backup', t('备份与迁移'), 'archive']] },
 ]
@@ -32,6 +33,7 @@ const DESC: Record<string, string> = {
   web: t('Bot 查资料时用哪家搜索网页、读网页。各家怎么调写在配方里（osa/websearch.yaml），在 config.yaml 里能加别家。'),
   limits: t('防止任务跑太久、花太多。改完离开输入框就保存。'),
   computer: t('Bot 上网、跑命令、处理文件用的那台电脑。你的 Mac 不在这里：它们是派任务的去处，在 Bot 右栏的“电脑”里管。'),
+  agents: t('让 Claude Code、Codex 这些 OSA 外面的 Agent 读写资料库：搜页面、读页面、按段改、回复评论。'),
   triggers: t('所有 Bot 的定时任务，在这里就能开关。'),
   events: t('所有 Bot 的事件：某件事发生时（收到 webhook、订阅源有新文章、网页变了……）Bot 处理一次。在这里就能开关。'),
 }
@@ -91,6 +93,7 @@ export default function Settings({ onClose, initial }: { onClose: () => void; in
               {title === 'channels' && <Channels />}
               {title === 'notify' && (desktop?.push ? <PhoneNotifications /> : <Notifications />)}
               {title === 'mobile' && <MobileApp />}
+              {title === 'agents' && <AgentTokens />}
               {title === 'backup' && <Backup />}
             </div>
           </div>

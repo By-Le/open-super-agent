@@ -6,6 +6,7 @@ import { locale, t } from '../../i18n'
 import { ask } from '../Dialog'
 import Markdown from '../Markdown'
 import { useBack } from '../../swipe'
+import { useAuthors } from '../../authors'
 
 export type PageComment = {
   id: number; page_id: number; block_id: string | null; parent_id: number | null; by: string; text: string; quote: string
@@ -65,10 +66,7 @@ export function CommentsPanel({ pageId, comments, order, blockMd, authorOf, owne
   useBack(onClose, root)   // 手机上整屏盖着页面：左边缘右滑关掉
   const [tab, setTab] = useState<'open' | 'done'>('open')
   const list = useRef<HTMLDivElement>(null)
-  const name = (by: string) => {
-    const m = by.match(/^bot:(\d+)$/)
-    return m ? bots.find(b => b.id === Number(m[1]))?.name || t('已删除的 Bot') : by === 'user' ? t('你') : t('有人')
-  }
+  const name = useAuthors()
   // 按段在页面里的顺序排；整页的在最前面，原段落已经删掉的在最后
   const threads = useMemo(() => {
     const pos = new Map(order.map((id, k) => [id, k]))

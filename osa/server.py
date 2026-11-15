@@ -19,7 +19,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.background import BackgroundTask
 from . import backup
 backup.apply_pending()   # 确认过的恢复：在打开数据库之前换上
-from . import applets, approvals, auth, avatars, botadmin, bots, catalog, channels, computer, dm, events, groups, i18n, library, mcp_hub, media, memories, memory, push, router as rt, routines
+from . import agentapi, applets, approvals, auth, avatars, botadmin, bots, catalog, channels, computer, dm, events, groups, i18n, library, mcp_hub, media, memories, memory, push, router as rt, routines
 from . import generation, mcpapps, observe, outputs, pagecomments, pagedoc, prices, providers, search, security, settings, skills, tasklog, teach, templates, unfurl, vault, videos, websearch
 from .computer import link
 from .computer.base import HOSTS
@@ -138,6 +138,7 @@ async def bootstrap(request: Request):
             "approvals": [approvals.public(a) for a in approvals.pending.values()],
             "threads": bots.thread_list(unread=True),   # 有新回复的讨论串：对话里提醒你去看
             **_apps_out(request), "teach": teach.public(), "auth": can_sign_out(), "onboarding": settings.onboarding(),
+            "agents": agentapi.names(),   # 外部 Agent 的名字：页面上显示 agent:<id> 写的段、评论
             "build": web_build()}   # 服务器上现在是哪一版网页界面：开着旧版的页面据此提示更新
 
 
@@ -1080,6 +1081,44 @@ async def delete_page(pid: int, cascade: bool = False):
     library.delete_page(pid, cascade)
     await broadcast({"type": "pages_changed"})
     return {"ok": True}
+
+
+# ---------- 外部 Agent（agentapi.py）：Claude Code、Codex 经 /mcp 读写资料库 ----------
+app.add_route(agentapi.PATH, agentapi.endpoint, include_in_schema=False)
+
+
+def _no_agents_in_demo():
+    if security.demo():
+        raise HTTPException(403, i18n.t("演示服务器不开放外部 Agent"))
+
+
+@app.get("/api/agent-tokens")
+async def list_agent_tokens():
+    _no_agents_in_demo()
+    return agentapi.tokens()
+
+
+@app.post("/api/agent-tokens")
+async def create_agent_token(data: dict = Body(...)):
+    """{name, scope: read | write}。返回记录和 token 原文（只有这一次）。"""
+    _no_agents_in_demo()
+    try:
+        t, token = agentapi.create(data.get("name", ""), data.get("scope", ""))
+    except (ValueError, TypeError) as e:
+        _err(e)
+    await broadcast({"type": "agents_changed", "agents": agentapi.names()})
+    return {**t, "token": token}
+
+
+@app.delete("/api/agent-tokens/{tid}")
+async def revoke_agent_token(tid: int):
+    _no_agents_in_demo()
+    try:
+        t = agentapi.revoke(tid)
+    except LookupError as e:
+        raise HTTPException(404, str(e))
+    await broadcast({"type": "agents_changed", "agents": agentapi.names()})
+    return t
 
 
 # ---------- 应用自带的界面（MCP Apps）：网页宿主 web/src/mcpapp.ts 调过来 ----------

@@ -492,6 +492,37 @@ mcp_servers:
 **任务过程**：后台任务每一步做了什么（思考、搜索、读网页、操作电脑、写结果）都会记下来，在右栏“任务”里实时看、事后回看。
 默认留最近 90 天，`memory.task_log_days` 可以改，`0` 表示一直留着。任务结果在对话里，不受影响。
 
+## 让外面的 Agent 读写资料库
+
+Claude Code、Codex 这些 OSA 外面的 Agent 能经 MCP 读写资料库：搜页面、读页面、按段改、整页重写、新建页面、看评论和回复评论。
+它们写的段署它们的名字（建 token 时起的），你在网页上实时看到，和 OSA 里的 Bot 在同一个页面上接着改。
+
+1. **设置 → 外部 Agent** 里新建一个 token：填名字（比如 `Claude Code`），选“能读能写”或“只读”。token 只显示这一次，服务器只存它的 sha256。
+2. 照着页面上给的写法接上（地址是网页的地址加 `/mcp`，比如 `https://osa.example.com/mcp`）：
+
+   ```sh
+   # Claude Code（-s user 是每个项目都能用）
+   claude mcp add -s user --transport http osa https://osa.example.com/mcp --header "Authorization: Bearer <token>"
+   ```
+
+   ```toml
+   # Codex：~/.codex/config.toml，再在启动 Codex 的环境里设好 OSA_TOKEN
+   [mcp_servers.osa]
+   url = "https://osa.example.com/mcp"
+   bearer_token_env_var = "OSA_TOKEN"
+   ```
+
+   别的支持 Streamable HTTP 的 MCP 客户端也一样：地址填 `/mcp`，请求头带 `Authorization: Bearer <token>`。
+
+工具：`search_pages`、`list_pages`、`read_page`、`create_page`、`edit_page`、`rewrite_page`、`list_comments`、`comment_page`，
+用法和 Bot 的同名工具一样（先 `read_page` 拿版本号和段落编号，改到别人刚改过的段会告诉它现在的内容，按新版本号重提）。
+
+- **只读的 token** 看不到写的工具。**锁定的页面**它们只能读和评论；html 页面只能读。
+- **它们写的评论不叫醒 Bot**：只有你写的评论会叫醒 Bot，免得 Agent 和 Bot 来回停不下来。要 Bot 接着做，你在评论里 @ 它。
+- `/mcp` 不看登录 cookie，只认 token；没开登录时照样只接受本机、IP、Tailscale 和 `server.allowed_hosts` 里的地址。
+- 列表里能看到每个 token 最后用过的时间；**撤销**以后马上连不上，它写过的内容和署名都留着。
+- 演示服务器（`security.demo: true`）上整个关掉。
+
 ## 备份与迁移
 
 设置 → **备份与迁移**。换机器、从本机搬到服务器、升级前留一份，都用它。
@@ -551,7 +582,7 @@ security:
 | 设置 | 关掉什么 |
 |---|---|
 | `local_exec: false` | 电脑选“本机”、本机终端；自定义启动命令的应用，以及改应用的启动命令、参数、环境变量；“文件夹”应用访问工作文件夹以外的目录；应用配置里引用服务的环境变量（`env:名字`）。应用市场里的应用照常能用：只认随项目发布的清单（`osa/catalog/apps`）里原样的命令，填的值只能进模板里留的位置。`mcp_servers` 里写的应用不受限 |
-| `demo: true` | 给登录密码公开出去的演示服务器，包含上一行，另外还关掉：所有在服务器上运行程序的应用（npx / uvx，应用市场里的也不行）、自定义应用和应用的连接配置、本机或内网的模型服务地址、改用量上限（每天的 token 上限、Heavy 并行数）、备份的导出和恢复 |
+| `demo: true` | 给登录密码公开出去的演示服务器，包含上一行，另外还关掉：所有在服务器上运行程序的应用（npx / uvx，应用市场里的也不行）、自定义应用和应用的连接配置、本机或内网的模型服务地址、改用量上限（每天的 token 上限、Heavy 并行数）、备份的导出和恢复、[外部 Agent](#让外面的-agent-读写资料库) |
 
 这两个开关背后是两个策略，想分开管可以直接写（写了以写的为准，写错的值按最严的算；`off` 带不带引号都行）：
 
