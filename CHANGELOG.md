@@ -3,10 +3,15 @@
 格式参照 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
 ## [未发布]
+
+## [0.24.0] - 2026-11-16
 ### 新增
 - **从 Notion 导入资料库**：资料库列表上点“从 Notion 导入”，用应用市场里连着的 Notion 搜页面和数据库，勾上的连同子页面、数据库的每一行一起导进来，
   Notion 的链接换成资料库里的；数据库的状态分组、选项颜色、自动编号（TASK-12）照搬，文件下载下来存进资料库。再导一次是更新。写法见 [配置](docs/configuration.md#从-notion-导入)
 - 数据库文字格里的链接（`[标题](地址)`、网址）点得开
+
+### 改动
+- README 和各篇文档按现在的功能重写了一遍，配上资料库、数据库、群聊、后台任务、观测、设置这些界面的截图
 
 ## [0.23.0] - 2026-11-15
 ### 新增
@@ -674,7 +679,8 @@
 - 按角色、任务和天统计费用，区分高峰和空闲价格；每日预算
 - MCP 应用接入；写操作前的确认卡片
 
-[未发布]: https://github.com/kadaliao/open-super-agent/compare/v0.23.0...HEAD
+[未发布]: https://github.com/kadaliao/open-super-agent/compare/v0.24.0...HEAD
+[0.24.0]: https://github.com/kadaliao/open-super-agent/compare/v0.23.0...v0.24.0
 [0.23.0]: https://github.com/kadaliao/open-super-agent/compare/v0.22.0...v0.23.0
 [0.22.0]: https://github.com/kadaliao/open-super-agent/compare/v0.21.1...v0.22.0
 [0.21.1]: https://github.com/kadaliao/open-super-agent/compare/v0.21.0...v0.21.1
