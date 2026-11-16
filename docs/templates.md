@@ -1,6 +1,6 @@
 # 写一个 Bot 模板
 
-Bot 模板把一个 Bot 的名字、头像、职责、技能、要用的应用和定时任务打包成一个 YAML 文件。别人装上就得到一个一样的 Bot。
+Bot 模板把一个 Bot 的名字、头像、职责、技能、要用的应用、定时任务和事件打包成一个 YAML 文件。别人装上就得到一个一样的 Bot。
 对话、记忆、资料库、应用的密钥不在模板里。
 
 用户在侧栏 ＋ → **新建 Bot** 里挑内置模板，或者粘贴别人分享的链接、选一个文件来装。装之前会把内容全部列出来给他看。
@@ -38,9 +38,13 @@ routines:
 
 - `avatar.shape` 是 `square sparkle clover flower heart house star circle` 之一，`color` 是 `#` 加 6 位十六进制，写错了用默认的。
 - `trigger` 和定时任务一样：`{kind: daily, times: ["09:00"], days: [1,2,3,4,5]}`（周一是 1，空列表是每天）、
-  `{kind: every, minutes: 60}`（至少 5 分钟）、`{kind: webhook}`（名字只能用字母、数字、`-`、`_`，装的时候重名会自动加后缀）。
-- 最多 30 个技能、20 个定时任务、20 个应用。
-- 用户可以选“先暂停定时任务”，所以定时任务里别做装上就不能撤回的事（比如直接发邮件），先让 Bot 起草、等人确认。
+  `{kind: monthly, month_days: [1], times: ["09:00"]}`（每月几号）、`{kind: every, minutes: 60}`（至少 5 分钟）、
+  `{kind: once, at: "2026-12-01 15:00"}`（某个时间点一次）。
+- 事件也写在 `routines` 里：`{kind: event, source: rss, params: {url: "https://sspai.com/feed"}}`。`source` 是来源的 id（见 [`osa/sources/`](../osa/sources/)），
+  还能写 `every`（多少分钟看一次）、`include`、`exclude`（关键词）、`llm_filter`（一句话过滤规则）。webhook 类的事件装好后有自己的新地址。
+  旧模板里的 `{kind: webhook}` 装的时候自动换成“收到 Webhook”事件。
+- 最多 30 个技能、20 个定时任务（含事件）、20 个应用。
+- 装的时候“装好就开始定时运行”默认是勾上的，所以定时任务里别做装上就不能撤回的事（比如直接发邮件），先让 Bot 起草、等人确认。
 
 ## 英文版（`en:`）
 

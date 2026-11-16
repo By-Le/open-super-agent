@@ -15,8 +15,10 @@
    └──────────────────────────────────────────────┴────────────────────────────────┘
               │                     │                          │
    Memory（SQLite）        Approvals（确认卡片）        Computer 接口（osa/computer）
-   Inline & Spill + 长期记忆  Library（页面、文件）         ├─ Instabox（云端微虚拟机）
-                                                           └─ 本地 Docker（Xvfb + x11vnc）
+   Inline & Spill + 长期记忆  Library（页面、数据库、文件） ├─ Instabox（云端微虚拟机）
+                                                           ├─ 本地 Docker（Xvfb + x11vnc）
+                                                           ├─ 本机（这台 Mac 上 Bot 自己的 Chrome）
+                                                           └─ 你的 Mac（派过去的任务，经 link.py）
 ```
 
 一条消息的处理过程：
@@ -55,20 +57,34 @@ osa/
   tasklog.py       任务过程：每一步的记录、实时推送、任务列表和详情、重启后标记“已中断”、按天数清理
   memory.py        SQLite 表、对话记录、Inline & Spill 上下文、新话题、用量和费用
   memories.py      长期记忆：每个 Bot 的记忆、共享的用户事实、做过的事、从其他助手导入
-  library.py       资料库：页面（存储、分享链接、save_page 工具）、小应用的清单和数据（page_data 工具）、电脑里的文件（列目录、删除、置顶）
+  library.py       资料库：页面（存储、分享链接、save_page 工具）、子页面（挪动、页面树）、回收站（page_trash）、每轮附上的最近页面摘要（recent_pages）、
+                   小应用的清单和数据（page_data 工具）、电脑里的文件（列目录、删除、置顶）
+  dbs.py           资料库的数据库：表结构、视图、值的两种写法（工具写名字、网页写 id）、筛选排序、按属性查冲突、库的历史和撤销、db_* 工具、分享的只读表格
+  dbcalc.py        数据库里算出来的属性：公式（解析、算）、双向关联的反向那一半、汇总
+  agentapi.py      外部 Agent：/mcp 上的 MCP 端点（Streamable HTTP，无状态）、agent_tokens 表、复用资料库和数据库工具的那几个工具
+  notion_import.py 从 Notion 导入：用应用市场里连着的 Notion 的只读工具爬页面和数据库、转成资料库的 Markdown、notion_map 记着对应关系（再导一次是更新）
+  outputs.py       Bot 的资料库（右栏）：它交给你的页面、图片、文件、链接
   blocks.py        资料库页面的切段：把 Markdown 正文切成一段一段（只切行区间、不改文字）、段之间的 gap、对齐新旧两版的段
   pagecomments.py  资料库页面的评论：挂在段上的评论串、叫醒负责的 Bot、自动回帖（comment_page 工具）
   pagedoc.py       资料库页面按段读写：段的编号和作者、按段修改和冲突检查（edit_page 工具）、整页重写时保住没变的段、版本历史、read_page 的样子
   mcpapps.py       应用自带的界面（MCP Apps）：工具上的 _meta.ui、拼 CSP、取界面、替界面调工具 / 读资源、和小应用共用的确认
   applets.py       小应用：清单校验、页面里的 SDK（window.osa，返回原文时内联）、从界面调工具（走确认规则）和替用户发消息
   bots.py          Bot 和对话的增删改查、旧数据迁移
-  media.py         对话里的图片和附件：media 表、消息的 meta.attachments、给能看图的模型带上图片、send_file、清理没人用的
+  botadmin.py      Bot 管 Bot：get_bot / create_bot / update_bot / delete_bot，新建、修改、删除每次先弹卡片
+  media.py         对话里的图片、附件和生成的视频：media 表、消息的 meta.attachments、给能看图的模型带上图片、send_file、清理没人用的
   images.py        对话里画图：generate_image 工具、画之前的确认卡片（在后台等，不卡住 Router）、画好的图发进对话
   avatars.py       头像图片：上传的和 AI 画的、公开访问、清理没人用的；画图用哪个模型（直接画的、照着图片画的）
   generation.py    画图、生成视频按配方调各家接口（模板、异步任务、结果下载、参考素材的临时公网地址）；配方在 generation.yaml
   generation.yaml  默认配方：硅基流动、火山方舟、OpenAI、阿里云百炼、智谱各类模型怎么调（config.yaml 的 generation 可以加、改）
   videos.py        对话里生成视频：generate_video 工具、确认卡片、后台提交和查进度、重启后接着查、生成好的视频发进对话
   settings.py      界面里改的设置（覆盖 config.yaml）
+  providers.py     模型服务：接口地址加密钥，界面里加的存 settings、密钥进保险库（LLM_KEY_<名字>）
+  prices.py        模型单价和能不能看图：每天从 models.dev 取一次
+  observe.py       观测页：费用、用量、速度、出错，都从现成的记录算
+  vault.py         保险库：Fernet 加密的密钥，主密钥来自 OSA_VAULT_KEY 或 data/vault.key
+  security.py      服务器锁和演示模式：security.exec / security.apps 两个策略
+  sandbox.py       run_code、quick_code：电脑里跑，或者本机的受限子进程（macOS sandbox-exec，Linux bwrap / unshare）
+  dsml.py          DeepSeek 偶尔把工具调用写进正文（DSML 标记），认出来当成真的工具调用
   i18n.py          界面语言：t() 按中文原文查 locales/en.json；python -m osa.i18n 检查前后端的翻译
   backup.py        备份与迁移：加密的备份文件、恢复前检查、启动时换上、命令行
   approvals.py     确认卡片：写操作确认（approval）、请你帮忙（help）
@@ -78,9 +94,11 @@ osa/
     checks.py      添加应用前的检查（邮箱先试登录一次）
     skills/        技能市场：每个技能一个文件夹（<名字>/SKILL.md，英文界面装 SKILL.en.md），格式见 docs/skills.md
   registry.py      工具注册表：Tool（schema、run、在哪些场合能用、要不要确认）、Source（事件来源）、Context（注册返回 disposer，dispose 反向撤销）、事件 on / emit / fire
-  builtin.py       内置工具的注册：web_search、search_posts、fetch_url、save_page、read_page、page_data、send_file、generate_image、generate_video、search_memory、use_skill
+  builtin.py       内置工具的注册：web_search、search_posts、fetch_url、save_page、read_page、page_data、send_file、generate_image、generate_video、search_memory、use_skill、
+                   定时任务和事件的几个、run_code、quick_code、edit_page、comment_page、db_query、db_create、db_schema、db_add、db_update
   tools.py         内置的网页工具：web_search、fetch_url 的入口，内网地址和不用的网站的检查，直接抓网页
-  websearch.py     搜索网页、读网页按配方调各家（默认配方 websearch.yaml：DeepSeek、Tavily、Brave、博查、SearXNG、DuckDuckGo；读网页 DeepSeek、Jina、直接抓），出错换下一家；search_posts 搜 X / Reddit / 小红书的帖子（小红书指给浏览器）；设置 → 搜索和读网页
+  websearch.py     搜索网页、读网页按配方调各家（默认配方 websearch.yaml：DeepSeek、Exa、Tavily、Brave、博查、SearXNG、DuckDuckGo；读网页 DeepSeek、Jina、直接抓，Reddit、X 这几个网站另有只管它们的），出错换下一家；search_posts 搜 X / Reddit / 小红书的帖子（小红书指给浏览器）；设置 → 搜索和读网页
+  websearch.yaml   搜索网页、读网页、搜帖子的默认配方（config.yaml 的 web.recipes 可以加、改）
   unfurl.py        链接卡片：服务器取网页的标题、摘要、配图（og:*），不抓内网，缓存在 unfurls 表；YouTube 走 oEmbed
   skills.py        技能：增删改、/名字 解析、展开成给模型的说明、use_skill；带文件的技能包；导出成 .md / zip、分享链接、从文件、zip 或链接（含 GitHub 文件夹）导入；技能市场（catalog/skills）
   templates.py     Bot 模板：检查、内置模板（templates/*.yaml）、从 Bot 导出、分享、安装
@@ -91,30 +109,38 @@ osa/
   watchdog.py      任务巡检
   config.py        读取 config.yaml，按角色创建模型客户端
   computer/
+    __init__.py    用哪台电脑（backend、choices）、current()：这个任务用的电脑（派到你的 Mac 上的是那台 Mac）
     base.py        电脑接口、谁在用和排队、每个任务的浏览器窗口、控制权、截整个屏幕和你接手时打字（xdotool / scrot）
     cdp_helper.py  在电脑里运行的浏览器控制脚本（只用标准库），通过 DevTools 端口操作 Chromium：给任务挑窗口、按元素或坐标操作页面、
                    上传文件；也负责演示录制
-    local.py       本地 Docker 后端（VNC 经 docker exec 转发）
+    local.py       Docker 沙盒：服务直接跑时自己建容器 osa-computer、经 docker exec 执行和转发 VNC；Docker Compose 部署时不碰 Docker，
+                   经共用卷里的 unix socket（OSA_COMPUTER_SOCKET）找电脑容器里的 computerd.py
     instabox.py    Instabox 后端
     host.py        本机电脑：这台电脑上的 Chrome、工作文件夹，打开后还有整个屏幕（macdesk.py：截图、鼠标键盘、辅助功能）
     mac.py         派到你的 Mac 上的任务用的电脑：和 host 一样，动手的那一步经 link.py 的连接（可以连好几台）交给那台 Mac 上的 agent.py 去做
+    link.py        你的 Mac 连进来的地方（/api/computer/link）：令牌（只存 SHA-256）、computer_links 表、每台的终端开关
+    agent.py       你的 Mac 上跑的小程序（桌面 App 在后台启动）：主动连服务器，用 host.py 的代码替派过去的任务操作这台 Mac
     tools.py       browser_* / computer_* 工具定义、截图消息、给 Worker 的操作说明
-    image/         本地电脑镜像
+    image/         电脑镜像（osa-computer:2）：Xvfb、JWM 桌面、x11vnc、computerd.py
 Dockerfile          服务镜像：后端、构建好的前端、应用要用的 Node 和 uv
-compose.yaml        Docker Compose 部署（deploy/Caddyfile 是 --profile https 的反向代理），见 docs/docker.md
-deploy/relay/       推送中转（osa/relay.py）的 systemd 和 Caddy 配置
+compose.yaml        Docker Compose 部署：服务、常驻的 computer 容器（不挂 docker.sock），deploy/Caddyfile 是 --profile https 的反向代理，见 docs/docker.md
+deploy/             项目自己的服务器（osa.cclsp.top）的部署：lsp/ 现在用的 compose；osa.service、demo/、relay/（推送中转 osa/relay.py）是以前不用 Docker 时的 systemd 和 Caddy 配置
 desktop/            macOS 桌面 App（Tauri 2）：外壳、自带的 Python 运行环境、打包脚本，见 docs/desktop.md
 mobile/             iPhone App（Tauri 2）：Rust 外壳、Swift 插件、通知扩展、推送解密（WebPushCrypto），见 docs/mobile.md
 web/public/         PWA：manifest.json、sw.js（推送和离线提示页）、图标
 web/src/
   store.ts         全局状态、REST 封装、WebSocket 事件处理
   i18n.ts          界面语言：t() 按中文原文查 locales/en.json
-  components/      Chat、Thread（讨论串面板）、Composer、Sidebar、BotEditor、Computer、Settings、Routines（技能和定时任务面板）、
-                   Memories（记忆面板）、Library（资料库和分享页）、Groups（新建群聊和群聊面板）、Tasks（任务列表和过程）、Markdown
+  authors.ts       资料库里“谁写的”：user、bot:<id>、agent:<id>（外部 Agent），编辑器、评论、历史、页面列表共用
+  components/      Chat、Thread（讨论串面板）、Composer、Sidebar、BotEditor、Computer（电脑面板和 设置 → Bot 用的电脑）、Settings、Routines（技能和定时任务面板）、
+                   Memories（记忆面板）、Library（资料库和分享页）、Groups（新建群聊和群聊面板）、Tasks（任务列表和过程）、Markdown、
+                   WebSettings（设置 → 搜索和读网页）、AgentTokens（设置 → 外部 Agent）、NotionImport（从 Notion 导入）、UpdateBar（有新版本的提示）
   components/doc/  资料库 markdown 页面的块编辑器（Tiptap，懒加载）：lazy.tsx 是主包唯一的入口；markdown.ts 段和文档互转；
                    blockIds.ts 段的编号；sync.ts 自动保存、冲突、合进别人的改动；gutter.ts 作者条；nodes.tsx 提示框、折叠块、原文块；menus.tsx 菜单；
                    comments.tsx 评论面板；history.tsx 和 diff.ts 版本历史（按段编号对齐、段内按字对比）
   components/PageTree.tsx  资料库的页面树、挪到哪里的对话框
+  components/db/   数据库页面：DbView（视图标签、表格、看板）、cells（每种属性的格子）、menus（表头、筛选、排序、视图、历史）、
+                   PropsBar（行页面的属性栏）、PropsDiff（行的历史里属性的改动）、Popover
 ```
 
 ## 数据
@@ -126,14 +152,18 @@ web/src/
 | `bots`、`chats` | Bot 和对话；每个 Bot 有一个私聊（`kind=direct`）；群聊（`kind=group`）的 `bot_ids` 有 2–6 个，`lead` 是协调者；讨论串（`kind=thread`）的 `parent` 是所在的对话，`root` 是被回复的那条消息；`pinned` 是置顶的时间（0 是没置顶），只决定侧栏上面那排，不影响列表按 `updated` 排；Bot 的 `avatar`（JSON）是形状、颜色，可以再带一张图片 `image`，群聊的图片在 `chats.image` |
 | `avatars` | 头像图片（256 像素的 PNG / JPEG / WebP），`id` 是内容哈希，`/avatars/<id>` 不登录也能看（分享页要用）；没人用的一天后清掉 |
 | `messages` | 所有消息。`role` 是 user / assistant / task；`meta`（JSON）里放 reasoning、任务编号、卡片类型等；`attachments` 是附件（见下面 `media`） |
-| `media` | 对话里的图片（PNG / JPEG / WebP / GIF，浏览器缩到 1600 像素左右），`id` 是内容哈希，带文件名、大小、宽高；`/api/media/<id>` 要登录。消息的 `meta.attachments` 引用它：`[{name, size, path?, media?, mime?, w?, h?}]`，`path` 是电脑里的文件。没人引用的一天后清掉 |
-| `llm_calls` | 每次模型调用：token 数、费用、哪个 Bot 在哪个对话或任务里调的（`bot_id`、`chat_id`、`task_id`）、服务商、整次用时 `ms`、第一个字多久出来 `ttft`（毫秒）；失败的也记一行，`err` 是原因、token 和费用是 0。画图记 `role=image`、0 token，费用按 `pricing.images` 的每张价格。费用、每日预算和观测页都从这里算 |
+| `media` | 对话里的图片（PNG / JPEG / WebP / GIF，浏览器缩到 1600 像素左右），`id` 是内容哈希，带文件名、大小、宽高；`/api/media/<id>` 要登录。Bot 生成的视频、当参考的视频，资料库页面里传的图片、数据库里传的文件也存在这里。消息的 `meta.attachments` 引用它：`[{name, size, path?, media?, mime?, w?, h?}]`，`path` 是电脑里的文件。消息、页面（连历史版本、数据库的文件属性、回收站）都没引用的一天后清掉（`media.used`） |
+| `llm_calls` | 每次模型调用：token 数、费用、哪个 Bot 在哪个对话或任务里调的（`bot_id`、`chat_id`、`task_id`）、服务商、整次用时 `ms`、第一个字多久出来 `ttft`（毫秒）；失败的也记一行，`err` 是原因、token 和费用是 0。画图记 `role=image`、0 token，费用按 `pricing.images` 的每张价格；生成视频记 `role=video`（`pricing.videos`）；收钱的搜索和读网页记 `role=web`（配方里的单价）。费用、每日预算和观测页都从这里算 |
 | `llm_usage` | 旧版本的调用记录，原样留着不加列（旧版本按位置插 8 个值，加列后退回旧版本会出错）。启动时把新出现的行搬进 `llm_calls`，搬到哪儿记在 `settings` 的 `llm_usage_moved` |
 | `task_steps` | 后台任务的过程：每一步的类型（思考 / 工具 / 结果……）、Heavy 里是哪个研究员、标题、内容、状态、用时。`task_id` 是“任务已派发”那条消息的 id；工具那一步的工具名在 `name`（标题会被进度说明盖掉）；只留最近 `memory.task_log_days` 天 |
 | `memories` | 长期记忆。`bot_id` 为空的是共享的用户事实；`kind=work` 是自动记的“做过的事” |
-| `pages`、`file_pins` | 资料库的页面（`share_token` 不为空表示已分享）和置顶的文件路径。`block_meta`（JSON）是 markdown 页面每段的编号、作者（`by`：user / bot:<id> / 空）、最后改动的版本（`v`）和指纹（`h`），按位置对应从 `content` 切出来的段；`version` 每次提交 +1；`locked` 为 1 时 Bot 只能读；`parent_id` 是上一级页面（空的是最上层），`pos` 是同一层里的顺序 |
+| `pages`、`file_pins` | 资料库的页面（`share_token` 不为空表示已分享）和置顶的文件路径。`block_meta`（JSON）是 markdown 页面每段的编号、作者（`by`：user / bot:<id> / 空）、最后改动的版本（`v`）和指纹（`h`），按位置对应从 `content` 切出来的段；`version` 每次提交 +1；`locked` 为 1 时 Bot 只能读；`parent_id` 是上一级页面（空的是最上层），`pos` 是同一层里的顺序；外部 Agent 建的页面 `agent_id` 是它的 token 编号（`bot_id` 为空）。`kind` 是 `page`、`db`（数据库，`schema` 表结构、`views` 视图）或 `row`（库里的一行，是库的子页面，`props` 属性、`props_meta` 每个属性最后的版本和作者），见 `dbs.py` |
 | `page_comments` | 页面的评论：挂在哪一段（`block_id`，空的是整页）、回复的是哪串（`parent_id`）、谁写的（`by`）、引文、是否已解决（整串一起）、叫醒了哪些 Bot（`woke`） |
-| `page_versions` | 页面的版本历史：每版的标题、正文、段的元数据、谁改的、起止时间；同一个人 10 分钟内接着改并进同一版；`label` 是 `base`（旧页面第一次被改前的原样）或 `restore:<版本>`；每页最多 50 版、总共 4 MB |
+| `page_versions` | 页面的版本历史：每版的标题、正文、段的元数据、谁改的、起止时间；同一个人 10 分钟内接着改并进同一版；`label` 是 `base`（旧页面第一次被改前的原样）或 `restore:<版本>`；每页最多 50 版、总共 4 MB。数据库的行在 `props` 里存那一版的属性；`label = schema` 的是库的历史（表结构、视图的改动，`props` 里是这次改了什么），每个库留最近 200 条 |
+| `page_trash` | 回收站：删掉的页面（库连同它的行）整个存成一份 JSON（页面、版本历史、评论、小应用的数据），放 30 天 |
+| `agent_tokens` | 外部 Agent 的 token：名字、`sha256` 指纹（不存原文）、`scope`（read / write）、最后用过的时间、撤销时间；`hidden` 是撤销后从设置的列表里删掉的（名字还留着给作者显示用） |
+| `notion_map` | 从 Notion 导入的对应关系：Notion 的编号 → 资料库的页面编号、类型、最后导入的时间，再导一次按它更新 |
+| `computer_links` | 连进来的 Mac：名字、令牌的 SHA-256、终端开没开（`shell`）、那台 Mac 的编号（`device`，同一台只留一行） |
 | `push_subs` | 开启了推送的设备（推送服务地址和密钥）；VAPID 私钥存在 `settings` 的 `vapid` 里 |
 | `channels` | 聊天软件连接：平台、绑定的对话（`chat_id`）、配对的私聊（`peer`）、配对码；token / App Secret 在保险库的 `channel_<id>` |
 | `settings` | 界面里改过的设置；`language` 是界面语言（zh / en）；`image_model` 是画图用的模型（以前叫 `avatar_model`）；`image_edit_model` 是照着图片画用的模型；`video_model` 是生成视频用的模型；`media_link_secret` 是签参考素材临时地址的密钥；`vision_tests` 是设置里“测试”测出来的哪些模型能看图 |
@@ -153,7 +183,7 @@ web/src/
 ### 提示词和缓存
 - 模型服务对“和上次请求开头一样”的部分有缓存，命中的部分便宜得多（DeepSeek 便宜几十倍）。所以发给模型的内容要**前面逐字不变，变的放最后**。
 - Router 的系统提示词只放不常变的：规则、人设、工具说明、其他 Bot、技能、定时任务、长期记忆、群聊说明、日期。
-  每轮都会变的（当前任务、待确认的写操作、相关的更早记忆、最近做过的事、这一轮的来由）用 `STATE_PROMPT` 接在最新一条用户消息后面（`router.with_state`），
+  每轮都会变的（当前任务、待确认的写操作、这一轮能用的工具、相关的更早记忆、最近做过的事、对话里最近提到的资料库页面、这一轮的来由）用 `STATE_PROMPT` 接在最新一条用户消息后面（`router.with_state`），
   不存进数据库。不另起一条 system（Qwen 等模型的对话模板不接受出现在对话中间的 system），也不另起一条 user（有的接口不接受连着两条 user）。
 - 对话历史每满 `memory.inline_messages` 条才把更早的一批整体移出（`memory.context` 里的 `cut`），不是每来一条就挪一格。
 - 往系统提示词里加东西之前先想：它每轮会不会变？会变就放进 `STATE_PROMPT`。`tests/test_prompt_cache.py` 检查连续几轮的系统提示词和历史前缀逐字不变。
@@ -426,7 +456,8 @@ web/src/
   `woke.from` 是那串评论的第一条（不是 Bot 编号，`_turn_block` 和 `cancel_task` 都单独处理）。那一轮没派任务、
   Bot 自己也没在这串里回过（从这一轮开始算），就把这一轮的回复贴进去；派了任务的，任务结果贴回来（`Task.comment`）。
 - 子页面：html 页面下面不放子页面；挪动时查环（不能挪到自己和子孙下面）；删页面时子页面默认挪到上一级、排在它原来的位置，
-  `cascade` 才连子页面一起删。Bot 没有挪、删页面的工具，`save_page` 的 `parent_id` 只在新建时有用。
+  `cascade` 才连子页面一起删，数据库总是连行一起删。删掉的先整个收进回收站（`page_trash`，连版本历史、评论），30 天后清掉；
+  放回时原来的上级不在了就放到最上层。Bot 没有挪、删页面的工具，`save_page` 的 `parent_id` 只在新建时有用。
 - 用户在网页上按段保存只广播 `page_changed`（带改动的段编号），不发 `pages_changed`：后者会让列表、页面卡片整个重拉。
 - 搜索索引：页面改了一段，其余没变的块沿用原来的向量（`search._vectors`），编辑器几秒存一次也不会每次都把整页重算。
 - **网页编辑器（`web/src/components/doc/`）以 Markdown 为准**：只开 Markdown 存得下的格式（提示框存成 `> [!NOTE]`，折叠块存成 `<details>`）。
@@ -435,6 +466,43 @@ web/src/
   段落里的软换行换成带 `soft` 标记的换行节点（不然一编辑就被 ProseMirror 读成硬换行）；表格按行写回，不补空格对齐，改一个格子只动那一行。
 - 编辑器是懒加载的分块：只开聊天不下载；分块加载失败（服务器换了新版）就显示原来的只读页面并提示刷新。
   资料库的地址跟着走（`/library`、`/library/pages/<id>`），刷新和前进后退都在原来的页面；别的视图还是 `/`。
+
+### 数据库
+- 一个库是 `pages.kind = 'db'` 的页面：`schema` 是表结构（第一项是名称，就是行页面的标题），`views` 是视图。每一行是它下面 `kind = 'row'` 的子页面，
+  不进页面树、`/api/pages` 不列、不能挪出库，页面数上限也不算它。行的正文照旧是 Markdown，按段改、评论、历史都走 `pagedoc.py`。
+- 值有两种写法：网页发的是存的样子（选项 id、`bot:3`、`{start, end}`），工具（Bot、外部 Agent）写名字（“进行中”、“Nova”、“2026-11-15”）。
+  `dbs.normalize` 两种都认，工具读到的一律是名字。选项存 id，改名不用动每一行。
+- 改属性走 `pagedoc.commit_props`（涨行的版本、记一版历史）。带了版本号时，只有要改的属性在那之后被别人改过才冲突（`props_meta`，和段的 `block_meta` 一个思路）。
+- 改表结构走 `dbs.change_schema`：不算冲突、不涨行的版本，记一条 `label = schema` 的库历史（连清掉、转换掉的旧值），能撤销。
+  视图的改动也记在这里，同一个人 10 分钟内接着调的并成一条。
+- 公式、汇总、双向关联的反向那一半不存，读的时候算（`dbcalc.py`、`dbs._Calc`）；公式在改表结构时就解析，写错了直接报错。
+- 工具改了库发 `db_changed`（开着的库重新取），关联着的库也各发一份；新建库、行的标题变了另发 `pages_changed`（`dbs.announce`）。
+
+### 外部 Agent（`/mcp`）
+- `agentapi.py` 是 MCP 的 Streamable HTTP 端点，无状态、回 JSON：每个请求单独处理，不记会话，服务重启、挂在反向代理后面都不影响接着用。
+- 鉴权只认 `Authorization: Bearer <token>`。`auth.py` 对 `/mcp` 不看登录 cookie，交给 `agentapi` 查 token，每个请求都查，所以撤销马上生效；
+  跨站请求的检查照旧，没开登录时访问地址的检查也照旧。token 原文只在建的时候显示一次，库里只存 sha256。演示服务器上整个关掉。
+- 只读的 token 看不到写的工具（`WRITE_TOOLS`）。工具都复用 Bot 用的函数（`search`、`library`、`pagedoc`、`pagecomments`、`dbs`），
+  结果和 Bot 看到的一样是中文；写完照样发 `page_changed`、`pages_changed`、`page_comments`、`db_changed`，网页上实时看到。
+- 作者记成 `agent:<token 编号>`，撤销了名字也留着。它们写的评论不叫醒 Bot：只有用户写的评论叫醒 Bot。锁定的页面只能读和评论，html 页面只能读。
+- 要给外部 Agent 加工具：在 `agentapi.py` 里用 `@_tool` 注册；会写东西的加进 `WRITE_TOOLS`。
+
+### 从 Notion 导入
+- 只调 Notion 的只读工具（`notion_import.READ_TOOLS`），不往 Notion 写。用服务器进程里现成的会话（`mcp_hub.session_of`），
+  不另起连接：另起一个会刷新 OAuth 令牌，服务器手里的那个就失效了。
+- 在后台跑（`start` 返回编号，网页每秒问一次 `/api/notion/import/<编号>`），一次只跑一个。从选的根页面往下爬，正文里的 `<page>` / `<database>`
+  是子页面、子数据库；“View of …”这种链到同一份数据的库只建一次，别处当成链接。
+- 正文转成资料库认得的 Markdown（`to_markdown`），页面之间的链接、提到的页面换成资料库里的地址。写进资料库算用户的改动。
+- `notion_map` 记着 Notion 编号和资料库编号，再导一次是更新：正文走 `save_page` 的整页重写（没变的段编号、作者不变），行的属性换成 Notion 现在的；
+  Notion 里删掉的不跟着删。
+
+### 搜索和读网页
+- 用哪家不写在代码里：各家怎么调写成配方（`websearch.yaml`，`config.yaml` 的 `web.recipes` 能加新的、替掉默认的），按设置里的顺序试，
+  前一家出错、被限流、没结果就换下一家，换过的写在结果末尾给模型看。
+- 不用的网站（`web.block`）三处都挡：搜索结果里去掉，`fetch_url` 不读，`browser_open` 不打开。
+- 后台任务查资料只用 `web_search`，提示词里写明不在浏览器里打开搜索引擎的网站（慢，还容易遇到验证码）。
+- 按条收钱的帖子搜索（X 官方接口）每个任务有预算（`websearch.budget()`，默认 0.05 美元），用完就告诉 Bot 用已有结果或免费的办法。
+  花费按配方的单价记进 `llm_calls`（`role=web`、0 token），观测页里看得到。
 
 ### 图片和附件
 - 你发的附件照旧传到电脑的 `uploads` 目录（任务靠路径处理），正文后面由服务端接上“[附件] 路径”（`media.with_marks`），这一行存进数据库、不翻译；
@@ -449,7 +517,8 @@ web/src/
 - 以为能看图、服务却回 400 时，`Router._stream` 把这一轮的图片换成文字重试，并记下这个模型不能看图（`media.strip_images`）。
 
 ### 对话里画图
-- `generate_image(prompt, images?)` 只给 Router。用设置 → 模型 → 画图 选的模型（`avatars.current()`，和生成头像共用），一个都没有就让 Bot 照实说。
+- `generate_image(prompt, images?, page_id?, after?)` 只给 Router。用设置 → 模型 → 画图 选的模型（`avatars.current()`，和生成头像共用），一个都没有就让 Bot 照实说。
+  带了 `page_id`（比如用户在页面评论里要图）时，画好后插进那个资料库页面、`after` 那段后面（`builtin` 传进来的 `put`）。
 - 参考图（`images`）：写对话里图片的编号或电脑里的路径。上下文给没有路径的图片（画出来的、没传到电脑里的）补一行“[图片] 编号”
   （`memory._image_ids`），有路径的本来就有“[附件] 路径”。`images.find_refs` 先按编号找 `media`，路径先在消息附件里找存好的那份，
   找不到再从电脑里读（`media.from_computer`）；只收 PNG、JPG、WebP。带了参考图就用“照着图片画”的模型（`avatars.current(refs)`：
@@ -457,6 +526,11 @@ web/src/
 - 各家怎么传不写在代码里，按配方（`generation.yaml`，`config.yaml` 的 `generation.recipes` 排在前面）：`recipe(kind, provider, model)`
   按 kind、host、model 找第一条对上的，`caps()` 是能收几张参考图、是不是只能改图，`draw()` 按配方的 `request`（带参考图时 `edit`）拼请求。
   模型列表 `catalog(kind)` = 服务列出来的 + 配方 `offer` 的、有配方的那些；“自动”的顺序按配方的 `prefer`。
+- 默认每次先问（`approvals.ASK`），点“总是允许”生成一条 `generate_image` 的允许规则。要问的时候不让 Router 干等：
+  工具马上返回“等用户确认”，卡片和画图放在后台（`images.generate` 里的 `wait_and_draw`），Router 这一轮照常说完、不占着锁，
+  用户也能在对话里说“画吧”（`resolve_approval`）。冒充任务的写法照 `Router._direct`；卡片照旧只进私聊，群里、讨论串里有提示。
+- 画好的原图存进 `media`，对话里记一条 `role=task`、`kind=image` 的消息（`meta` 带 `prompt`、`model`、`provider`、`price`、`attachments`），
+  显示成 Bot 发的图片，能下载、设为头像。上下文里是一句“你画好了一张图……”，后面带它的编号；推送、聊天软件、讨论串的“N 条回复”都算它。
 
 ### 对话里生成视频
 - `generate_video(prompt, images?, image_use?, videos?, seconds?, ratio?)` 只给 Router。`images` 当开头（结尾）画面（`frames`）
@@ -472,11 +546,6 @@ web/src/
   没填或是本机、内网地址时用不了，工具照实告诉模型。
 - `/api/media/<id>` 的视频按 Range 分段发（`media.read_range` 用 SQLite 的 substr），能拖进度，iPhone 上的 Safari 也能放。
 - 上下文：`video` 是“你生成好了一段视频……”加“[视频] 编号”；还在等的 `video_job` 是一句“还在生成”；做完的、失败的不重复说（另有消息）。
-- 默认每次先问（`approvals.ASK`），点“总是允许”生成一条 `generate_image` 的允许规则。要问的时候不让 Router 干等：
-  工具马上返回“等用户确认”，卡片和画图放在后台（`images.generate` 里的 `wait_and_draw`），Router 这一轮照常说完、不占着锁，
-  用户也能在对话里说“画吧”（`resolve_approval`）。冒充任务的写法照 `Router._direct`；卡片照旧只进私聊，群里、讨论串里有提示。
-- 画好的原图存进 `media`，对话里记一条 `role=task`、`kind=image` 的消息（`meta` 带 `prompt`、`model`、`provider`、`price`、`attachments`），
-  显示成 Bot 发的图片，能下载、设为头像。上下文里是一句“你画好了一张图……”，后面带它的编号；推送、聊天软件、讨论串的“N 条回复”都算它。
 
 ### 链接卡片和嵌入
 - 哪些链接展开（一条消息最多 3 个，同一个只展开一次，代码块、表格里的不管）：

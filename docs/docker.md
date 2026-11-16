@@ -76,7 +76,9 @@ docker compose --profile https up -d
 服务器内存小、不想在上面跑桌面和浏览器时，电脑改用 Instabox 云主机：
 
 1. `.env` 里设 `INSTABOX_API_KEY`（`computer.backend` 保持 `auto` 就会用它，也可以在 `config.yaml` 里写成 `instabox`）。
-2. 用 `docker compose up -d osa` 启动，只构建、启动服务，不起电脑容器。
+   也可以不写 `.env`：打开后在 设置 → 电脑 选“云电脑”，在那里填 API Key（加密存进保险库）。
+2. 用 `docker compose up -d osa` 启动，只构建、启动服务，不起电脑容器。设置里的 Docker 沙盒会显示“电脑容器没开”，选不了；
+   不想让它出现，在 `config.yaml` 里写 `computer.choices: [instabox]`。
 
 ## 选项
 
@@ -111,7 +113,7 @@ docker compose --profile https up -d
 
 | 现象 | 原因和处理 |
 |---|---|
-| 电脑面板显示“电脑容器没在运行” | 电脑容器没起来：`docker compose up -d computer`，看 `docker compose logs computer` |
+| 电脑面板显示“电脑容器没在运行”，或者 设置 → 电脑 里的 Docker 沙盒写着“电脑容器没开” | 电脑容器没起来：`docker compose up -d computer`，看 `docker compose logs computer` |
 | 改了电脑镜像没生效 | `docker compose up -d --build computer` |
 | 镜像构建成了 amd64，或者电脑启动报平台不匹配 | 环境里设了 `DOCKER_DEFAULT_PLATFORM`，`unset` 之后重新构建 |
 | 文件夹应用要访问宿主机上的目录 | 应用跑在服务的容器里，只看得到容器里的路径。在 `compose.yaml` 的 `volumes` 里把目录挂进去（比如 `- ~/Documents:/mnt/docs`），添加应用时填 `/mnt/docs` |

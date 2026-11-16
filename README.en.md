@@ -17,27 +17,57 @@ An open-source alternative to [Grok Bot](https://x.ai/bot). Bring your own model
 
 <sub>Feature tour (silent, sped up; Chinese UI): link cards · threads · background tasks · the Bot's computer · ask first · groups · Bot DMs · drawing · schedules · apps · skills · memory · costs · <a href="docs/images/promo.mp4">full 2-minute promo (Chinese voice-over)</a></sub>
 
+<sub>Recorded on 2026-11-08 (v0.7.0); the current release is v0.23.0. Added since: the library became shared documents (comments that wake a Bot, version history, databases and boards, with Claude Code and Codex writing too), events, the Insights page, video generation, searching posts on X, Reddit and Xiaohongshu, and sending tasks to your Mac. <a href="#a-look-around">New screenshots below</a>; see the <a href="CHANGELOG.md">changelog</a> (Chinese) for every release.</sub>
+
 </div>
 
 ## Highlights
 
-- **Chats and delegates**: each Bot has its own persona, memory and conversation. Long jobs run as background tasks while you keep chatting; put several Bots in a group, and one hands its research to another to write up.
+- **Chats and delegates**: each Bot has its own persona, memory and conversation. Long jobs run as background tasks while you keep chatting, and you can see every step; put several Bots in a group, and one hands its research to another to write up.
+- **A library you write together**: plans and reports the Bots make are saved as pages you can edit in place, Notion-style. Several Bots can keep writing the same page section by section, each section marked with its author;
+  comment on a section and the Bot that wrote it revises it and replies in the thread; every version can be viewed and restored. Build databases to use as task boards, let Claude Code and Codex read and write over MCP, and import from Notion.
 - **A computer you can watch and take over**: Bots browse, fill in forms and download files on the computer while you watch live; for captchas and logins, they ask you to step in. Several tasks run at once, each in its own browser window, without queueing.
   The computer can be the Bots' own, or simply your Mac: once you grant the permissions, they use the mouse and keyboard in apps like WeChat, Finder and Notes, and stop as soon as you move the mouse.
+- **Finds what's new**: web search and page reading can rotate across providers (DeepSeek, Exa, Tavily…), moving to the next when one fails; Bots can also search posts on X, Reddit and Xiaohongshu, with like and comment counts.
 - **Connects to the apps you use**: 40 apps in the market, including Notion, Gmail, GitHub, Feishu, DingTalk and Tencent Docs, connected with a login or a token; any MCP server works too.
 - **Asks before acting**: sending mail, submitting forms and similar actions show a card first; secrets are encrypted in a vault and never enter the chat.
-- **Any model, with visible cost**: DeepSeek, Kimi, Zhipu, OpenAI, Ollama on your own machine, or any OpenAI-compatible endpoint. Spend is tracked per task and per day, with a daily budget.
-- **Show it once**: with Teach a task, do the job yourself on the computer and the Bot turns it into a [skill](docs/skills.md) you run again with `/name`. Skills can carry scripts and reference files, come ready-made from the skill market, or be imported from Claude's SKILL.md. Say "every day at 9, ..." to set up a routine.
+- **Any model, with visible cost**: DeepSeek, Kimi, Zhipu, OpenAI, Ollama on your own machine, or any OpenAI-compatible endpoint. The Insights page shows what you spent, how fast things ran and what went wrong, with a daily budget.
+  Image drawing, editing from reference images and video generation are wired to providers through config.
+- **Show it once, run it on time**: with Teach a task, do the job yourself on the computer and the Bot turns it into a [skill](docs/skills.md) you run again with `/name`. Skills can carry scripts and reference files, come ready-made from the skill market, or be imported from Claude's SKILL.md.
+  Say "every day at 9, ..." to set up a routine, or "tell me when this page changes" to set up an [event](docs/events.md).
 - **Works in mainland China**: talk to your Bots in Feishu, DingTalk or WeCom; the default setup needs no paid foreign service; the UI comes in Chinese and English.
 - **Your data stays yours**: it runs on your own machine, and all data, secrets included, exports as one encrypted file you can carry to another machine.
 
 See [Features](docs/features.en.md) for the full list.
 
+## A look around
+
+<table>
+<tr>
+<td width="50%"><img src="docs/images/chat-group.webp" alt="The group chat “2.0 launch team”: Nova assigns the work, Radar picks three pricing differences from the competitor research and hands them to Quill, and Quill saves the opening of the announcement to the library"><br><sub><b>Group work</b>: Nova assigns, Radar hands its competitor research to Quill, Quill writes the announcement opening into the library</sub></td>
+<td width="50%"><img src="docs/images/task-steps.webp" alt="Radar's finished background task, with each step listed on the right: web search, Reddit, Xiaohongshu, X, reading pages, and how long each took"><br><sub><b>Background task</b>: two weeks of discussion about note apps, with every step on the right (web search, X / Reddit / Xiaohongshu, reading pages)</sub></td>
+</tr>
+<tr>
+<td><picture><source media="(prefers-color-scheme: dark)" srcset="docs/images/doc-comments-dark.webp"><img src="docs/images/doc-comments.webp" alt="A library page, the launch plan: a colored bar left of each section marks its author; in the comments panel you ask Quill to shorten the X post, and Quill replies after revising it"></picture><br><sub><b>Pages written together</b>: the bar left of each section is its author; comment on a section and its Bot revises it and replies</sub></td>
+<td><img src="docs/images/doc-history.webp" alt="Page history: version 5 by Claude Code compared with now, changed sections showing removed and added text, each restorable on its own"><br><sub><b>Version history</b>: which version Nova, Radar, Quill and Claude Code each wrote, how it differs from now, restore a single section</sub></td>
+</tr>
+<tr>
+<td><picture><source media="(prefers-color-scheme: dark)" srcset="docs/images/db-board-dark.webp"><img src="docs/images/db-board.webp" alt="The Launch tasks database as a board: To do, In progress and Done columns, cards with ID, owner, due date and priority"></picture><br><sub><b>Database board</b>: the task database Nova built from the launch plan, owned by you and by Bots</sub></td>
+<td><img src="docs/images/applet.webp" alt="An applet in the chat, a launch countdown: 3 days 15 hours to go, with the unfinished tasks below as checkboxes"><br><sub><b>Applet</b>: a launch countdown Nova built from one sentence, reading the tasks on the board</sub></td>
+</tr>
+<tr>
+<td><img src="docs/images/observe.webp" alt="The Insights page: today's spend, tokens, tasks and time to first reply, hourly spend, and spend per Bot"><br><sub><b>Insights</b>: what you spent, how fast, what went wrong, per Bot if you like</sub></td>
+<td><img src="docs/images/apps.webp" alt="The app market: Notion, flomo, Tencent Docs, DingTalk Docs, Feishu Docs, Yuque, Evernote, Gmail, QQ Mail and more, filtered by category"><br><sub><b>App market</b>: 40 apps, connected with a login or a token</sub></td>
+</tr>
+</table>
+
+<sub>Screenshots show the v0.23.0 web UI in Chinese with demo data: an indie developer launching “Tidal Notes 2.0”. The three Bots and everything on the pages were produced by a real model (DeepSeek). With GitHub in dark mode, the page and board screenshots show the dark theme.</sub>
+
 ## Where you use it
 
 | Client | What you get |
 |---|---|
-| 💻 **macOS desktop app** | Download the dmg and open it: about 45 MB with its own runtime, no Docker or Python. By default Bots use this computer: a browser, plus the screen, mouse and keyboard once you grant the permissions; you can switch to a Docker sandbox or a cloud computer. It keeps running in the menu bar after you close the window, and can also connect to your server and let the Bots there use this Mac. See [Desktop app](docs/desktop.md) (Chinese) |
+| 💻 **macOS desktop app** | Download the dmg and open it: about 45 MB with its own runtime, no Docker or Python. By default Bots use this computer: a browser, plus the screen, mouse and keyboard once you grant the permissions; you can switch to a Docker sandbox or a cloud computer. It keeps running in the menu bar after you close the window, and can also connect to your server, so the Bots there can send tasks that need your Mac to it. See [Desktop app](docs/desktop.md) (Chinese) |
 | 🖥️ **Server** | One `docker compose up` on a VPS or a machine at home keeps it always on; connect from a browser, the desktop app, your phone or a chat app. See [Deploy with Docker Compose](docs/docker.md) (Chinese) |
 | 📱 **iPhone app** (TestFlight) | Scan a QR code on your computer with the Camera to connect; approvals and finished tasks are pushed to your phone, encrypted, and readable on the lock screen. See [iPhone app](docs/mobile.md) (Chinese) |
 | 💬 **Chat apps** | Talk to your Bots from Telegram, Feishu/Lark, DingTalk, WeCom or Discord, with approvals as message buttons. See [Chat apps](docs/channels.md) (Chinese) |
@@ -109,8 +139,9 @@ uv run uvicorn osa.server:app --port 8765   # open http://127.0.0.1:8765
 [Features](docs/features.en.md) and [the comparison](docs/comparison.en.md) are in English; the other docs are in Chinese for now:
 
 - [Deploy with Docker Compose](docs/docker.md)
-- [Configuration](docs/configuration.md): models, limits and prices, the computer, apps, approvals and the vault, routines, push, remote access
-- [Desktop app](docs/desktop.md): running on your computer or connecting to your server, and letting the server's Bots use this Mac
+- [Configuration](docs/configuration.md): models, drawing and video generation, web search and reading, limits and prices, the computer, apps, approvals and the vault, the library (databases, external agents, Notion import), routines, push, remote access
+- [Events](docs/events.md): have a Bot act when something happens: webhooks, GitHub, feeds, page changes, mail, calendar, weather, earthquakes, prices, public IP…; addresses and security, writing a new source
+- [Desktop app](docs/desktop.md): running on your computer or connecting to your server, and sending the server's tasks to this Mac
 - [iPhone app (TestFlight)](docs/mobile.md): QR pairing, how pushes reach the phone, what the push relay can see, development
 - [Chat apps](docs/channels.md): connecting Telegram, Feishu/Lark, DingTalk, WeCom and Discord
 - [Adding an app to the market](docs/apps.md)

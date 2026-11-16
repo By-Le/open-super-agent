@@ -71,7 +71,8 @@ cd src-tauri && cargo test --lib                      # 地址、配对链接、
 - Xcode 工程在 `src-tauri/gen/apple/`，提交进仓库。改 `project.yml` 后在那个目录里跑 `xcodegen generate`；
   别再跑 `tauri ios init`，它会把通知扩展、权限、文案这些改动冲掉。
 - 网页和 App 之间的接口是 `window.osaDesktop`（`web/src/desktop.ts`），手机版多了 `platform: 'ios'`、`push`（含只查不问的 `status()`）、`openSheet`、
-  `switchServer`、`takePendingOpen`。只有服务器的网页界面（`/`、`/apps`、`/library`）能调，Bot 生成的报告页调不到。
+  `takePendingOpen`；`switchServer` 桌面版 0.21.1 起也有。只有服务器的网页界面（`/`、`/apps`、`/library`、`/library/pages/<编号>`）能调，
+  Bot 生成的报告页调不到。
 - 要在模拟器上点系统界面（通知权限框的“允许”、锁屏、点一条通知），用 `mobile/uitest/run.sh <设备 UDID> <步骤> [文字]`，
   它是一个 XCUITest，步骤见脚本开头。真实推送的完整测法：本机起带密码的服务，App 配对后开推送（`AllowNotifications` 点掉权限框），
   `Lock` 锁屏，服务器发推送（`/api/push/test`，或者在“没在看”的页面里给 Bot 发消息），看 `last-push.json` 和截图，

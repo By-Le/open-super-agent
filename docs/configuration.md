@@ -9,7 +9,9 @@
 |---|---|---|
 | `DEEPSEEK_API_KEY` | 否 | 默认配置用的 DeepSeek 的 key。也可以不设，在 设置 → 模型 里填 |
 | `OSA_PASSWORD` | 部署到公网时必需 | 登录密码，设置后要先登录才能用；不设置则不用登录，只适合本机或内网 |
-| `INSTABOX_API_KEY` | 否 | 设置后，电脑改用 Instabox 云主机 |
+| `INSTABOX_API_KEY` | 否 | 云电脑（Instabox）的 API Key。也可以在 设置 → Bot 用的电脑 里填（填的优先）；`computer.backend: auto` 时有它就用云电脑 |
+| `OSA_VAULT_KEY` | 否 | 保险库的主密钥；不设时自动生成 `data/vault.key`（见 [确认规则与保险库](#确认规则与保险库)） |
+| `TAVILY_API_KEY`、`BRAVE_API_KEY`、`BOCHA_API_KEY`、`JINA_API_KEY`、`X_BEARER_TOKEN`、`SCRAPECREATORS_API_KEY` | 否 | 搜索和读网页各家的密钥，没在 设置 → 搜索和读网页 里填时用（见 [搜索和读网页](#搜索和读网页)） |
 | `OSA_WEBHOOK_TOKEN` | 否 | 旧版 webhook 地址 `/hooks/<名字>` 的鉴权；没设置时旧地址只接受本机发来的请求。新的事件地址自带密钥，不用它（见 [事件](events.md)） |
 | `OSA_ALLOWED_HOSTS` | 否 | 没设 `OSA_PASSWORD` 时，额外放行的访问地址，逗号分隔，和 `server.allowed_hosts` 一样（见 [登录](#登录)） |
 | `OSA_CONFIG` | 否 | 配置文件路径，默认 `config.yaml` |
@@ -25,6 +27,8 @@
 
 第一次打开时的引导会带你接上一个模型服务、选一个模型（对话、后台任务、汇总、整理都先用它）。之后在 **设置 → 模型** 里改，改了马上生效。分两步：
 
+<img src="images/settings-models.webp" width="640" alt="设置 → 模型：上面是接上的模型服务（DeepSeek），下面给对话、后台任务、Heavy 汇总各选一个模型，写着单价、能不能看图，旁边能点“测试”">
+
 1. **添加模型服务**：点“添加”，选一个服务商（DeepSeek、OpenAI、OpenRouter、硅基流动、阿里云百炼、智谱、Kimi、Ollama），
    或者选“其他”填任何兼容 OpenAI 的地址（vLLM、LM Studio、one-api……）。填上 API Key，点“测试连接”，能连上就会列出它有哪些模型。
    API Key 加密存在保险库（名字是 `LLM_KEY_<服务名>`），保险库页面里也看得到。
@@ -35,7 +39,7 @@
 “对话”的模型能看图时，你发的图片 Bot 直接看（点“测试”测出来的为准，没测过按 models.dev 的记录）；服务实际不收图片的话，
 那一轮去掉图片重试，之后按不能看图处理。
 
-**画图**（设置 → 模型 最下面）：你让 Bot 画图、生成头像时用哪个模型。列表是已经配好的服务里能画图的模型
+**画图**（设置 → 模型 → 画图）：你让 Bot 画图、生成头像时用哪个模型。列表是已经配好的服务里能画图的模型
 （硅基流动的 Kolors、Qwen-Image、Z-Image，OpenAI 的 gpt-image，智谱的 CogView……，按[配方](#画图和生成视频的配方)认；只能改图的不在这里），
 选“自动”就用排在最前面的（Kolors 免费，优先）。生成头像时换了模型也会记下来。没有能画图的模型时，Bot 会照实告诉你去添加。
 
@@ -114,6 +118,8 @@ API Key 先看保险库（界面上填的），没有再看 `api_key_env` 写的
 
 Bot 用 `web_search` 搜索网页、用 `fetch_url` 读网页正文。用哪家在 **设置 → 搜索和读网页** 里选：打开几家、排先后，
 前一家出错、被限流或没有结果就换下一家（换过的写在结果末尾，模型能看到）。没选过是“自动”：配好了的都用，按配方的顺序。
+
+<img src="images/settings-web.webp" width="640" alt="设置 → 搜索和读网页：每家一行，开关、排第几、单价、测试按钮；Tavily、Brave Search、博查还没填 API Key">
 
 | 搜索网页 | 要什么 | 说明 |
 |---|---|---|
@@ -230,7 +236,7 @@ pricing:
 computer:
   enabled: true
   backend: auto          # Bot 电脑用哪种：auto（桌面 App 独立运行时是本机；否则有 Instabox 的 API Key 用 Instabox、没有用本地 Docker），也可以写 instabox / local / host
-  parallel: 3            # 几个任务可以同时用电脑，多了排队；设置 → 限制与预算 里也能改
+  parallel: 3            # 几个任务可以同时用电脑，多了排队；设置 → Bot 用的电脑 里也能改
   width: 1280
   height: 800
   idle_pause_s: 900      # 闲置多少秒后自动暂停
@@ -239,21 +245,25 @@ computer:
   chrome_path: ""        # 本机：Bot 的浏览器用哪个 Chrome，留空按常见位置找
   host_shell: false      # 本机的终端，默认关
   host_desktop: true     # 本机是 Mac 时，给了权限就能操作整个屏幕；false 只用浏览器
-  # choices: [instabox]  # 电脑面板里给哪几种（host / local / instabox），不写就是全部
+  # choices: [instabox]  # 设置里给选哪几种（host / local / instabox），不写就是全部
 ```
 
-电脑面板上方能换电脑（存在设置里，覆盖 `backend`）：
+用哪台电脑在 **设置 → Bot 用的电脑** 里选，选好以后一直用它（存在设置里，覆盖 `backend`）。电脑面板上只显示是哪台，点“换电脑”打开这一页：
+
+<img src="images/settings-computer.webp" width="640" alt="设置 → Bot 用的电脑：本机、Docker 沙盒（正在用）、云电脑三选一，云电脑还没填 API Key；下面是同时用电脑的任务数">
 
 - 桌面 App 独立运行时：**本机**（这台 Mac）、**Docker 沙盒**（`local`）、**云电脑**（`instabox`）三选一，默认本机。
 - 服务器上：**Docker 沙盒**、**云电脑** 二选一。服务器从不用它自己当电脑：Bot 在服务器上直接开浏览器、执行命令太危险
   （服务器多半用 root 跑，Chrome 还得关掉自己的沙箱）。`config.yaml` 里写了 `host` 也会换成 Docker 沙盒或云电脑；
   `host` 只在你自己的 Mac 上有（桌面 App 独立运行，或者在 Mac 上直接 `uv run`）。
   要用你自己 Mac 上才有的东西，让 Bot 把那个任务派到你的 Mac（见下面“派任务到你的 Mac”），而不是换电脑。
-- 云电脑要 Instabox 的 API Key：第一次选时在面板里填，服务先试一下能不能用，能用才加密存进保险库（名字 `INSTABOX_API_KEY`）；
-  面板里填的优先，没填用环境变量 `INSTABOX_API_KEY`。换了 Key（可能是另一个账号）会接着用那个账号里以前给这里建的机器。
-- 换电脑时旧的那台会暂停（本机关掉 Bot 的 Chrome，Docker 容器暂停，Instabox 挂起），下次换回来接着用。
-- 不想让人在面板里选某种（比如服务器内存小、不想在上面跑 Docker），在 `computer.choices` 里只列要给的，比如 `[instabox]`。
-  只剩一种时面板上不再出现下拉框；正在用的那种不受影响。
+- 云电脑要 Instabox 的 API Key：第一次选时在这一页填（“填 API Key”），服务先试一下能不能用，能用才加密存进保险库（名字 `INSTABOX_API_KEY`）；
+  这里填的优先，没填用环境变量 `INSTABOX_API_KEY`。换了 Key（可能是另一个账号）会接着用那个账号里以前给这里建的机器。
+  选了云电脑以后，下面还能选用账号里的哪台机器（“云电脑用哪台机器”）。
+- 同一页还能改“同时用电脑的任务”（就是 `parallel`）。
+- 有任务正在用电脑时不能换，等它们用完再换。换电脑时旧的那台会暂停（本机关掉 Bot 的 Chrome，Docker 容器暂停，Instabox 挂起），下次换回来接着用。
+- 不想让人选某种（比如服务器内存小、不想在上面跑 Docker），在 `computer.choices` 里只列要给的，比如 `[instabox]`；正在用的那种不受影响。
+- 演示服务器（`security.demo: true`）上不能换电脑，这一页只写着“演示服务器上没开电脑”。
 
 | backend | 说明 |
 |---|---|
@@ -271,7 +281,7 @@ computer:
   没允许时电脑面板会提示。服务停止时这个浏览器跟着关掉。
 - 屏幕和鼠标键盘（只有 macOS）：给 Open Super Agent 打开**辅助功能**（发鼠标键盘事件、读按钮上的字）和**屏幕录制**（截到别的 App 的窗口）
   两个权限后，Bot 还能看整个屏幕、用你的鼠标键盘操作这台 Mac 上的其他 App（微信、访达、备忘录、系统设置……，`desktop_*` 工具）。
-  权限就是开关：没给就只用浏览器，电脑面板上有一行提示和“去打开”按钮（打开后还显示这句，就退出 App 再打开）；不想要可以写 `host_desktop: false`。
+  权限就是开关：没给就只用浏览器，电脑面板上列着还差哪几项和一个“去打开”按钮（打开后这里自己更新，系统提示“退出并重新打开”就照做）；不想要可以写 `host_desktop: false`。
   自己用 `uv run` 跑时，权限给的是你启动它的那个终端。
   - 每个任务第一次用屏幕先弹卡片问你（`desktop`），对话里同意过的 10 分钟内不再问。在屏幕上点“发送 / 发布 / 提交 / 付款 / 购买 / 转账”这类按钮、
     在多行输入框（聊天软件、终端）里按回车也先问（`desktop_submit`）。点“总是允许”后不再问，可以在 设置 → 确认规则 里撤销。
@@ -484,7 +494,7 @@ mcp_servers:
 资料库和右栏“记忆”上面也有搜索框。
 
 - 不用配置就能按关键词找：中文按两个字一组建索引（SQLite FTS5），英文、数字按词。
-- 选一个 embedding 模型后，说法不同、意思相近的也能找到（设置 → 模型 最下面，可以点“测试”；或者 `config.yaml` 的 `embedding`）。
+- 选一个 embedding 模型后，说法不同、意思相近的也能找到（设置 → 模型 → 按意思检索记忆和资料库，可以点“测试”；或者 `config.yaml` 的 `embedding`）。
   推荐硅基流动的 `BAAI/bge-m3`（免费）、OpenAI 的 `text-embedding-3-small`、本机 Ollama 的 `nomic-embed-text`。
   向量在后台算，页面按段切成约 600 字一块，每个页面最多算前 200 块。换了模型会全部重算。
   向量服务出错时自动退回只按关键词找，设置页上会显示错误。
@@ -498,6 +508,8 @@ mcp_servers:
 
 资料库里除了页面，还能建**数据库**（多维表，参考 Notion）：任务看板、会议列表、客户名单这类一条一行、每条带几个属性的东西。
 资料库列表上点“新建数据库”，或者让 Bot 建（`db_create`）。每一行也是一个页面，点开能写正文、评论、看历史。
+
+<img src="images/db-board.webp" width="720" alt="数据库《发布任务》的看板视图：待办、进行中、已完成三列，卡片上有编号、负责人、截止日期、优先级">
 
 - **属性**：名称、文本、数字（数字 / 千分位 / 百分比 / 人民币 / 美元）、单选、多选、状态（分未开始 / 进行中 / 已完成三组）、日期（可以带时间、结束日期）、
   人员（你、Bot、外部 Agent）、勾选、网址、邮箱、电话、文件，还有自动算的创建时间、最后编辑时间、创建人、最后编辑人，以及下面这些：
@@ -540,6 +552,8 @@ mcp_servers:
 Claude Code、Codex 这些 OSA 外面的 Agent 能经 MCP 读写资料库：搜页面、读页面、按段改、整页重写、新建页面、看评论和回复评论。
 它们写的段署它们的名字（建 token 时起的），你在网页上实时看到，和 OSA 里的 Bot 在同一个页面上接着改。
 
+<img src="images/settings-agents.webp" width="640" alt="设置 → 外部 Agent：上面写着 MCP 地址，新建一栏填名字、选能读能写或只读；已建的有 Codex（只读）和 Claude Code（能读能写，最后用过的时间）">
+
 1. **设置 → 外部 Agent** 里新建一个 token：填名字（比如 `Claude Code`），选“能读能写”或“只读”。token 只显示这一次，服务器只存它的 sha256。
 2. 照着页面上给的写法接上（地址是网页的地址加 `/mcp`，比如 `https://osa.example.com/mcp`）：
 
@@ -558,7 +572,7 @@ Claude Code、Codex 这些 OSA 外面的 Agent 能经 MCP 读写资料库：搜�
    别的支持 Streamable HTTP 的 MCP 客户端也一样：地址填 `/mcp`，请求头带 `Authorization: Bearer <token>`。
 
 工具：`search_pages`、`list_pages`、`read_page`、`create_page`、`edit_page`、`rewrite_page`、`list_comments`、`comment_page`，
-用法和 Bot 的同名工具一样（先 `read_page` 拿版本号和段落编号，改到别人刚改过的段会告诉它现在的内容，按新版本号重提）。
+还有数据库的 `db_query`、`db_create`、`db_schema`、`db_add`、`db_update`（见 [数据库](#数据库)），用法和 Bot 的同名工具一样（先 `read_page` 拿版本号和段落编号，改到别人刚改过的段会告诉它现在的内容，按新版本号重提）。
 
 - **只读的 token** 看不到写的工具。**锁定的页面**它们只能读和评论；html 页面只能读。
 - **它们写的评论不叫醒 Bot**：只有你写的评论会叫醒 Bot，免得 Agent 和 Bot 来回停不下来。要 Bot 接着做，你在评论里 @ 它。
@@ -599,9 +613,10 @@ uv run python -m osa.backup restore ~/backups/osa-backup-20261106-0835.osabak
 
 ## 登录
 
-设置环境变量 `OSA_PASSWORD` 后，打开页面会先要求输入密码。登录保持 30 天，期间用着会自动续期；设置 → 右上角“退出登录”。
+设置环境变量 `OSA_PASSWORD` 后，打开页面会先要求输入密码。登录保持 30 天，期间用着会自动续期；退出在设置左下角的“退出登录”。
 
-- 不用登录就能访问的只有：登录页、分享链接（页面 `/s/<token>`、技能 `/skill/<token>`、Bot 模板 `/template/<token>`）、webhook（`/hooks/*`：事件的地址自带随机密钥，旧版地址用 `OSA_WEBHOOK_TOKEN` 鉴权）、前端的静态文件。
+- 不用登录就能访问的只有：登录页、分享链接（页面 `/s/<token>`、技能 `/skill/<token>`、Bot 模板 `/template/<token>`，和它们用的 `/api/shared/…`，分享页里的图片只给页面正文里引用着的）、webhook（`/hooks/*`：事件的地址自带随机密钥，旧版地址用 `OSA_WEBHOOK_TOKEN` 鉴权）、头像图片（`/avatars/<id>`）、给视频服务取参考素材的限时地址（`/pub/media/…`，带签名，6 小时内有效）、前端的静态文件。
+  外部 Agent 的 `/mcp` 不看登录，只认它自己的 token（见 [让外面的 Agent 读写资料库](#让外面的-agent-读写资料库)）；你的 Mac 连进来的 `/api/computer/link` 也只认它自己的令牌。
 - 同一个 IP 10 分钟内输错 5 次，之后 10 分钟内不能再登录。
 - 桌面 App 自动登录用一次性的票：`POST /login/ticket` 带上 `Authorization: Bearer <密码>`，换一张 30 秒内有效、只能用一次的票，再打开 `/login/ticket?t=<票>&next=/` 就登录了。输错和登录页一起限速。
 - 手机 App 扫码登录也用这种票：已经登录的页面 `POST /api/pair` 换一张 5 分钟内有效、只能用一次的票，放进 设置 → 手机 App 的二维码里。
@@ -625,7 +640,7 @@ security:
 | 设置 | 关掉什么 |
 |---|---|
 | `local_exec: false` | 电脑选“本机”、本机终端；自定义启动命令的应用，以及改应用的启动命令、参数、环境变量；“文件夹”应用访问工作文件夹以外的目录；应用配置里引用服务的环境变量（`env:名字`）。应用市场里的应用照常能用：只认随项目发布的清单（`osa/catalog/apps`）里原样的命令，填的值只能进模板里留的位置。`mcp_servers` 里写的应用不受限 |
-| `demo: true` | 给登录密码公开出去的演示服务器，包含上一行，另外还关掉：所有在服务器上运行程序的应用（npx / uvx，应用市场里的也不行）、自定义应用和应用的连接配置、本机或内网的模型服务地址、改用量上限（每天的 token 上限、Heavy 并行数）、备份的导出和恢复、[外部 Agent](#让外面的-agent-读写资料库) |
+| `demo: true` | 给登录密码公开出去的演示服务器，包含上一行，另外还关掉：所有在服务器上运行程序的应用（npx / uvx，应用市场里的也不行）、自定义应用和应用的连接配置、本机或内网的模型服务地址、改用量上限（每天的 token 上限、Heavy 并行数、同时用电脑的任务数）、备份的导出和恢复、[外部 Agent](#让外面的-agent-读写资料库)、改搜索服务的密钥和地址、填云电脑的 API Key、把任务派到你的 Mac |
 
 这两个开关背后是两个策略，想分开管可以直接写（写了以写的为准，写错的值按最严的算；`off` 带不带引号都行）：
 
@@ -723,7 +738,7 @@ server {
 
 改完 `nginx -t && systemctl reload nginx`。
 
-服务器内存小或者不想装 Docker 时，电脑用 Instabox：在电脑面板上选“云电脑”、填 API Key；或者设置环境变量 `INSTABOX_API_KEY`，并把 `computer.backend` 写成 `instabox`。
+服务器内存小或者不想装 Docker 时，电脑用 Instabox：在 设置 → Bot 用的电脑 里选“云电脑”、填 API Key；或者设置环境变量 `INSTABOX_API_KEY`，并把 `computer.backend` 写成 `instabox`。
 
 应用（MCP）里用 `npx` 的（文件系统、GitHub、Notion）要装 Node ≥ 20，用 `uvx` 的（网页抓取）要装 uv。
 Ubuntu 18.04 这类 glibc 低于 2.28 的系统跑不了官方的 Node，可以用 [unofficial-builds](https://unofficial-builds.nodejs.org/download/release/) 里的 `linux-x64-glibc-217` 版本。

@@ -26,12 +26,17 @@ The README lists the highlights; this is the full list. For setup see [Configura
   - Creating, editing and deleting always show a card first and happen only when you approve. Decline with a note and it revises and asks again,
     or click Edit on the card to change the role yourself before approving.
   Other Bots can edit themselves; to create, delete or edit another Bot they ask the main Bot, and you still confirm.
-- **Background tasks**: workers run long jobs while you keep chatting. **Heavy mode** has several workers do the same job, then cross-review and merge.
+- **Background tasks**: workers run long jobs while you keep chatting. The Tasks tab on the right shows every step and how long it took, live while it runs.
+  **Heavy mode** has several workers do the same job, then cross-review and merge.
 - **Memory**:
   - Each Bot remembers your preferences and the work it has done; basic facts about you (name, time zone) are shared by all Bots.
   - Just say "remember ...", or view, edit, delete and import (for example from ChatGPT) in the side panel.
   - Start a **new topic** to drop old messages from the context while keeping memories.
   - Memories and the library are searchable by meaning, and Bots look up past notes and pages on their own.
+
+![The group chat “2.0 launch team”: Nova assigns the work, Radar picks three pricing differences from the competitor research and hands them to Quill, and Quill saves the opening of the announcement to the library](images/chat-group.webp)
+
+![Radar's finished background task, with each step listed on the right: web search, Reddit, Xiaohongshu, X, reading pages, and how long each took](images/task-steps.webp)
 
 ## The computer
 
@@ -40,13 +45,28 @@ The README lists the highlights; this is the full list. For setup see [Configura
 - Watch it live and take over or hand back at any time; for captchas and logins, the Bot asks you to step in.
 - The computer is one of these three; the first two are free:
   - this computer: the default in the desktop app, no Docker needed. Bots get their own browser window (a profile apart from your everyday one) and, once you grant the permissions, the whole screen, mouse and keyboard;
-    when the service runs on a server, choose "This computer" in the Mac desktop app and the Bots on the server use that Mac;
   - a Linux desktop (Chromium and a terminal) in local Docker;
   - an [Instabox](https://instabox.sh) cloud machine.
 
-  Switch at the top of the computer panel at any time: all three in the desktop app; Docker or the cloud machine on a server.
+  Choose in Settings → Bot computer and it stays that way: all three in the desktop app; Docker or the cloud machine on a server (a server never uses itself as the computer).
+- **Send tasks to your Mac**: when the service runs on a server, some jobs can only be done on your Mac (apps you're signed in to, local files). Once you allow it in the Mac desktop app,
+  Bots on the server can send a task to that Mac; you can add several Macs, each with its own terminal switch. See [Desktop app](desktop.md) (Chinese).
 - On this computer it is more careful: uploading files, writing files and clicking "send / publish / pay" all ask first, files stay inside the workspace folder, and the terminal is off by default;
   each task asks before it first uses the screen, and the Bot stops as soon as you move the mouse or press a key.
+
+<img src="images/settings-computer.webp" width="640" alt="Settings → Bot computer: This computer, Docker sandbox or cloud computer, and how many tasks may use the computer at once">
+
+## Web search and reading
+
+- **Several providers in turn**: in Settings → Search & web pages, turn providers on and order them: DeepSeek (first by default when you have a DeepSeek model provider), Exa (free), Tavily, Brave, Bocha, SearXNG, with DuckDuckGo last;
+  page reading also has Jina Reader and direct fetching. If one errors, is rate-limited or finds nothing, the next one is tried. Other providers are recipes added in `config.yaml`, no code changes.
+- **Only recent results**: for news and current events, Bots search just the last few days.
+- **Blocked sites**: sites on this list (baidu.com by default) are dropped from results, and Bots won't read or open them.
+- **Posts on social platforms**: see what people say on X, Reddit and Xiaohongshu, with like, comment and repost counts. Free routes come first (Exa finds posts, and X posts get their counts for free);
+  the paid X API is used only when needed, with a per-task budget (US$0.05 by default). Xiaohongshu and Reddit posts are read in the computer's signed-in browser; you log in the first time.
+- The `/recent-buzz` skill in the skill market searches all of these and writes a cited report with engagement counts to the library; it can run as a weekly routine. See [Configuration](configuration.md#搜索和读网页) (Chinese).
+
+<img src="images/settings-web.webp" width="640" alt="Settings → Search & web pages: DeepSeek and Exa turned on as first and second; Tavily, Brave Search and Bocha still need an API key">
 
 ## Apps, skills and templates
 
@@ -61,9 +81,11 @@ The README lists the highlights; this is the full list. For setup see [Configura
   - Export a skill as a file or share it by link, and others install it by pasting the link; `SKILL.md` files from Claude and similar tools import as is.
   - No need to remember names: when a request is what one of its skills is for, the Bot fetches the steps itself and follows them.
   - Skills can carry scripts and reference files (`scripts/`, `references/`), imported and exported as a zip or a GitHub folder link; scripts run in the computer's workspace folder.
-  - **Skill market**: weekly report, save a web page to the library as Markdown, and meeting notes, installed in one click. See [Skills](skills.md) (Chinese).
+  - **Skill market**: weekly report, save a web page to the library as Markdown, meeting notes, and recent buzz (what people have said lately about a topic on the web, X, Reddit and Xiaohongshu), installed in one click. See [Skills](skills.md) (Chinese).
 - **Bot templates**: start a new Bot from a ready-made template (news digest, inbox helper, GitHub watcher, trip planner) with skills and routines already set up.
   Turn a Bot you've tuned into a template and share it; [write one](templates.md) (Chinese) and open a PR to make it built in.
+
+![The app market: Notion, flomo, Tencent Docs, DingTalk Docs, Feishu Docs, Yuque, Evernote, Gmail, QQ Mail and more, filtered by category](images/apps.webp)
 
 ## Library, images and links
 
@@ -80,8 +102,25 @@ The README lists the highlights; this is the full list. For setup see [Configura
 - **Comments wake Bots**: comment on a block and the Bot that wrote it makes the change, replies in the thread and resolves it when done. You can also @ another Bot (names autocomplete) or ask nobody.
   When a Bot replies to your comment while no page is open, you get a push notification.
 - **Databases**: create Notion-style databases in the library for task boards, meeting lists or customer lists. Properties include text, number, select, multi-select, status, date, person, checkbox, URL and files, plus formulas, relations (optionally two-way), rollups, auto IDs and buttons (set properties and wake a Bot). View them as a table or a board (drag cards between columns, long-press to drag on phones), each view with its own filters and sorts; large databases load more rows as you scroll; every row is also a page with its own content and comments, and its history shows which properties changed. Bots can create databases, add and query rows, update properties and change the properties themselves; deleting or retyping a property and view changes are recorded in the database's history and can be undone.
+<table>
+<tr>
+<td width="50%"><img src="images/doc-comments.webp" alt="A library page: a colored bar left of each block marks its author; in the comments panel you ask Quill to shorten the X post, and Quill replies after revising it"><br><sub>A comment wakes the Bot that wrote the block; it revises and replies in the thread</sub></td>
+<td width="50%"><img src="images/doc-history.webp" alt="Page history: version 5 by Claude Code compared with now, changed blocks showing removed and added text, each restorable on its own"><br><sub>History shows who wrote each version and how it differs from now; restore one block</sub></td>
+</tr>
+<tr>
+<td><img src="images/db-board.webp" alt="The Launch tasks database as a board with To do, In progress and Done columns"><br><sub>A database as a board, grouped by status</sub></td>
+<td><img src="images/db-table.webp" alt="The same database as a table: task, ID, status, owner, due date, priority"><br><sub>The same database as a table: auto ID, status, person, date, select</sub></td>
+</tr>
+</table>
+
 - **Outside agents can write too**: connect Claude Code or Codex to the library over MCP (create a token in Settings → External agents). They can search, read and edit pages block by block and reply to comments; what they write is signed with their name and shows up live. See [Configuration](configuration.md#让外面的-agent-读写资料库) (Chinese).
 - **Each Bot's library**: the Library tab in the side panel lists everything that Bot has handed you, newest first: pages, files it sent, images it drew and links in its replies. Filter by kind, search, open the original, and jump to the task that made it.
+- **Applets**: when you need something to click (a sign-up form, a board, a calculator, a panel that looks something up, a dashboard updated daily), the Bot builds it and it shows up right in the chat.
+  The page can call the Bot's tools (approval cards still appear), keep its own data (which the Bot can read and write too, so "update the board every day at 9" works), and send the Bot messages for you.
+  It runs in a sandbox: it can't touch the site's data and can only do what its manifest allows.
+
+<img src="images/applet.webp" width="640" alt="An applet in the chat, a launch countdown: 3 days 15 hours to go, with the unfinished tasks below as checkboxes">
+
 - **Images and files**:
   - Attach files in chat: images show as thumbnails, other files as cards.
   - When the chat model can see images, the Bot looks at your image directly instead of starting a task.
@@ -104,17 +143,21 @@ The README lists the highlights; this is the full list. For setup see [Configura
 - Pause, resume and test them; the last 20 runs are kept. Settings → Automation lists every Bot's routines and events with an on/off switch for each.
 - Create one by saying "every day at 9, ..." or "tell me when this page changes". You can also just ask "what routines do I have", "move the brief to 8:30 on weekdays", "pause the github one" or "delete it", including from a chat app. The main Bot manages every Bot's routines and events ("pause all routines"); other Bots manage only their own.
 
+![One message to Radar set up a routine and two events; its Events tab lists “New Obsidian release” (a feed, checked every 3 hours) and “flomo pricing page changed” (page change, checked every 12 hours)](images/events.webp)
+
 ## Safety and cost
 
 - **Asks before acting**: write operations show a card first (allow once / deny / always allow), with rules you manage in Settings.
 - **Vault**: secrets are stored encrypted and never enter the chat.
-- **Visible cost**: tokens and money tracked per role, task and day (see Observe), with a daily budget.
+- **Visible cost**: tokens and money tracked per role, task and day (see Insights), with a daily budget.
 - **Insights**: the Insights page in the sidebar covers today, 7 days, 30 days or everything, for all Bots or just one:
   - Cost (compared with the previous period), tokens and cache hits, tasks with success rate and average time, routine runs, time to first word, and error counts
   - Daily (hourly for today) cost, tokens, tasks and model calls, stacked by Bot
   - Needs attention: failed and interrupted tasks plus model and tool errors, with repeats merged; click to see that task's steps
   - Tables for Bots, models (calls, errors, cost, cache hits, time to first word, tokens per second), tools (calls, errors, denials, time) and routines (runs, results, cost, with an on/off switch), a weekday × hour activity map, and recent tasks
   - A log of individual model calls you can export as CSV
+
+  ![The Insights page: today's spend, tokens, tasks and time to first reply, hourly spend, and spend per Bot](images/observe.webp)
 - **Watchdog**: cancels tasks that stall, loop or exceed the budget.
 - **Login**: set `OSA_PASSWORD` to require a login. With or without it, other websites can't use your browser to reach the service. See [SECURITY.md](../SECURITY.md).
 
@@ -135,6 +178,8 @@ The README lists the highlights; this is the full list. For setup see [Configura
 
 - **Any model**: add model providers in Settings (DeepSeek, OpenAI, OpenRouter, SiliconFlow, Alibaba Bailian, Zhipu, Kimi, Ollama,
   or any OpenAI-compatible endpoint), paste an API key and test it in one click. Pick a model per role; prices are fetched automatically.
+
+  <img src="images/settings-models.webp" width="640" alt="Settings → Models: the DeepSeek provider connected, a model picked for chat, background tasks and Heavy merging, with prices and image support">
 - **English and Chinese**: the UI, notifications and chat-app messages come in both languages; switch in Settings. In the English UI, Bots reply in English by default.
 - **Light / dark**: follows the system by default, or pick one under "Theme" at the bottom left of Settings. Each device remembers its own choice; the desktop and iPhone apps switch their title bar and status bar too.
 - **Backup and migration**: export all data, secrets included, as one encrypted file and upload it on the new machine to carry on;

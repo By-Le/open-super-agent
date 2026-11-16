@@ -14,7 +14,7 @@ App 自己会检查更新，所以 `brew upgrade` 默认跳过它。`brew uninst
 
 ## 两种用法
 
-第一次打开时选，之后在菜单栏图标 → 切换服务器 里换：
+第一次打开时选，之后在菜单栏图标 → 切换服务器 里换（设置左下角也有“切换服务器”）：
 
 - **在这台电脑上运行**：App 自带运行环境，不用装 Docker、Python。数据在 `~/Library/Application Support/open-super-agent`：
   - `data/`：服务的数据目录（数据库、密钥、工作目录），和服务器部署时的 `data/` 一样，可以用 设置 → 备份与迁移 搬到服务器上；
@@ -22,11 +22,12 @@ App 自己会检查更新，所以 `brew upgrade` 默认跳过它。`brew uninst
   - `desktop.json`：选的用法、服务器地址、端口。
 
   服务只监听本机的 `127.0.0.1:18765`（被占用时换一个并记住），开了登录：密码是第一次打开时随机生成的，存在钥匙串里（“Open Super Agent (desktop)”），
-  App 自己登录，不用你输。菜单栏里的“在浏览器里打开”会让浏览器也登录上。
-  Bot 用哪台电脑在电脑面板上方选，默认是 **本机**：
+  App 自己登录，不用你输，所以设置里没有“退出登录”。菜单栏里的“在浏览器里打开”会让浏览器也登录上。
+  Bot 用哪台电脑在 设置 → 电脑 里选（电脑面板上点“换电脑”也会去那里），选好一直用，默认是 **本机**：
   - **本机**：就是这台 Mac，不用 Docker，电脑面板上的画面跟着 Bot 走。它有自己的浏览器窗口（用你装的 Chrome，配置和你日常用的分开），
     没装 Chrome 的话先装一个。给 Open Super Agent 打开“辅助功能”和“屏幕录制”权限后，Bot 还能看整个屏幕、用你的鼠标键盘操作微信、访达、
-    备忘录这些 App（电脑面板上有“去打开”按钮）；每个任务第一次用屏幕先问你，Bot 操作时你动一下鼠标或键盘它就停下。
+    备忘录这些 App（电脑面板上列着还缺哪项，有“去打开”按钮）；每个任务第一次用屏幕先问你，Bot 操作时你动一下鼠标或键盘它就停下。
+    终端默认关，在电脑面板勾上“允许 Bot 用终端”后才能执行命令，每条都先问你。
   - **Docker 沙盒**：Bot 在本地 Docker 容器里的 Linux 桌面上做事，碰不到你的文件和别的 App。要先装好并打开 Docker Desktop（或 OrbStack）；
     第一次用要准备电脑镜像，几分钟。容器能连到这台 Mac 上只对本机开放的服务，见 [SECURITY.md](../SECURITY.md)。
   - **云电脑**：Instabox 的云主机，Mac 关机、睡着也照常跑。第一次选会让你填 Instabox 的 API Key（加密存在保险库里）。
@@ -55,6 +56,7 @@ App 自己会检查更新，所以 `brew upgrade` 默认跳过它。`brew uninst
 - ⌘⇧空格 呼出或藏起窗口。
 - 菜单栏图标 → 开机时启动：开机后在菜单栏里待着，不弹窗口。
 - 把文件拖进窗口就能发给 Bot（网页版也能）。
+- Bot 发来的文件点了直接存到“下载”文件夹，存好了发通知；PDF、图片、纯文本这类照样开新窗口看。
 - 别的网站的链接用系统浏览器打开；应用的登录授权在 App 里的小窗完成。
 - 自动更新：启动半分钟后和之后每 6 小时看一次有没有新版，有就在后台装好，窗口顶上出现“重启更新”，菜单栏里的“检查更新…”也变成“重启更新到 x.y.z”，
   点一下就重启换上（不点的话下次打开时生效）。菜单栏图标 → 检查更新 可以手动看。连着服务器时，服务器升级了界面，窗口顶上会提示“更新”，点了刷新。
@@ -71,8 +73,8 @@ cd desktop && npm ci
 npx tauri dev                                # 开发版：用仓库里的 .venv 起服务
 ```
 
-开发版的数据也在 `~/Library/Application Support/open-super-agent`。测试时用 `OSA_DESKTOP_HOME=/某个临时目录` 换个地方，不碰真正的数据；
-这时本机服务的密码存在那个目录里，不进钥匙串。
+开发版的数据也在 `~/Library/Application Support/open-super-agent`。测试时用 `OSA_DESKTOP_HOME=/某个临时目录` 换个地方，不碰真正的数据。
+开发版和设了 `OSA_DESKTOP_HOME` 时，本机服务的密码存在数据目录的 `local-server.secret` 里，不进钥匙串。
 
 打一个能单独用的 App：
 
@@ -89,7 +91,8 @@ cd desktop && npx tauri build --bundles app  # 带自动更新包时要设 TAURI
 打 `v*` 的 tag 时，`.github/workflows/desktop.yml` 打两个 dmg 和自动更新包，传到这个版本的 release，
 再更新 `desktop-updates` 这个 release 里的 `latest.json`（装好的 App 从这里看有没有新版，不要删）。tag 里带 `-` 的（比如 `v0.7.0-preview.1`）发成 pre-release。
 `desktop/package.json` 的版本号要和 tag 一致，不然打包会失败。
-正式版（不带 `-`）发出后，再改 [kadaliao/homebrew-tap](https://github.com/kadaliao/homebrew-tap) 里的 `Casks/open-super-agent.rb`：`version` 和两个 `sha256`（`gh release view vx.y.z --json assets` 能看到每个 dmg 的 sha256）。
+正式版（不带 `-`）发出后，[kadaliao/homebrew-tap](https://github.com/kadaliao/homebrew-tap) 的 `bump` 工作流每 6 小时自动把 `Casks/open-super-agent.rb` 追到最新版；
+想马上更新就跑 `gh workflow run bump.yml -R kadaliao/homebrew-tap`。
 
 仓库的 Secrets：
 

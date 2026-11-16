@@ -22,6 +22,7 @@ uv run uvicorn osa.server:app --reload --port 8765
 
 - 改了或新加界面文字，在对应的 `en.json` 里补上英文，然后跑 `uv run python -m osa.i18n`：列出缺的、多余的、占位符对不上的翻译，
   以及前端还没包进 `t()` 的中文（CI 也会跑）。确实不用翻的那一行（要比对的标记、语言自己的名字）在行尾注释 `i18n-ignore`。
+  看退出码，或者看最后“前端还有 N 行中文没包进 t()”那一行，只看“缺 0”不够。
 - 英文里要区分单复数时写成数组：`"{n} 个任务": ["{n} task", "{n} tasks"]`，按变量 `n` 是不是 1 选。
   同一句中文在不同地方要翻得不一样时，前端用 `tc('场景', '中文')`，字典里的键写成 `"场景::中文"`。
 - 只翻用户看得到的：界面、接口报错、对话里的系统消息和卡片、推送、聊天软件里的消息和按钮。**写给模型的提示词、工具说明、
@@ -67,18 +68,26 @@ uv run pytest -q
 
 ## 不要用真实数据测试
 
-复制一份数据库，在另一个端口启动：
+在数据副本上测试：复制一份数据库，在另一个端口启动：
 
 ```bash
-mkdir -p /tmp/osa-test && cp data/osa.db /tmp/osa-test/
+mkdir -p /tmp/osa-test && sqlite3 data/osa.db ".backup /tmp/osa-test/osa.db"   # 服务开着也能拷，cp 会漏掉 -wal 里的改动
 sed 's|db: data/osa.db|db: /tmp/osa-test/osa.db|' config.yaml > /tmp/osa-test/config.yaml
-OSA_CONFIG=/tmp/osa-test/config.yaml uv run uvicorn osa.server:app --port 8766
+OSA_DATA_DIR=/tmp/osa-test OSA_CONFIG=/tmp/osa-test/config.yaml uv run uvicorn osa.server:app --port 8766
 ```
+
+`OSA_DATA_DIR` 让工作文件夹、自己加的应用清单、本机电脑的浏览器配置这些也落在副本目录里。副本目录里没有 `vault.key`，会新生成一个，
+所以保险库里的密钥（界面上填的模型 API Key 等）在副本里解不开；要用真模型就把 `data/vault.key` 一起拷过去（或者设同一个 `OSA_VAULT_KEY`）。
+
+导入 `osa.memory`、`osa.library` 这些模块的命令（启动服务、`python -c "import osa.server"`）都会对配置里的数据库跑建表、加列。
+改表结构还没定下来时，这类命令一律带上副本的 `OSA_DATA_DIR`、`OSA_CONFIG`，免得半成品的迁移落到 `data/osa.db` 上；
+也别给旧版本按位置插值的表加列（见架构文档里 `llm_usage` 那一行）。
 
 本地电脑是共用的（容器 `osa-computer`），测试和正式实例会操作同一台电脑，不要同时跑。用 Docker Compose 跑的实例用的是 compose 里自己的 `computer` 容器，和它分开。
 
-`computer.backend` 默认是 `auto`：环境里有 `INSTABOX_API_KEY` 就用 Instabox。本机设了这个变量时，测试实例和直接调 `osa.computer.get()` 的脚本
-都会操作 Instabox 上那台（可能正是服务器上正式在用的）电脑。测试时在复制的配置里写 `backend: local`，或者 `env -u INSTABOX_API_KEY` 启动。
+`computer.backend` 默认是 `auto`：有 Instabox 的 API Key（环境变量 `INSTABOX_API_KEY`，或者界面上填进保险库的）就用 Instabox。本机设了这个变量时，测试实例和直接调 `osa.computer.get()` 的脚本
+都会操作 Instabox 上那台（可能正是服务器上正式在用的）电脑。测试时在复制的配置里写 `backend: local`，并且 `env -u INSTABOX_API_KEY` 启动。
+设置 → Bot 用的电脑 里选过的存在数据库里（`settings` 表 `overrides` 的 `computer_backend`），比 `config.yaml` 优先，副本里选过云电脑的话先把它去掉。
 复制的数据库里有聊天软件连接和定时任务的话，先停掉（`update channels set enabled=0`、`update routines set enabled=0`），
 免得测试实例去抢正式机器人的消息、跑定时任务。
 
@@ -95,7 +104,7 @@ OSA_CONFIG=/tmp/osa-test/config.yaml uv run uvicorn osa.server:app --port 8766
 
 - **对话**：通过 WebSocket 发送 `{"type":"send","chat_id":1,"text":"..."}`，观察 `message`、`task`、`stream_*` 事件。
 - **界面**：用 Playwright 驱动系统 Chrome（`channel="chrome"`）截图检查，这样不用另外下载浏览器。
-  资料库编辑器、评论、子页面、版本历史有现成的回归脚本，见 [tests/browser](../tests/browser/README.md)。
+  资料库编辑器、评论、子页面、版本历史、回收站、数据库、外部 Agent 有现成的回归脚本，见 [tests/browser](../tests/browser/README.md)。
 - **电脑**：在 Python 里调用 `osa.computer.get()`，可以直接测试 `start / screenshot / shell`；浏览器工具不给 `key` 时用最前面的标签页：
   `await c.browser("open", url=...)`、`c.browser("snapshot")`。
 - **几个任务同时用电脑**：用 `computer.tools.call` 模拟任务——先 `CLAIM.set("201:")`，再 `await call(SimpleNamespace(id=201, bot_id=1, chat_id=1), "browser_open", {...}, progress)`；
@@ -142,6 +151,8 @@ OSA_CONFIG=/tmp/osa-test/config.yaml uv run uvicorn osa.server:app --port 8766
   在同一个进程里起服务（`uvicorn.Server(...).serve()`）的话，可以直接调用 `approvals.request` 造确认请求，把 `channels.save_upload` 换掉就不用开电脑。
 - **资料库**：让 Bot 把结果做成页面，`GET /api/pages` 看列表；HTML 页面在沙箱 iframe 里，
   可以写一个会 `fetch('/api/bootstrap')` 的探针页，确认请求被 CSP 拦下。
+- **外部 Agent**：`POST /api/agent-tokens {"name":"test","scope":"write"}` 拿一个 token（只返回这一次），再用任何 MCP 客户端连 `/mcp`、
+  请求头带 `Authorization: Bearer <token>`；`DELETE /api/agent-tokens/<id>` 撤销后再调应该是 401。测试见 `tests/test_agentapi.py`。
 
 每个阶段的验收标准见 [roadmap.md](roadmap.md)，合并前请按它实测一遍。
 
@@ -175,8 +186,10 @@ iPhone 版打包时 Xcode 自己编译它；Mac 版要在改完后跑 `desktop/s
 
 1. `CHANGELOG.md` 把 [未发布] 改成新版本号和日期，底部加上比较链接。
 2. 改版本号：`pyproject.toml`、`uv.lock`（open-super-agent 那一项）、`web/package.json` 和 `web/package-lock.json`（`npm version x.y.z --no-git-tag-version`）、
-   `desktop/package.json` 和 `desktop/package-lock.json`（同样用 `npm version`；桌面 App 的版本号读它，和 tag 不一致时打包会失败）。
-3. 提交“chore: 发布 vx.y.z”，打带注释的 tag，push 提交和 tag。CI 会打桌面 App 的安装包，传到这个版本的 release。
+   `desktop/package.json` 和 `desktop/package-lock.json`（同样用 `npm version`；桌面 App 的版本号读它，和 tag 不一致时打包会失败）、
+   `desktop/src-tauri/Cargo.toml` 和 `Cargo.lock`。iPhone App 也跟着改：`mobile/package.json`、`package-lock.json`、`mobile/src-tauri/Cargo.toml`、`Cargo.lock`、
+   `gen/apple/project.yml` 和 `Info.plist` 里的 `CFBundleShortVersionString`、`docs/mobile.md` 开头写的版本，上传见 [iPhone App → 发布](mobile.md#发布testflight--app-store)。
+3. 提交“release: x.y.z”，打带注释的 tag `vx.y.z`，push 提交和 tag。CI 会打桌面 App 的安装包，传到这个版本的 release。
 4. `gh release create` 写说明：一段概述、升级提醒、完整对比链接，后面附 CHANGELOG 里这一版的内容（相对链接换成指向这个 tag 的绝对链接）。
 5. CI 传完 dmg 后，更新 Homebrew 的 cask，见 [桌面 App → 发布](desktop.md#发布)。
 

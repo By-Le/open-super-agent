@@ -7,14 +7,14 @@
 | | open-super-agent | OpenMausBot |
 |---|---|---|
 | Models | Any OpenAI-compatible API (DeepSeek, Kimi, Zhipu, Ollama, …), pay per token, daily spend visible | Mainly the `claude`, `codex` and `grok` CLIs on your machine, using subscriptions you already have; other endpoints through config |
-| Computer | One shared by all Bots, several tasks at once in their own windows; this computer, local Docker (both free) or an Instabox cloud machine; browser and terminal, plus the whole screen on a Mac; Bots on a server can use your Mac | One per Bot: a Boat cloud computer (paid after a trial), a local VM, or your own computer with whole-desktop control (macOS and Ubuntu Xorg) |
+| Computer | One shared by all Bots, several tasks at once in their own windows; this computer, local Docker (both free) or an Instabox cloud machine; browser and terminal, plus the whole screen on a Mac; Bots on a server can send tasks to your Macs (you can add several) | One per Bot: a Boat cloud computer (paid after a trial), a local VM, or your own computer with whole-desktop control (macOS and Ubuntu Xorg) |
 | Apps | One manifest file per app, connected with a login or token, including Feishu, DingTalk, WeCom and Tencent Docs; any MCP server too | 500+ apps through Composio (a third-party service with its own account); events in those apps can start a Bot; MCP too |
 | Where you use it | Web, the macOS desktop app, the iPhone app (TestFlight, not public yet), plus Telegram, Feishu, DingTalk, WeCom and Discord | Desktop apps (macOS, Windows, Ubuntu), web, the iPhone app (on the App Store), an Android app (APK) |
 | Phone notifications | Arrive while the app is closed and the phone locked, with the content on the lock screen; end-to-end encrypted through a relay that can't read them | Arrive while the app is open or briefly after it goes to the background; not once iOS suspends or closes it (their docs say this version doesn't do it) |
 | Deployment | `docker compose up` on a server keeps it always on, so your phone and chat apps work with your computer off; or just the macOS desktop app on your computer | The desktop app embeds the server (phones connect to that computer, which must stay on and awake); `npx openmausbot serve` or Docker on a server; the paid MausBot Cloud |
 | Voice | Dictation in the web UI | Spoken replies, voice calls with a Bot, dictation (ElevenLabs, Fish Audio, xAI, built-in Mac voices) |
-| Calling it from elsewhere | Routines, webhooks | Routines, webhooks; an MCP server (direct Bots from Claude Desktop or Cursor); a CLI for scripts and CI |
-| Installer | 43–49 MB (Python runtime included) | 250–317 MB |
+| Calling it from elsewhere | Routines; events (webhooks, GitHub, feeds, web page changes, new email, price alerts and more, 15 sources); Claude Code and Codex can read and write the library over MCP | Routines, webhooks; an MCP server (direct Bots from Claude Desktop or Cursor); a CLI for scripts and CI |
+| Installer | 45–51 MB (Python runtime included) | 250–317 MB |
 | Secrets | Encrypted in a vault | Plain text in `config.json` (file mode 0600) |
 | Usage analytics | None | Anonymous usage analytics, can be turned off in Settings |
 | License | MIT | Apache 2.0 (`enterprise/` has its own license) |
@@ -26,7 +26,7 @@ OpenMausBot is the better fit if you:
 - want to use an existing Claude, ChatGPT or Grok subscription instead of paying per token;
 - want Bots to control the whole desktop on Windows or Ubuntu, or each Bot to have its own computer;
 - want to direct Bots from Claude Desktop, Cursor or scripts;
-- want 500+ apps through Composio, or Bots that start when a new email or message arrives in an app.
+- want 500+ apps through Composio, or Bots that start when something happens in those apps.
 
 open-super-agent is the better fit if you:
 
@@ -35,4 +35,4 @@ open-super-agent is the better fit if you:
 - want it always on a server: it keeps working with your computer off, and the phone app gets notifications while closed;
 - care about a small installer, encrypted secrets and no usage analytics.
 
-Based on both projects' READMEs, docs (OpenMausBot's `docs/ios-companion.md`), release pages (OpenMausBot v0.1.146) and the App Store as of 2026-11-07.
+OpenMausBot's side is based on its README, docs (`docs/ios-companion.md`), release page (v0.1.146) and the App Store as of 2026-11-07; open-super-agent's side is as of 0.23.0 (2026-11-15).

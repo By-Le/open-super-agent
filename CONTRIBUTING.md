@@ -20,7 +20,7 @@
 
 1. 从 `main` 新建分支，一个 PR 只做一件事。
 2. 提交信息遵循 [Conventional Commits](https://www.conventionalcommits.org/zh-hans/)：`feat:`、`fix:`、`docs:`、`refactor:`、`chore:` 等。
-3. 确保 CI 通过（Python 能编译和导入、应用清单和内置模板没有错，前端能构建）。
+3. 确保 CI 通过（Python 能编译和导入、应用清单和内置模板没有错、翻译检查和 `pytest` 通过，前端能构建，Docker 镜像能构建并启动）。
 4. 用户能感知到的改动请写进 `CHANGELOG.md` 的 `[未发布]`。
 5. 改了界面就附截图，改了 Bot 的行为就附一段实际对话。
 
