@@ -17,7 +17,7 @@ An open-source alternative to [Grok Bot](https://x.ai/bot). Bring your own model
 
 <sub>Feature tour (silent, sped up; Chinese UI): link cards · threads · background tasks · the Bot's computer · ask first · groups · Bot DMs · drawing · schedules · apps · skills · memory · costs · <a href="docs/images/promo.mp4">full 2-minute promo (Chinese voice-over)</a></sub>
 
-<sub>Recorded on 2026-11-08 (v0.7.0); the current release is v0.23.0. Added since: the library became shared documents (comments that wake a Bot, version history, databases and boards, with Claude Code and Codex writing too), events, the Insights page, video generation, searching posts on X, Reddit and Xiaohongshu, and sending tasks to your Mac. <a href="#a-look-around">New screenshots below</a>; see the <a href="CHANGELOG.md">changelog</a> (Chinese) for every release.</sub>
+<sub>Recorded on 2026-11-08 (v0.7.0). Added since: the library became shared documents (comments that wake a Bot, version history, databases and boards, with Claude Code and Codex writing too, and Notion import), events, the Insights page, video generation, searching posts on X, Reddit and Xiaohongshu, and sending tasks to your Mac. <a href="#a-look-around">New screenshots below</a>. Get the latest version from the <a href="https://github.com/kadaliao/open-super-agent/releases/latest">releases page</a>; see the <a href="CHANGELOG.md">changelog</a> (Chinese) for every release.</sub>
 
 </div>
 
@@ -61,7 +61,7 @@ See [Features](docs/features.en.md) for the full list.
 </tr>
 </table>
 
-<sub>Screenshots show the v0.23.0 web UI in Chinese with demo data: an indie developer launching “Tidal Notes 2.0”. The three Bots and everything on the pages were produced by a real model (DeepSeek). With GitHub in dark mode, the page and board screenshots show the dark theme.</sub>
+<sub>Screenshots taken on 2026-11-16 (the v0.24.0 web UI, in Chinese) with demo data: an indie developer launching “Tidal Notes 2.0”. The three Bots and everything on the pages were produced by a real model (DeepSeek). With GitHub in dark mode, the page and board screenshots show the dark theme.</sub>
 
 ## Where you use it
 
