@@ -4,7 +4,7 @@
 每个工具只在这里写一次，Router 和 Worker 都从注册表（registry.py）找；在哪些场合给模型用、要不要走确认规则，都在 Tool 上写明。
 电脑工具、Router 自己的几个、botadmin 还没迁过来（见 registry.py 开头）。
 """
-from . import dbs, i18n, images, library, media, pagecomments, pagedoc, registry, routines, sandbox, search, skills, tools, videos
+from . import i18n, images, library, media, registry, routines, sandbox, search, skills, tools, videos
 from .registry import APPLET, ROUTER, WORKER, Call, Tool
 
 ctx = registry.Context("builtin")
@@ -33,37 +33,8 @@ async def _generate_video(call: Call) -> str:
 
 
 async def _save_page(call: Call) -> str:
-    saved: list = []
-    out = library.tool_save_page(call.bot_id, call.args, call.task.id if call.task else None, saved)
-    for p in saved:   # changed 为空：网页上开着这个页面的要整页重新拉
-        await registry.emit("page_changed", page_id=p["id"], version=p["version"], by=f"bot:{call.bot_id}",
-                            title=p["title"], updated=p["updated"], changed=[])
+    out = library.tool_save_page(call.bot_id, call.args, call.task.id if call.task else None)
     await registry.emit("pages_changed")
-    return out
-
-
-async def _edit_page(call: Call) -> str:
-    out, event = pagedoc.tool_edit(call.bot_id, call.args)
-    if event:
-        await registry.emit("page_changed", **event)
-        await registry.emit("pages_changed")
-    return out
-
-
-def _db_tool(fn):
-    """数据库的写工具（dbs.py）：做完发 db_changed / pages_changed。"""
-    async def run(call: Call) -> str:
-        out, ev = fn(call.bot_id, call.args)
-        await dbs.announce(ev, f"bot:{call.bot_id}")
-        return out
-    return run
-
-
-async def _comment_page(call: Call) -> str:
-    wrote: list = []
-    out, pid = pagecomments.tool_comment(call.bot_id, call.args, wrote)
-    if pid:
-        await registry.emit("page_comments", page_id=pid, reply=pagecomments.reply_note(wrote[0] if wrote else None))
     return out
 
 
@@ -78,21 +49,8 @@ async def _search_posts(call: Call) -> str:
 
 
 async def _generate_image(call: Call) -> str:
-    put = None
-    if call.args.get("page_id") is not None:   # 画好放进资料库页面：先看放得进去，再画
-        why, place = pagedoc.image_place(call.args.get("page_id"), call.args.get("after"))
-        if why:
-            return f"没画：{why}"
-        by = f"bot:{call.bot_id}"
-
-        async def put(mid: str, alt: str) -> str:
-            res = pagedoc.put_image(place, mid, alt, by)
-            await registry.emit("page_changed", **pagedoc.event(place["page"], res, by))
-            await registry.emit("pages_changed")
-            return f"也放进了页面 #{place['page']}「{place['title']}」（现在是版本 {res['version']}）。"
-        put.page = place["page"]
     return await images.generate(call.bot, call.chat_id, call.private_chat_id, str(call.args.get("prompt") or ""), call.post,
-                                 call.args.get("images"), put)
+                                 call.args.get("images"))
 
 
 WEB_SEARCH = {"type": "function", "function": {
@@ -138,8 +96,7 @@ def load():
                   progress=lambda a: i18n.t("读取网页：{what}", what=str(a.get("url") or "")[:60])))
     ctx.tool(Tool("save_page", library.SAVE_PAGE, _save_page, when=_not_draft,
                   progress=lambda a: i18n.t("保存页面：{title}", title=str(a.get("title", ""))[:40])))
-    # Worker 会把工具结果截到 8000 字，页面读多了后面的“接着读”就丢了
-    ctx.tool(Tool("read_page", library.READ_PAGE, lambda c: _sync(library.tool_read_page(c.args, 7000 if c.scope == WORKER else 12000)), parallel=3,
+    ctx.tool(Tool("read_page", library.READ_PAGE, lambda c: _sync(library.tool_read_page(c.args)), parallel=3,
                   progress=lambda a: i18n.t("读页面 #{id}", id=a.get("page_id"))))
     ctx.tool(Tool("page_data", library.PAGE_DATA, lambda c: library.tool_page_data(c.bot_id, c.args),
                   progress=lambda a: i18n.t("小应用 #{id} 的数据", id=a.get("page_id"))))
@@ -164,27 +121,6 @@ def load():
     ctx.tool(Tool("run_code", sandbox.RUN_CODE, sandbox.tool_run, where=frozenset({WORKER}), when=lambda env: bool(sandbox.place()),
                   progress=sandbox.progress, describe="在沙箱里跑 Python / bash / node 代码：算数、处理表格和数据、画图表、转换格式"))
     ctx.tool(Tool("quick_code", sandbox.QUICK_CODE, sandbox.tool_quick, where=router, when=lambda env: bool(sandbox.place(quick=True))))
-    # 按段改资料库页面（pagedoc.py）：和 save_page 一样，对话里随时能用，后台任务只有正式的才能用
-    ctx.tool(Tool("edit_page", pagedoc.EDIT_PAGE, _edit_page, when=_not_draft,
-                  describe="按段改资料库里的 markdown 页面（别的 Bot 建的也能改，只动要改的段）",
-                  progress=lambda a: i18n.t("改页面 #{id}", id=a.get("page_id"))))
-    ctx.tool(Tool("comment_page", pagecomments.COMMENT_PAGE, _comment_page, when=_not_draft,
-                  progress=lambda a: i18n.t("评论页面 #{id}", id=a.get("page_id"))))
-    # 资料库的数据库（dbs.py）：查随时能用；建库、改结构、加行、改属性和 save_page 一样，后台任务只有正式的才能用
-    ctx.tool(Tool("db_query", dbs.DB_QUERY, lambda c: _sync(dbs.tool_query(c.args)), parallel=3,
-                  describe="查资料库里数据库的行：筛选、排序、只要几列",
-                  progress=lambda a: i18n.t("查数据库 #{id}", id=a.get("db_id"))))
-    ctx.tool(Tool("db_create", dbs.DB_CREATE, _db_tool(dbs.tool_create), when=_not_draft,
-                  describe="在资料库里建数据库（任务看板、会议列表这类一条一行、带属性的表）",
-                  progress=lambda a: i18n.t("建数据库：{title}", title=str(a.get("title", ""))[:40])))
-    ctx.tool(Tool("db_schema", dbs.DB_SCHEMA, _db_tool(dbs.tool_schema), when=_not_draft,
-                  progress=lambda a: i18n.t("改数据库 #{id} 的表结构", id=a.get("db_id"))))
-    ctx.tool(Tool("db_add", dbs.DB_ADD, _db_tool(dbs.tool_add), when=_not_draft,
-                  describe="往资料库的数据库里加行",
-                  progress=lambda a: i18n.t("往数据库 #{id} 加行", id=a.get("db_id"))))
-    ctx.tool(Tool("db_update", dbs.DB_UPDATE, _db_tool(dbs.tool_update), when=_not_draft,
-                  describe="改资料库数据库里几行的属性",
-                  progress=lambda a: i18n.t("改数据库的行")))
     from . import sources
     sources.register(ctx)
 

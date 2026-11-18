@@ -3,6 +3,11 @@
 格式参照 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
 ## [未发布]
+### 移除
+- **资料库先回到 0.22.0 的样子**：资料库要拆成独立项目 [Open Agent Docs](https://github.com/kadaliao/open-agent-docs)，做好了再接回来。
+  0.23.0、0.24.0 里加的按段编辑（`edit_page`）、块编辑器、页面评论（`comment_page`）、子页面、版本历史、回收站、数据库（`db_*`）、
+  外部 Agent（`/mcp`、设置 → 外部 Agent）、从 Notion 导入、把画的图插进页面都先撤回：页面照旧是 Markdown，Bot 之间交接照旧用 Notion。
+  已有的数据不删：新加的表和列留在数据库里，旧代码不用它们；数据库的行在资料库里显示成普通页面（只有正文，没有属性）
 
 ## [0.24.0] - 2026-11-16
 ### 新增

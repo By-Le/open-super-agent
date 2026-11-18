@@ -18,9 +18,7 @@ WORKER_PROMPT = """你是执行任务的 Worker。用工具查证事实，给出
 完成后直接输出最终答案（{lang}，简洁、结构清晰）。今天是 {date}。"""
 # 最终答案用什么语言：中文界面和以前一样；英文界面默认英文
 ANSWER_LANG = {"zh": "中文", "en": "默认用英文，任务是用别的语言写的就用那种语言"}
-PAGE_HINT = ("任务要求做成页面或报告时，用 save_page 保存，最终答案里附上返回的链接。"
-             "要改资料库里已有的页面（别的 Bot 建的也行），先 read_page，再用 edit_page 只改要改的段。"
-             "一条一行、带属性的结果（清单、对比、任务）可以放进数据库：db_create / db_add，已有的库用 db_query 查、db_update 改。\n" + applets.GUIDE)
+PAGE_HINT = "任务要求做成页面或报告时，用 save_page 保存，最终答案里附上返回的链接。\n" + applets.GUIDE
 FILE_HINT = "要把电脑里的文件（截图、画好的图、做好的表格和文档）交给用户时用 send_file，它们会显示在任务结果下面；不要自己拼下载链接。"
 
 
@@ -56,7 +54,6 @@ class Task:
     apps: list = field(default_factory=list)    # 用到的应用界面（MCP Apps，见 mcpapps.py），显示在任务结果下面
     mac: int = 0                           # 派到你的哪台 Mac 上做（computer/link.py 的编号）；0 是用共用电脑
     mac_name: str = ""
-    comment: dict | None = None            # 因页面评论派的任务：做完把结果贴回那串评论 {"page", "root"}（见 pagecomments.py）
 
 
 def _public(self) -> dict:

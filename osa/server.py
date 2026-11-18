@@ -19,8 +19,8 @@ from fastapi.staticfiles import StaticFiles
 from starlette.background import BackgroundTask
 from . import backup
 backup.apply_pending()   # 确认过的恢复：在打开数据库之前换上
-from . import agentapi, applets, approvals, auth, avatars, botadmin, bots, catalog, channels, computer, dbs, dm, events, groups, i18n, library, mcp_hub, media, memories, memory, push, router as rt, routines
-from . import generation, mcpapps, observe, outputs, pagecomments, pagedoc, prices, providers, search, security, settings, skills, tasklog, teach, templates, unfurl, vault, videos, websearch
+from . import applets, approvals, auth, avatars, botadmin, bots, catalog, channels, computer, dm, events, groups, i18n, library, mcp_hub, media, memories, memory, push, router as rt, routines
+from . import generation, mcpapps, observe, outputs, prices, providers, search, security, settings, skills, tasklog, teach, templates, unfurl, vault, videos, websearch
 from .computer import link
 from .computer.base import HOSTS
 from . import builtin, registry  # noqa: F401  builtin：导入即注册内置工具
@@ -66,9 +66,6 @@ tasklog.notify = broadcast
 _events = registry.Context("server")
 _events.on("pages_changed", lambda: broadcast({"type": "pages_changed"}))
 _events.on("page_data", lambda page_id, data: broadcast({"type": "page_data", "page_id": page_id, "data": data}))
-_events.on("page_changed", lambda **kw: broadcast({"type": "page_changed", **kw}))
-_events.on("page_comments", lambda page_id, reply=None: broadcast({"type": "page_comments", "page_id": page_id, **({"reply": reply} if reply else {})}))
-_events.on("db_changed", lambda **kw: broadcast({"type": "db_changed", **kw}))
 
 
 async def parent_watch(pid: int, every: float = 2):
@@ -139,7 +136,6 @@ async def bootstrap(request: Request):
             "approvals": [approvals.public(a) for a in approvals.pending.values()],
             "threads": bots.thread_list(unread=True),   # 有新回复的讨论串：对话里提醒你去看
             **_apps_out(request), "teach": teach.public(), "auth": can_sign_out(), "onboarding": settings.onboarding(),
-            "agents": agentapi.names(),   # 外部 Agent 的名字：页面上显示 agent:<id> 写的段、评论
             "build": web_build()}   # 服务器上现在是哪一版网页界面：开着旧版的页面据此提示更新
 
 
@@ -290,14 +286,13 @@ async def avatar_file(aid: str):
 
 # ---------- 对话里的图片 ----------
 @app.put("/api/media")
-async def upload_media(request: Request, name: str = "", file: bool = False):
-    """传一张对话里用的图片（请求体就是图片，浏览器已经缩过），返回 id、宽高。发消息时放进 attachments。
-    file=1：数据库的文件属性，什么文件都收（不是图片、视频、PDF 的打开时一律下载）。"""
+async def upload_media(request: Request, name: str = ""):
+    """传一张对话里用的图片（请求体就是图片，浏览器已经缩过），返回 id、宽高。发消息时放进 attachments。"""
     if int(request.headers.get("content-length") or 0) > media.MAX_BYTES:
         raise HTTPException(413, i18n.t("图片太大了（最多 {n} MB）", n=media.MAX_BYTES >> 20))
     data = await request.body()
     try:
-        return media.save(data, name, any_file=file)
+        return media.save(data, name)
     except ValueError as e:
         _err(e)
 
@@ -308,7 +303,6 @@ def _media_response(mid: str, download: bool = False, rng: str | None = None) ->
     if not got:
         raise HTTPException(404)
     mime, size, name = got["mime"], got["size"], got["name"]
-    download = download or not media.inline(mime)   # 数据库的文件属性传的别的文件：只下载，不在站里打开
     headers = {"Cache-Control": "private, max-age=31536000, immutable", "X-Content-Type-Options": "nosniff",
                "Content-Security-Policy": "default-src 'none'",
                "Content-Disposition": f"{'attachment' if download else 'inline'}; filename*=UTF-8''{quote(name)}"}
@@ -917,17 +911,14 @@ def _raw(page: dict) -> Response:
 
 @app.get("/api/pages")
 async def list_pages():
-    """资料库的页面（数据库的行不在这里，在 /api/dbs/<库>）。"""
-    return [p for p in library.list_pages() if p["kind"] != "row"]
+    return library.list_pages()
 
 
 @app.post("/api/pages")
 async def create_page(data: dict = Body(...)):
-    """新建页面。bot_id 是内容的作者（把 Bot 的回复存成页面时）；用户自己新建的空白页面不带 bot_id、allow_empty=true。"""
     try:
         p = library.save_page(data.get("bot_id"), data.get("title", ""), data.get("content", ""),
-                              data.get("format") or "markdown", task_id=data.get("task_id"), app=data.get("app"),
-                              allow_empty=bool(data.get("allow_empty")) and not data.get("bot_id"), parent_id=data.get("parent_id"))
+                              data.get("format") or "markdown", task_id=data.get("task_id"), app=data.get("app"))
     except (ValueError, TypeError) as e:
         _err(e)
     await broadcast({"type": "pages_changed"})
@@ -936,19 +927,7 @@ async def create_page(data: dict = Body(...)):
 
 @app.get("/api/pages/{pid}")
 async def get_page(pid: int):
-    return _page_or_404(pid, True) | library.family(pid)
-
-
-@app.post("/api/pages/{pid}/move")
-async def move_page(pid: int, data: dict = Body(...)):
-    """{parent_id: 页面编号 | null（最上层）, after: 排在哪个页面后面 | null（最后）| 0（最前）}"""
-    _page_or_404(pid)
-    try:
-        p = library.move(pid, data.get("parent_id"), data.get("after"))
-    except (ValueError, TypeError) as e:
-        _err(e)
-    await broadcast({"type": "pages_changed"})
-    return p
+    return _page_or_404(pid, True)
 
 
 @app.get("/api/pages/{pid}/raw")
@@ -958,117 +937,8 @@ async def page_raw(pid: int):
 
 @app.patch("/api/pages/{pid}")
 async def update_page(pid: int, data: dict = Body(...)):
-    old = _page_or_404(pid)
-    p = library.update_page(pid, data.get("title"), data.get("pinned"), data.get("locked"))
-    if p["version"] != old["version"]:   # 改了标题
-        await broadcast({"type": "page_changed", "page_id": pid, "version": p["version"], "by": "user",
-                         "title": p["title"], "updated": p["updated"], "changed": []})
-    await _row_touched(p)
-    await broadcast({"type": "pages_changed"})
-    return p
-
-
-# ---------- 资料库：按段读写、版本历史（pagedoc.py）。网页编辑器用；用户改的不受锁定限制 ----------
-def _markdown_or_400(pid: int) -> dict:
-    p = _page_or_404(pid)
-    if p["format"] != "markdown" or p["kind"] == "db":
-        raise HTTPException(400, i18n.t("只有 markdown 页面能按段改"))
-    return p
-
-
-@app.get("/api/pages/{pid}/blocks")
-async def page_blocks(pid: int, since: int | None = None):
-    """页面的段：{version, order, blocks}。给了 since 就只给那个版本之后改过的段（order 总是全的）。"""
-    _markdown_or_400(pid)
-    p, blks = pagedoc.load(pid)
-    assert p
-    return {**{k: p[k] for k in ("id", "title", "version", "locked", "bot_id", "updated")},
-            "order": [b["id"] for b in blks],
-            "blocks": [pagedoc.public(b) for b in blks if since is None or b["v"] > since]}
-
-
-@app.post("/api/pages/{pid}/blocks")
-async def edit_blocks(pid: int, data: dict = Body(...)):
-    """按段改：{version, ops}。冲突时 409，detail 是 {version, conflicts}。"""
-    _markdown_or_400(pid)
-    try:
-        res = pagedoc.apply(pid, data.get("version"), data.get("ops"), "user")
-    except pagedoc.Conflict as e:
-        raise HTTPException(409, {"version": e.version, "conflicts": e.items})
-    except (ValueError, TypeError, LookupError) as e:
-        _err(e)
-    # 只发这一页的改动：pages_changed 会让列表、页面卡片都整个重拉，自动保存一次一次地发太浪费
-    await broadcast({"type": "page_changed", **pagedoc.event(pid, res, "user")})
-    return res
-
-
-@app.get("/api/pages/{pid}/versions")
-async def page_versions(pid: int, before: int | None = None, limit: int = 30):
     _page_or_404(pid)
-    return pagedoc.versions(pid, before, limit)
-
-
-@app.get("/api/pages/{pid}/versions/{vid}")
-async def page_version(pid: int, vid: int):
-    _page_or_404(pid)
-    if not (v := pagedoc.version(pid, vid)):
-        raise HTTPException(404, i18n.t("没有这一版"))
-    return v
-
-
-# ---------- 资料库：评论（pagecomments.py）。用户写的评论叫醒负责的 Bot ----------
-@app.get("/api/pages/{pid}/comments")
-async def list_page_comments(pid: int):
-    _page_or_404(pid)
-    return pagecomments.comments(pid)
-
-
-@app.post("/api/pages/{pid}/comments")
-async def add_page_comment(pid: int, data: dict = Body(...)):
-    """{text, block?, quote?, reply_to?, wake?}：wake 不给是自动选（见 pagecomments.targets），false 是不叫，数字是叫这个 Bot。"""
-    _page_or_404(pid)
-    try:
-        return await pagecomments.post(pid, str(data.get("text") or ""), data.get("block"), data.get("quote"), data.get("reply_to"), data.get("wake"))
-    except LookupError as e:
-        raise HTTPException(404, str(e))
-    except (ValueError, TypeError) as e:
-        _err(e)
-
-
-@app.patch("/api/pages/{pid}/comments/{cid}")
-async def update_page_comment(pid: int, cid: int, data: dict = Body(...)):
-    try:
-        c = pagecomments.update(pid, cid, data.get("text"), data.get("resolved"))
-    except LookupError as e:
-        raise HTTPException(404, str(e))
-    except (ValueError, TypeError) as e:
-        _err(e)
-    await broadcast({"type": "page_comments", "page_id": pid})
-    return c
-
-
-@app.delete("/api/pages/{pid}/comments/{cid}")
-async def delete_page_comment(pid: int, cid: int):
-    try:
-        pagecomments.delete(pid, cid)
-    except LookupError as e:
-        raise HTTPException(404, str(e))
-    await broadcast({"type": "page_comments", "page_id": pid})
-    return {"ok": True}
-
-
-@app.post("/api/pages/{pid}/versions/{vid}/restore")
-async def restore_page(pid: int, vid: int):
-    _page_or_404(pid)
-    try:
-        p = pagedoc.restore(pid, vid)
-    except LookupError as e:
-        raise HTTPException(404, str(e))
-    except ValueError as e:
-        _err(e)
-    await broadcast({"type": "page_changed", "page_id": pid, "version": p["version"], "by": "user",
-                     "title": p["title"], "updated": p["updated"], "changed": []})
-    await _row_touched(p)   # 行回到某一版：属性也回去了
+    p = library.update_page(pid, data.get("title"), data.get("pinned"))
     await broadcast({"type": "pages_changed"})
     return p
 
@@ -1081,330 +951,10 @@ async def share_page(pid: int, data: dict = Body(...)):
     return p
 
 
-# ---------- 从 Notion 导入（notion_import.py）：只读 Notion，用服务器连着的那个会话 ----------
-@app.post("/api/notion/import")
-async def notion_import_start(data: dict = Body(...)):
-    """从 Notion 导入：{roots: [Notion 页面或数据库的网址 / 编号], parent_id?}。在后台导，返回 {job}，用 GET 看进度。"""
-    from . import notion_import
-    try:
-        job = notion_import.start([str(x) for x in data.get("roots") or []], data.get("parent_id"))
-    except notion_import.NotConnected as e:
-        raise HTTPException(409, str(e))
-    except ValueError as e:
-        _err(e)
-    return {"job": job}
-
-
-@app.get("/api/notion/import/{job}")
-async def notion_import_job(job: int):
-    from . import notion_import
-    j = notion_import.JOBS.get(job)
-    if not j:
-        raise HTTPException(404)
-    if j.state != "running" and not getattr(j, "announced", False):   # 导完了：资料库列表、开着的库刷新一下
-        j.announced = True
-        await broadcast({"type": "pages_changed"})
-        for d in j.nodes.values():
-            if d.get("type") == "database" and d.get("page_id"):
-                await broadcast({"type": "db_changed", "db_id": d["page_id"], "rows": [], "schema": True, "by": "user"})
-    return j.public()
-
-
-@app.get("/api/notion/imported")
-async def notion_imported():
-    """导入过的（最上层的页面和库）：再同步一次用。"""
-    from . import notion_import
-    return notion_import.imported()
-
-
-@app.post("/api/notion/read")
-async def notion_read(data: dict = Body(...)):
-    """调一个只读的 Notion 工具（搜索、读页面、查数据库），原样返回它给的文字：导入前看看要导入的是什么。"""
-    from . import notion_import
-    try:
-        return {"text": await notion_import.call(str(data.get("tool") or ""), data.get("args") or {})}
-    except notion_import.NotConnected as e:
-        raise HTTPException(409, str(e))
-    except ValueError as e:
-        _err(e)
-    except (RuntimeError, asyncio.TimeoutError) as e:
-        raise HTTPException(502, str(e) or i18n.t("Notion 没有回应"))
-
-
-@app.get("/api/trash")
-async def list_trash():
-    """回收站：删掉的页面、数据库、行，30 天后自动清掉。"""
-    return library.trash()
-
-
-@app.post("/api/trash/{tid}/restore")
-async def restore_trash(tid: int):
-    try:
-        p = library.restore_trash(tid)
-    except LookupError as e:
-        raise HTTPException(404, str(e))
-    except ValueError as e:
-        _err(e)
-    await _row_touched(p)
-    await broadcast({"type": "pages_changed"})
-    return p
-
-
-@app.delete("/api/trash/{tid}")
-async def drop_trash(tid: int):
-    library.drop_trash(tid)
-    return {"ok": True}
-
-
-@app.delete("/api/trash")
-async def empty_trash():
-    library.drop_trash()
-    return {"ok": True}
-
-
 @app.delete("/api/pages/{pid}")
-async def delete_page(pid: int, cascade: bool = False):
-    """删页面（先进回收站，30 天内能恢复）：子页面默认挪到上一级；cascade=true 连子页面一起删。数据库连行一起删。"""
-    p = library.get_page(pid, False)
-    library.delete_page(pid, cascade)
-    if p:
-        await _row_touched(p)
+async def delete_page(pid: int):
+    library.delete_page(pid)
     await broadcast({"type": "pages_changed"})
-    return {"ok": True}
-
-
-# ---------- 资料库：数据库（dbs.py）。网页用；用户改的不受锁定限制 ----------
-async def _row_touched(p: dict, rows: list[int] | None = None):
-    """数据库的行改了（标题、恢复、删除）：开着的库重新取。"""
-    if p.get("kind") == "row" and p.get("parent_id") is not None:
-        await broadcast({"type": "db_changed", "db_id": p["parent_id"], "rows": rows or [p["id"]], "by": "user"})
-        for other in dbs.related_dbs(p["parent_id"]):
-            await broadcast({"type": "db_changed", "db_id": other, "rows": [], "by": "user"})
-
-
-def _db_or_404(db_id: int) -> dict:
-    db = dbs.get_db(db_id)
-    if not db:
-        raise HTTPException(404, i18n.t("没有数据库 #{id}", id=db_id))
-    return db
-
-
-def _row_or_404(db_id: int, rid: int) -> dict:
-    r = dbs.get_row(rid)
-    if not r or r["db_id"] != db_id:
-        raise HTTPException(404, i18n.t("没有这一行 #{id}", id=rid))
-    return r
-
-
-@app.post("/api/dbs")
-async def create_db(data: dict = Body(...)):
-    """新建数据库：{title, parent_id?}，带默认的属性（名称、状态、负责人、日期）和表格、看板两个视图。"""
-    try:
-        db = dbs.create(data.get("title") or "", "user", schema=dbs.default_schema(), parent_id=data.get("parent_id"))
-    except (ValueError, TypeError) as e:
-        _err(e)
-    await broadcast({"type": "pages_changed"})
-    return dbs.public(db)
-
-
-@app.get("/api/dbs/{db_id}")
-async def get_db(db_id: int, view: str | None = None, limit: int | None = None, include: str = ""):
-    """库、表结构、视图，和按视图（view 是视图 id，不给就是第一个）筛选排序后的前 limit 行（默认 200，往下滚再要）。
-    include：逗号分开的行号，刚加的行不在前 limit 行里也带上。"""
-    try:
-        return dbs.public(_db_or_404(db_id), view, limit, [int(x) for x in include.split(",") if x.strip().isdigit()][:50])
-    except ValueError as e:
-        _err(e)
-
-
-@app.get("/api/dbs/{db_id}/find")
-async def find_db_rows(db_id: int, q: str = ""):
-    """按名称找行（别的库关联到这个库时的选择框）。"""
-    _db_or_404(db_id)
-    return dbs.find_rows(db_id, q)
-
-
-async def _db_saved(db_id: int, rows: list[int] | None = None, schema: bool = False):
-    await broadcast({"type": "db_changed", "db_id": db_id, "rows": rows or [], "schema": schema, "by": "user"})
-    for other in dbs.related_dbs(db_id):   # 关联着的库：汇总、反向关联跟着变，整个重新取
-        await broadcast({"type": "db_changed", "db_id": other, "rows": [], "schema": schema, "by": "user"})
-
-
-@app.patch("/api/dbs/{db_id}/schema")
-async def change_db_schema(db_id: int, data: dict = Body(...)):
-    """改表结构：{ops: [{op: add | update | delete, …}]}（见 dbs.change_schema）。"""
-    _db_or_404(db_id)
-    try:
-        db = dbs.change_schema(db_id, data.get("ops"), "user")
-    except (ValueError, TypeError) as e:
-        _err(e)
-    await _db_saved(db_id, schema=True)
-    return dbs.public(db, data.get("view"), data.get("limit")) | {"last_change": db["last_change"]}
-
-
-@app.get("/api/dbs/{db_id}/history")
-async def db_history(db_id: int):
-    """表结构的历史（新的在前），每条能撤销。"""
-    _db_or_404(db_id)
-    return dbs.history(db_id)
-
-
-@app.post("/api/dbs/{db_id}/history/{vid}/undo")
-async def db_undo(db_id: int, vid: int, data: dict = Body(default={})):
-    """撤销表结构历史里的一次改动（删掉的列和各行的值放回去），撤销本身也记一条。"""
-    _db_or_404(db_id)
-    try:
-        db = dbs.undo(db_id, vid, "user")
-    except LookupError as e:
-        raise HTTPException(404, str(e))
-    except ValueError as e:
-        _err(e)
-    await _db_saved(db_id, schema=True)
-    return dbs.public(db, data.get("view"), data.get("limit")) | {"last_change": db["last_change"]}
-
-
-@app.put("/api/dbs/{db_id}/views")
-async def set_db_views(db_id: int, data: dict = Body(...)):
-    """整个换掉视图列表：{views, view?}（view 是现在看的那个，返回按它筛选排序的行）。"""
-    _db_or_404(db_id)
-    try:
-        db = dbs.set_views(db_id, data.get("views"), "user")
-    except (ValueError, TypeError) as e:
-        _err(e)
-    await _db_saved(db_id, schema=True)
-    return dbs.public(db, data.get("view"), data.get("limit"))
-
-
-@app.post("/api/dbs/{db_id}/rows")
-async def add_db_row(db_id: int, data: dict = Body(default={})):
-    """加一行：{props?: {key: 值}, title?, after?: 行号 | 0（最前）}。"""
-    _db_or_404(db_id)
-    try:
-        r = dbs.add_row(db_id, data.get("props") or {}, "user", str(data.get("title") or ""), after=data.get("after"))
-    except (ValueError, TypeError) as e:
-        _err(e)
-    await _db_saved(db_id, [r["id"]], schema=True)   # 可能顺手加了选项
-    await broadcast({"type": "pages_changed"})
-    return dbs.public_row(r)
-
-
-@app.get("/api/dbs/{db_id}/rows/{rid}")
-async def get_db_row(db_id: int, rid: int):
-    """一行和它所在库的表结构（行页面顶上的属性栏用）。"""
-    r = _row_or_404(db_id, rid)
-    db = _db_or_404(db_id)
-    return {"db": {"id": db["id"], "title": db["title"], "locked": db["locked"], "schema": db["schema"]}, "row": dbs.public_row(r),
-            "refs": dbs.refs(db, [r])}
-
-
-@app.post("/api/dbs/{db_id}/rows/{rid}/press/{key}")
-async def press_db_button(db_id: int, rid: int, key: str):
-    """点一行上的按钮：按设置改属性，设了评论就写一条（叫醒 Bot）。"""
-    _row_or_404(db_id, rid)
-    try:
-        r, changed, note = dbs.press(rid, key, "user")
-    except LookupError as e:
-        raise HTTPException(404, str(e))
-    except (ValueError, TypeError) as e:
-        _err(e)
-    if changed:
-        await _db_saved(db_id, [rid], schema=True)
-        if "title" in changed:
-            await broadcast({"type": "pages_changed"})
-    comment = None
-    if note:
-        comment = await pagecomments.post(rid, note["text"], wake=note["bot"] if note.get("bot") else None)
-    return {"row": dbs.public_row(r), "changed": changed, "comment": comment}
-
-
-@app.patch("/api/dbs/{db_id}/rows/{rid}")
-async def update_db_row(db_id: int, rid: int, data: dict = Body(...)):
-    """改一行的属性：{props: {key: 值}（名称是 title）, version?}。要改的属性在 version 之后被别人改过：409，detail 是 {version, conflicts}。"""
-    _row_or_404(db_id, rid)
-    try:
-        r, changed = dbs.update_row(rid, data.get("props") or {}, "user", data.get("version"))
-    except dbs.Conflict as e:
-        raise HTTPException(409, {"version": e.version, "conflicts": e.items})
-    except (ValueError, TypeError, LookupError) as e:
-        _err(e)
-    if changed:
-        await _db_saved(db_id, [rid], schema=True)
-        if "title" in changed:
-            await broadcast({"type": "page_changed", "page_id": rid, "version": r["version"], "by": "user",
-                             "title": r["title"], "updated": r["updated"], "changed": []})
-            await broadcast({"type": "pages_changed"})
-    return dbs.public_row(r)
-
-
-@app.post("/api/dbs/{db_id}/rows/{rid}/move")
-async def move_db_row(db_id: int, rid: int, data: dict = Body(...)):
-    """手动排序：{after: 行号 | 0（最前）| null（最后）}。看板上拖到别的列另外用 PATCH 改那个属性。"""
-    _row_or_404(db_id, rid)
-    try:
-        library.move(rid, db_id, data.get("after"))
-    except (ValueError, TypeError) as e:
-        _err(e)
-    await _db_saved(db_id, [rid])
-    return {"ok": True}
-
-
-@app.delete("/api/dbs/{db_id}/rows/{rid}")
-async def delete_db_row(db_id: int, rid: int):
-    _row_or_404(db_id, rid)
-    library.delete_page(rid)
-    await _db_saved(db_id, [rid])
-    await broadcast({"type": "pages_changed"})
-    return {"ok": True}
-
-
-# ---------- 外部 Agent（agentapi.py）：Claude Code、Codex 经 /mcp 读写资料库 ----------
-app.add_route(agentapi.PATH, agentapi.endpoint, include_in_schema=False)
-
-
-def _no_agents_in_demo():
-    if security.demo():
-        raise HTTPException(403, i18n.t("演示服务器不开放外部 Agent"))
-
-
-@app.get("/api/agent-tokens")
-async def list_agent_tokens():
-    _no_agents_in_demo()
-    return agentapi.tokens()
-
-
-@app.post("/api/agent-tokens")
-async def create_agent_token(data: dict = Body(...)):
-    """{name, scope: read | write}。返回记录和 token 原文（只有这一次）。"""
-    _no_agents_in_demo()
-    try:
-        t, token = agentapi.create(data.get("name", ""), data.get("scope", ""))
-    except (ValueError, TypeError) as e:
-        _err(e)
-    await broadcast({"type": "agents_changed", "agents": agentapi.names()})
-    return {**t, "token": token}
-
-
-@app.delete("/api/agent-tokens/{tid}")
-async def revoke_agent_token(tid: int):
-    _no_agents_in_demo()
-    try:
-        t = agentapi.revoke(tid)
-    except LookupError as e:
-        raise HTTPException(404, str(e))
-    await broadcast({"type": "agents_changed", "agents": agentapi.names()})
-    return t
-
-
-@app.post("/api/agent-tokens/{tid}/hide")
-async def hide_agent_token(tid: int):
-    """撤销了的从设置的列表里删掉（名字还留着，它写过的东西照样署它的名字）。"""
-    _no_agents_in_demo()
-    try:
-        agentapi.hide(tid)
-    except LookupError as e:
-        raise HTTPException(404, str(e))
-    except ValueError as e:
-        _err(e)
     return {"ok": True}
 
 
@@ -1527,8 +1077,6 @@ async def shared_page(token: str):
     if not p:
         raise HTTPException(404, i18n.t("链接已失效"))
     b = bots.get(p["bot_id"]) if p["bot_id"] else None
-    if p["kind"] == "db":   # 分享的数据库：第一个视图的表格（只读）
-        p = {**p, "content": dbs.share_markdown(p["id"])}
     return {k: p[k] for k in ("title", "format", "content", "updated")} | (
         {"bot": {"name": b["name"], "avatar": b["avatar"]}} if b else {})
 
@@ -1539,15 +1087,6 @@ async def shared_raw(token: str):
     if not p:
         raise HTTPException(404, i18n.t("链接已失效"))
     return _raw(p)
-
-
-@app.get("/api/shared/{token}/media/{mid}")
-async def shared_media(request: Request, token: str, mid: str):
-    """分享出去的页面里的图片（/api/media 要登录）：只给这个页面正文里引用着的。"""
-    p = library.by_token(token)
-    if not p or p["format"] != "markdown" or mid not in media.EMBED.findall(p.get("content") or ""):
-        raise HTTPException(404)
-    return _media_response(mid, rng=request.headers.get("range"))
 
 
 # ---------- 资料库：电脑里的文件 ----------

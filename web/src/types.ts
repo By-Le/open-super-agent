@@ -204,11 +204,6 @@ export type MemoryList = { shared: Memory[]; own: Memory[]; work: Memory[] }
 export type Page = {
   id: number; bot_id: number | null; title: string; format: 'markdown' | 'html'; share_token: string | null; pinned: boolean
   task_id: number | null; created: number; updated: number; size: number; content?: string
-  version: number; locked: boolean   // version：每次修改 +1（osa/pagedoc.py）；locked：Bot 只能读
-  parent_id: number | null; pos: number   // 子页面：挂在哪个页面下面、同一层里的顺序
-  agent_id: number | null   // 外部 Agent 建的页面（经 /mcp，见 osa/agentapi.py），这时 bot_id 是空的
-  kind: 'page' | 'db' | 'row'   // db：数据库（见 osa/dbs.py）；row：数据库的一行（资料库列表里没有）
-  ancestors?: { id: number; title: string }[]; children?: { id: number; title: string; format: string; kind?: string }[]   // 只有打开单个页面时给
   app?: { tools: string[]; chat: boolean } | null   // 小应用的清单（见 osa/applets.py），普通页面没有
 }
 export type Teach = { bot_id: number; started: number; note: string; max_s: number }
@@ -223,7 +218,3 @@ export type Channel = {
   state: 'connected' | 'connecting' | 'error' | 'off'; error: string; paired: boolean; peer_name: string; created: number
   pair_code?: string; pair_expires?: number; pair_link?: string; setup_link?: string
 }
-
-// 外部 Agent（Claude Code、Codex……经 /mcp 读写资料库，见 osa/agentapi.py）：页面上显示 agent:<id> 写的段、评论用。撤销了的也在
-export type AgentInfo = { id: number; name: string; revoked: boolean }
-export type AgentToken = { id: number; name: string; scope: 'read' | 'write'; created: number; last_used: number | null; revoked: number | null }

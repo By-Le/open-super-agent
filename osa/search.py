@@ -88,22 +88,11 @@ def _drop(ids: list[int]):
     conn.executemany("delete from search_docs where id=?", [(i,) for i in ids])
 
 
-def _add(kind: str, ref: int, bot_id, sub: str, updated: float, title: str, parts: list[str], reuse: dict | None = None):
+def _add(kind: str, ref: int, bot_id, sub: str, updated: float, title: str, parts: list[str]):
     for n, text in enumerate(parts):
-        model, vec = (reuse or {}).get((title, text), ("", None))
-        did = conn.execute("insert into search_docs(kind, ref, chunk, bot_id, sub, src_updated, title, text, model, vec) "
-                           "values(?,?,?,?,?,?,?,?,?,?)", (kind, ref, n, bot_id, sub, updated, title, text, model, vec)).lastrowid
+        did = conn.execute("insert into search_docs(kind, ref, chunk, bot_id, sub, src_updated, title, text) values(?,?,?,?,?,?,?,?)",
+                           (kind, ref, n, bot_id, sub, updated, title, text)).lastrowid
         conn.execute("insert into search_fts(rowid, tokens) values(?, ?)", (did, " ".join(tokens(f"{title} {text}"))))
-
-
-def _vectors(ids: list[int]) -> dict:
-    """这些条目已经算好的向量，按 (标题, 文字) 存着：页面改了一段，其余没变的块不用重新算（编辑器几秒存一次）。"""
-    out = {}
-    for k in range(0, len(ids), 500):
-        part = ids[k:k + 500]
-        out |= {(t, x): (m, v) for t, x, m, v in conn.execute(
-            f"select title, text, model, vec from search_docs where vec is not null and id in ({','.join('?' * len(part))})", part)}
-    return out
 
 
 def sync() -> int:
@@ -115,11 +104,8 @@ def sync() -> int:
     src = {("memory", i): u for i, u in conn.execute("select id, updated from memories")}
     src |= {("page", i): u for i, u in conn.execute("select id, updated from pages")}
     changed = 0
-    reuse: dict[tuple, dict] = {}
     for key, (u, ids) in have.items():
         if key not in src or src[key] != u:
-            if key in src and key[0] == "page":
-                reuse[key] = _vectors(ids)
             _drop(ids)
             changed += 1
     for (kind, ref), u in src.items():
@@ -130,13 +116,9 @@ def sync() -> int:
             if r:
                 _add(kind, ref, r[0], r[1], u, "", [r[2]])
         else:
-            r = conn.execute("select bot_id, title, format, content, coalesce(kind, 'page') from pages where id=?", (ref,)).fetchone()
+            r = conn.execute("select bot_id, title, format, content from pages where id=?", (ref,)).fetchone()
             if r:
-                text = _plain(r[3] or "", r[2])
-                if r[4] in ("db", "row"):   # 数据库：属性的文字也进索引（行的属性值、库的属性名）
-                    from . import dbs
-                    text = dbs.index_text(ref) + ("\n\n" + text if text else "")
-                _add(kind, ref, r[0], "", u, r[1] or "", chunks(text) or [r[1] or ""], reuse.get((kind, ref)))
+                _add(kind, ref, r[0], "", u, r[1] or "", chunks(_plain(r[3] or "", r[2])) or [r[1] or ""])
         changed += 1
     if changed:
         conn.commit()

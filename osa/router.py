@@ -7,7 +7,7 @@ import time
 import openai
 from .computer import tools as ctools
 from .config import CFG, call_kwargs, client_for
-from . import applets, approvals, botadmin, bots, dm, dsml, i18n, library, media, memories, memory, providers, registry, routines, skills, tasklog
+from . import applets, approvals, botadmin, bots, dm, dsml, i18n, media, memories, memory, providers, registry, routines, skills, tasklog
 from . import builtin  # noqa: F401  导入即注册内置工具
 from . import worker as worker_mod
 from .worker import Task, run_worker, run_heavy
@@ -29,10 +29,6 @@ ROUTER_PROMPT = """你是「{name}」，用户的 AI 队友。{instructions}
   现在有哪些 Bot 不用记：下面“其他 Bot”每轮都是最新的。
 - 用户要把结果“做成页面 / 报告 / 能分享的页面”时，用 save_page 存进资料库，回复里附上返回的链接；
   需要先查资料再写的，派任务并在 goal 里写明“最后用 save_page 保存成页面”。
-- 资料库里的 markdown 页面谁都能接着改：只改几处用 edit_page（先 read_page 拿版本号和段落编号），整页重写才用 save_page（带上 version）。
-  把工作交给别的 Bot 时附上页面链接，接手的先 read_page 再改。
-- 一条一行、每条带几个属性的东西（任务看板、会议列表、客户名单、读书清单）用资料库的数据库：db_create 建库、db_add 加行、
-  db_query 查、db_update 改属性（带版本号）、db_schema 改表结构；用户在网页上能看成表格或看板。每行也是页面，正文用 read_page / edit_page。
 - 用户要一个能操作的界面（表单、看板、计算器、按钮点了去查东西的面板、每天更新的仪表盘）时，用 save_page 做成小应用。
   做小应用（可交互的界面）时 format=html 并填 app，页面里直接用 window.osa（服务器会自动注入，不用引脚本）：
     osa.call(工具名, 参数对象) → 文字结果（只能用 app.tools 里列的工具；要确认的会弹卡片）；
@@ -110,7 +106,7 @@ STATE_PROMPT = """
 {approvals}
 
 这一轮你能用的工具（能做什么以这里为准：对话里你以前说过“做不到”“没有这个工具”的，可能是那时还没有，现在这里有就直接用）：
-{tools}{memories}{pages}{turn}"""
+{tools}{memories}{turn}"""
 
 GROUP_PROMPT = """
 
@@ -132,13 +128,6 @@ DM_TURN = """
 这一轮是因为 {name} 私信了你（见最近的消息），不是用户直接说的；用户能在你的私聊里看到。
 你这一轮的回复会自动作为回信发给 {name}，写给它看：能直接答就直接答；要查证、多步的就 dispatch，任务结果会自动发给 {name}，
 不用你再回来；做不了就说明原因。不要再用 message_bot 回复 {name}。"""
-
-COMMENT_TURN = """
-
-这一轮是因为用户在资料库页面 #{page}《{title}》上写了评论 #{comment}（见最近的消息），要你处理。
-按评论的意思做：要改页面就先 read_page 再用 edit_page 改；要配图就用 generate_image 并填 page_id={page}、after=评论挂的那段，
-画好会自动插进页面（对话里已有的图用 edit_page 写 ![说明](/api/media/编号)）；处理完用 comment_page 回复（reply_to={root}），说清楚改了什么，办完了加 resolve=true。
-意思不清楚就在评论里问。你这一轮没用 comment_page 回复的话，这一轮的回复会自动贴进这串评论；要查证、多步的就 dispatch，任务结果也会贴回来。"""
 
 # 管理 Bot（见 botadmin.py）：主 Bot 能查看、新建、修改、删除所有 Bot；别的 Bot 只能改自己，其余找主 Bot。
 # 新建、修改、删除每次都弹卡片请用户确认
@@ -343,7 +332,6 @@ class Router:
         async with self.lock:
             self.turn = turn or {}
             owed = self.turn.get("reply")
-            began = time.time()
             who = memory.WHO.set({"bot_id": self.bot_id, "chat_id": chat_id})   # 这一轮的模型调用记到这个 Bot 头上
             try:
                 try:
@@ -357,11 +345,6 @@ class Router:
                 # （派了的由任务结果、对方回信、新建的结果接着送）
                 if owed and not self._turn_tasks and not self._turn_dms and not self._turn_waits:
                     await dm.answer(self.bot_id, owed, shown or i18n.t("（没有回复内容）"), chat_id)
-                # 因页面评论说的这一轮：回复贴进那串评论（派了任务的，等任务结果贴）
-                woke = self.turn.get("woke") or {}
-                if woke.get("kind") == "comment" and not self._turn_tasks:
-                    from . import pagecomments
-                    await pagecomments.after_turn(self.bot_id, woke, shown or "", began)
             finally:
                 self.turn = {}
                 memory.WHO.reset(who)
@@ -457,9 +440,6 @@ class Router:
             o = bots.get(self.turn["reply"]["bot"]) if self.turn.get("reply") else None
             return BOTADMIN_TURN + (BOTADMIN_EDITED.format(fields="、".join(woke["edited"])) if woke.get("edited") else "") + \
                 (BOTADMIN_OWED.format(owed=o["name"]) if o else "")
-        if woke["kind"] == "comment":   # from 是那串评论的第一条，不是 Bot
-            return COMMENT_TURN.format(page=woke.get("page"), title=memory.defang(woke.get("title") or ""),
-                                       comment=woke.get("comment"), root=woke.get("from"))
         name = bots.get(woke["from"])["name"] if bots.get(woke["from"]) else "已删除的 Bot"
         if woke["kind"] == "dm":
             return DM_TURN.format(name=name)
@@ -496,12 +476,9 @@ class Router:
             bot_rule=PRIMARY_RULE if b["is_primary"] else OTHER_RULE.format(primary=p) if (p := bots.primary_name()) else "",
             attach_rule=ATTACH_SEE if see else ATTACH_BLIND) + i18n.model_hint()
         recent = memories.turn_block(self.bot_id, related)
-        pages = library.recent_pages(cid)
         state = STATE_PROMPT.format(tasks=self._task_list(), approvals=approvals.summary(self.bot_id),
                                     tools="、".join(t["function"]["name"] for t in self._tools()),
-                                    memories="\n\n" + recent if recent else "",
-                                    pages="\n\n对话里最近提到的资料库页面（接着改之前先 read_page 拿最新的版本和段落编号）：\n" + pages if pages else "",
-                                    turn=self._turn_block())
+                                    memories="\n\n" + recent if recent else "", turn=self._turn_block())
         msgs = [{"role": "system", "content": system}] + with_state(
             memory.context(cid, self.bot_id if chat["kind"] == "group" else None, me=self.bot_id,
                            images=media.MODEL_IMAGES if see else 0), state)
@@ -579,10 +556,8 @@ class Router:
             if handoff:
                 from . import groups
                 groups.expect(self.chat["id"], handoff["to"])
-            woke = self.turn.get("woke") or {}
-            comment = {"page": woke["page"], "root": woke["from"]} if woke.get("kind") == "comment" else None
             task = await self.dispatch(args["goal"], args.get("mode", "single"), chat_id=self.chat["id"], handoff=handoff,
-                                       reply=self.turn.get("reply"), depth=self.turn.get("depth", 0), mac=mac, comment=comment)
+                                       reply=self.turn.get("reply"), depth=self.turn.get("depth", 0), mac=mac)
             self._turn_tasks.append(task.id)
             if handoff:
                 return f"已派发任务 #{task.id}，做完后结果会自动交给 {to['name']}"
@@ -642,8 +617,8 @@ class Router:
             t, owed = self.tasks.get(args["task_id"]), self.turn.get("reply")
             if t and t.reply and owed and dm.same(t.reply, owed):
                 t.reply = None   # 还是回给同一个 Bot：这一轮的回复或新派的任务会接着回它，不用再说一声“已取消”
-            sender = i18n.t("用户在页面上的评论") if woke["kind"] == "comment" else dm._name(woke["from"])
-            return self.cancel(args["task_id"], i18n.t("{name} 收到 {sender} 的新消息后自己取消的", name=self.bot["name"], sender=sender))
+            return self.cancel(args["task_id"], i18n.t("{name} 收到 {sender} 的新消息后自己取消的", name=self.bot["name"],
+                                                       sender=dm._name(woke["from"])))
         if name == "resolve_approval":
             return approvals.resolve(args["id"], args["approve"], args.get("note", ""), bool(args.get("always")),
                                      scope=args.get("scope"))
@@ -744,7 +719,7 @@ class Router:
     async def dispatch(self, goal: str, mode: str = "single", background: bool = False,
                        on_done=None, label: str = "", chat_id: int | None = None, handoff: dict | None = None,
                        reply: dict | None = None, depth: int = 0, quiet_ok: bool = False, notes: str = "",
-                       mac: dict | None = None, comment: dict | None = None) -> Task:
+                       mac: dict | None = None) -> Task:
         """派一个后台任务。定时任务也走这里（background=True，确认卡片会过期）。
         chat_id 是任务卡片和结果出现的对话（默认私聊）；确认卡片总是发到私聊。
         reply：因私信派的任务，做完把结果作为回信送回去（见 dm.py）。
@@ -757,7 +732,6 @@ class Router:
                              **({"reply_to": reply["bot"]} if reply else {}), **({"mac": mac["name"]} if mac else {}))
         task = Task(id=tid, goal=goal, mode=mode, bot_id=self.bot_id, chat_id=cid, approval_chat_id=self.chat_id,
                     background=background, on_done=on_done, handoff=handoff, reply=reply, depth=depth, quiet_ok=quiet_ok, notes=notes,
-                    comment=comment,
                     **({"mac": mac["id"], "mac_name": mac["name"]} if mac else {}))
         task.handle = asyncio.create_task(self._run(task))
         TASKS[tid] = task
@@ -828,9 +802,6 @@ class Router:
             asyncio.create_task(groups.after_task(task))
         if task.reply:
             asyncio.create_task(dm.after_task(task))
-        if task.comment:
-            from . import pagecomments
-            asyncio.create_task(pagecomments.after_task(task))
         await self._done(task)
 
     async def _done(self, task: Task):

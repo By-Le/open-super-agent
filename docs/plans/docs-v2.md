@@ -1,5 +1,7 @@
 # 资料库文档 v2：真机检查、给外面的 Agent 用、数据库
 
+> 0.25.0 起这部分从 OSA 撤回，拆成独立项目 [Open Agent Docs](https://github.com/kadaliao/open-agent-docs)。下面提到的代码在 OSA 的 git 历史里（最后一版是 `db1352b`）。
+
 [v1](docs.md)（按段编辑、块编辑器、评论叫醒 Bot、子页面、版本历史）2026-11-15 做完并上线（`6366a90`，CI 修复 `ad108fe`）。
 这份是接着做的计划：先在真机上把 v1 过一遍，再把文档开放给 OSA 外面的 Agent（Claude Code、Codex……），最后做数据库（多维表）。
 

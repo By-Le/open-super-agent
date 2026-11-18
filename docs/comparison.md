@@ -13,7 +13,7 @@
 | 手机推送 | App 关着、手机锁着也能收到，锁屏上显示内容；经推送中转端到端加密，中转看不到内容 | App 开着、或者刚退到后台时能收到；被系统挂起或关掉后收不到（他们的文档写明这一版没有） |
 | 部署 | `docker compose up` 放到服务器上一直开着，电脑关了手机和聊天软件照样能用；也可以只用 macOS 桌面 App 在本机跑 | 桌面 App 自带服务（手机连的是这台电脑，要开着、不能睡眠）；`npx openmausbot serve` 或 Docker 放到服务器上；付费的 MausBot Cloud |
 | 语音 | 网页上的语音输入 | 念出回复、和 Bot 打电话、语音输入（ElevenLabs、Fish Audio、xAI、Mac 自带的声音） |
-| 从别处调用 | 定时任务；事件（webhook、GitHub、订阅源、网页变化、新邮件、价格到线等 15 种来源）；Claude Code、Codex 经 MCP 读写资料库 | 定时任务、webhook；MCP 服务（在 Claude Desktop、Cursor 里指挥 Bot）；命令行（脚本、CI 里跑） |
+| 从别处调用 | 定时任务；事件（webhook、GitHub、订阅源、网页变化、新邮件、价格到线等 15 种来源） | 定时任务、webhook；MCP 服务（在 Claude Desktop、Cursor 里指挥 Bot）；命令行（脚本、CI 里跑） |
 | 安装包 | 45–51 MB（自带 Python 运行环境） | 250–317 MB |
 | 密钥 | 加密存在保险库里 | 明文存在 `config.json` 里（文件权限 0600） |
 | 使用统计 | 不收集 | 匿名使用统计，可以在设置里关掉 |

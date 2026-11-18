@@ -85,28 +85,17 @@ def dimensions(b: bytes, mime: str) -> tuple[int, int]:
 
 def _clean_name(name: str, mime: str) -> str:
     name = posixpath.basename((name or "").replace("\\", "/")).strip().replace("\0", "")[:200]
-    return name or ("file" if mime == "application/octet-stream" else "image." + mime.split("/")[1].replace("jpeg", "jpg"))
+    return name or "image." + mime.split("/")[1].replace("jpeg", "jpg")
 
 
-INLINE = ("image/png", "image/jpeg", "image/webp", "image/gif", "application/pdf")
-
-
-def inline(mime: str) -> bool:
-    """能在浏览器里直接打开的（图片、视频、PDF）；别的一律下载。"""
-    return mime in INLINE or mime.startswith("video/")
-
-
-def save(data: bytes, name: str = "", limit: int = MAX_BYTES, video: bool = False, any_file: bool = False) -> dict:
-    """存一张图片（video=True 时也收视频），返回它的信息（id、mime、name、size、w、h）。不是支持的格式就报错。
-    any_file：数据库的文件属性，什么文件都收（认不出的记成 application/octet-stream，只能下载）。"""
+def save(data: bytes, name: str = "", limit: int = MAX_BYTES, video: bool = False) -> dict:
+    """存一张图片（video=True 时也收视频），返回它的信息（id、mime、name、size、w、h）。不是支持的格式就报错。"""
     if not data:
-        raise ValueError(i18n.t("没收到图片") if not any_file else i18n.t("没收到文件"))
+        raise ValueError(i18n.t("没收到图片"))
     if len(data) > limit:
-        raise ValueError(i18n.t("图片太大了（最多 {n} MB）", n=limit >> 20) if not any_file else i18n.t("文件太大了（最多 {n} MB）", n=limit >> 20))
+        raise ValueError(i18n.t("图片太大了（最多 {n} MB）", n=limit >> 20))
     mime = sniff(data)
-    if any_file and not mime:
-        mime = "application/pdf" if data.startswith(b"%PDF-") else "application/octet-stream"
-    elif not mime or (mime.startswith("video/") and not video and not any_file):
+    if not mime or (mime.startswith("video/") and not video):
         raise ValueError(i18n.t("只支持 PNG、JPG、WebP、GIF 图片"))
     mid = hashlib.sha256(data).hexdigest()[:24]
     w, h = dimensions(data, mime)
@@ -143,43 +132,15 @@ def url(mid: str) -> str:
     return f"/api/media/{mid}"
 
 
-# ---------- 资料库页面里的图片 ----------
-# 页面正文用 ![说明](/api/media/编号) 引用对话里的图片（Bot 画的、用户发的）。网页上登录了能看；分享出去的页面经
-# /api/shared/<token>/media/<编号> 看（只给正文里引用着的）。被页面（含历史版本）引用着的图片不会被 gc 清掉。
-EMBED = re.compile(r"/api/media/([0-9a-f]{24})")
-_BARE = re.compile(r"(!\[[^\]\n]*\]\()\s*(?:media:)?([0-9a-f]{24})\s*\)")
-
-
-def embed(md: str) -> str:
-    """Bot 写进页面的 Markdown：图片地址只写了编号的（![说明](编号)）补成 /api/media/编号；引用的图片不存在时报 ValueError。"""
-    md = _BARE.sub(lambda m: f"{m.group(1)}/api/media/{m.group(2)})", md or "")
-    for mid in dict.fromkeys(EMBED.findall(md)):
-        if not info(mid):
-            raise ValueError(f"图片 {mid} 不存在（可能已经被清理了），换一张或者重新画")
-    return md
-
-
-def image_md(mid: str, alt: str = "") -> str:
-    alt = re.sub(r"[\[\]\n\r]+", " ", alt or "").strip()[:60]
-    return f"![{alt}](/api/media/{mid})"
-
-
 def used() -> set[str]:
-    """消息里引用着的图片，加上资料库页面（现在的和历史版本）里引用着的，数据库的文件属性里的。"""
-    out = {r[0] for r in conn.execute("""select distinct json_extract(a.value, '$.media')
+    """消息里引用着的图片。"""
+    return {r[0] for r in conn.execute("""select distinct json_extract(a.value, '$.media')
         from messages m, json_each(m.meta, '$.attachments') a
         where m.meta like '%"attachments"%' and json_extract(a.value, '$.media') is not null""")}
-    for (c,) in conn.execute("""select content from pages where content like '%/api/media/%'
-                                union all select content from page_versions where content like '%/api/media/%'
-                                union all select props from pages where props like '%/api/media/%'
-                                union all select props from page_versions where props like '%/api/media/%'
-                                union all select data from page_trash where data like '%/api/media/%'"""):   # 数据库的文件属性、回收站
-        out.update(EMBED.findall(c or ""))
-    return out
 
 
 def gc():
-    """清掉一天前存的、现在没有消息和页面在用的图片。"""
+    """清掉一天前存的、现在没有消息在用的图片。"""
     keep = used()
     old = [r[0] for r in conn.execute("select id from media where created < ?", (time.time() - KEEP_S,)) if r[0] not in keep]
     if old:
@@ -188,10 +149,8 @@ def gc():
 
 
 async def gc_loop():
-    from . import library
     while True:
         try:
-            library.purge_trash()   # 回收站里放了 30 天的先清掉，它们引用的图片接着就能清
             gc()
         except Exception as e:
             print(f"清理对话图片出错：{e}", flush=True)

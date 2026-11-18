@@ -90,30 +90,6 @@ The README lists the highlights; this is the full list. For setup see [Configura
 ## Library, images and links
 
 - **Library**: finished reports and web pages are saved as pages you can pin and share by link; browse, upload and download files on the shared computer.
-- **Edit the same page together**: markdown pages are stored block by block (each list item and each table row is its own block). Any Bot can use `edit_page` to change just the blocks it needs, and each block remembers who wrote it.
-  Edits only conflict when two of them touch the same block; the Bot then sees what the other one wrote and resubmits. Bots hand work over by linking the page, so no Notion account is needed.
-  Every change is kept in the page's history (edits by the same author within 10 minutes count as one version). Click History on a page to see what each version changed, restore any version, or restore a single block. Locked pages are read-only for Bots.
-- **Edit pages directly**: markdown pages open in a Notion-style editor that saves as you type; type `/` to insert headings, lists, to-dos, tables, callouts and toggles, and upload, paste or drop images.
-  Each block shows which Bot wrote it; a Bot's edits appear live, and you're asked to choose when you and a Bot change the same block. Only formats Markdown can store are offered, so a Bot's original text is never rewritten.
-  On phones a "⋮" next to the current block moves it up or down or deletes it (Alt+Shift+↑/↓ on desktop).
-- **Import from Notion**: through the connected Notion app, bring pages (with subpages) and databases (with every row) into the library; links are rewritten to point into the library, and importing again updates them.
-- **Trash**: deleted pages, databases and rows, with their history and comments, stay in the trash for 30 days and can be put back.
-- **Subpages**: pages can contain subpages, the library list is a collapsible tree, and pages can be moved under other pages.
-- **Comments wake Bots**: comment on a block and the Bot that wrote it makes the change, replies in the thread and resolves it when done. You can also @ another Bot (names autocomplete) or ask nobody.
-  When a Bot replies to your comment while no page is open, you get a push notification.
-- **Databases**: create Notion-style databases in the library for task boards, meeting lists or customer lists. Properties include text, number, select, multi-select, status, date, person, checkbox, URL and files, plus formulas, relations (optionally two-way), rollups, auto IDs and buttons (set properties and wake a Bot). View them as a table or a board (drag cards between columns, long-press to drag on phones), each view with its own filters and sorts; large databases load more rows as you scroll; every row is also a page with its own content and comments, and its history shows which properties changed. Bots can create databases, add and query rows, update properties and change the properties themselves; deleting or retyping a property and view changes are recorded in the database's history and can be undone.
-<table>
-<tr>
-<td width="50%"><img src="images/doc-comments.webp" alt="A library page: a colored bar left of each block marks its author; in the comments panel you ask Quill to shorten the X post, and Quill replies after revising it"><br><sub>A comment wakes the Bot that wrote the block; it revises and replies in the thread</sub></td>
-<td width="50%"><img src="images/doc-history.webp" alt="Page history: version 5 by Claude Code compared with now, changed blocks showing removed and added text, each restorable on its own"><br><sub>History shows who wrote each version and how it differs from now; restore one block</sub></td>
-</tr>
-<tr>
-<td><img src="images/db-board.webp" alt="The Launch tasks database as a board with To do, In progress and Done columns"><br><sub>A database as a board, grouped by status</sub></td>
-<td><img src="images/db-table.webp" alt="The same database as a table: task, ID, status, owner, due date, priority"><br><sub>The same database as a table: auto ID, status, person, date, select</sub></td>
-</tr>
-</table>
-
-- **Outside agents can write too**: connect Claude Code or Codex to the library over MCP (create a token in Settings → External agents). They can search, read and edit pages block by block and reply to comments; what they write is signed with their name and shows up live. See [Configuration](configuration.md#让外面的-agent-读写资料库) (Chinese).
 - **Each Bot's library**: the Library tab in the side panel lists everything that Bot has handed you, newest first: pages, files it sent, images it drew and links in its replies. Filter by kind, search, open the original, and jump to the task that made it.
 - **Applets**: when you need something to click (a sign-up form, a board, a calculator, a panel that looks something up, a dashboard updated daily), the Bot builds it and it shows up right in the chat.
   The page can call the Bot's tools (approval cards still appear), keep its own data (which the Bot can read and write too, so "update the board every day at 9" works), and send the Bot messages for you.

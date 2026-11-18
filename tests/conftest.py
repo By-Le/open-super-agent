@@ -76,21 +76,12 @@ _n = 0
 
 @pytest.fixture
 def make_bot():
-    """每个测试建自己的 Bot，名字不重复，互不干扰。测试完删掉（Bot 最多 50 个，不删的话测试一多就建不出来了）。"""
-    made: list[int] = []
-
+    """每个测试建自己的 Bot，名字不重复，互不干扰。"""
     def make(name: str = "", instructions: str = "") -> dict:
         global _n
         _n += 1
-        b = bots.create(name or f"Bot{_n}", None, instructions)
-        made.append(b["id"])
-        return b
-    yield make
-    for bid in made:
-        try:
-            bots.delete(bid)
-        except Exception:
-            pass
+        return bots.create(name or f"Bot{_n}", None, instructions)
+    return make
 
 
 async def settle(timeout: float = 5):

@@ -17,15 +17,13 @@ An open-source alternative to [Grok Bot](https://x.ai/bot). Bring your own model
 
 <sub>Feature tour (silent, sped up; Chinese UI): link cards · threads · background tasks · the Bot's computer · ask first · groups · Bot DMs · drawing · schedules · apps · skills · memory · costs · <a href="docs/images/promo.mp4">full 2-minute promo (Chinese voice-over)</a></sub>
 
-<sub>Recorded on 2026-11-08 (v0.7.0). Added since: the library became shared documents (comments that wake a Bot, version history, databases and boards, with Claude Code and Codex writing too, and Notion import), events, the Insights page, video generation, searching posts on X, Reddit and Xiaohongshu, and sending tasks to your Mac. <a href="#a-look-around">New screenshots below</a>. Get the latest version from the <a href="https://github.com/kadaliao/open-super-agent/releases/latest">releases page</a>; see the <a href="CHANGELOG.md">changelog</a> (Chinese) for every release.</sub>
+<sub>Recorded on 2026-11-08 (v0.7.0). Added since: events, the Insights page, video generation, searching posts on X, Reddit and Xiaohongshu, and sending tasks to your Mac. <a href="#a-look-around">New screenshots below</a>. Get the latest version from the <a href="https://github.com/kadaliao/open-super-agent/releases/latest">releases page</a>; see the <a href="CHANGELOG.md">changelog</a> (Chinese) for every release.</sub>
 
 </div>
 
 ## Highlights
 
 - **Chats and delegates**: each Bot has its own persona, memory and conversation. Long jobs run as background tasks while you keep chatting, and you can see every step; put several Bots in a group, and one hands its research to another to write up.
-- **A library you write together**: plans and reports the Bots make are saved as pages you can edit in place, Notion-style. Several Bots can keep writing the same page section by section, each section marked with its author;
-  comment on a section and the Bot that wrote it revises it and replies in the thread; every version can be viewed and restored. Build databases to use as task boards, let Claude Code and Codex read and write over MCP, and import from Notion.
 - **A computer you can watch and take over**: Bots browse, fill in forms and download files on the computer while you watch live; for captchas and logins, they ask you to step in. Several tasks run at once, each in its own browser window, without queueing.
   The computer can be the Bots' own, or simply your Mac: once you grant the permissions, they use the mouse and keyboard in apps like WeChat, Finder and Notes, and stop as soon as you move the mouse.
 - **Finds what's new**: web search and page reading can rotate across providers (DeepSeek, Exa, Tavily…), moving to the next when one fails; Bots can also search posts on X, Reddit and Xiaohongshu, with like and comment counts.
@@ -48,12 +46,8 @@ See [Features](docs/features.en.md) for the full list.
 <td width="50%"><img src="docs/images/task-steps.webp" alt="Radar's finished background task, with each step listed on the right: web search, Reddit, Xiaohongshu, X, reading pages, and how long each took"><br><sub><b>Background task</b>: two weeks of discussion about note apps, with every step on the right (web search, X / Reddit / Xiaohongshu, reading pages)</sub></td>
 </tr>
 <tr>
-<td><picture><source media="(prefers-color-scheme: dark)" srcset="docs/images/doc-comments-dark.webp"><img src="docs/images/doc-comments.webp" alt="A library page, the launch plan: a colored bar left of each section marks its author; in the comments panel you ask Quill to shorten the X post, and Quill replies after revising it"></picture><br><sub><b>Pages written together</b>: the bar left of each section is its author; comment on a section and its Bot revises it and replies</sub></td>
-<td><img src="docs/images/doc-history.webp" alt="Page history: version 5 by Claude Code compared with now, changed sections showing removed and added text, each restorable on its own"><br><sub><b>Version history</b>: which version Nova, Radar, Quill and Claude Code each wrote, how it differs from now, restore a single section</sub></td>
-</tr>
-<tr>
-<td><picture><source media="(prefers-color-scheme: dark)" srcset="docs/images/db-board-dark.webp"><img src="docs/images/db-board.webp" alt="The Launch tasks database as a board: To do, In progress and Done columns, cards with ID, owner, due date and priority"></picture><br><sub><b>Database board</b>: the task database Nova built from the launch plan, owned by you and by Bots</sub></td>
-<td><img src="docs/images/applet.webp" alt="An applet in the chat, a launch countdown: 3 days 15 hours to go, with the unfinished tasks below as checkboxes"><br><sub><b>Applet</b>: a launch countdown Nova built from one sentence, reading the tasks on the board</sub></td>
+<td width="50%"><img src="docs/images/applet.webp" alt="An applet in the chat, a launch countdown: 3 days 15 hours to go, with the unfinished tasks below as checkboxes"><br><sub><b>Applet</b>: a launch countdown Nova built from one sentence</sub></td>
+<td width="50%"><img src="docs/images/events.webp" alt="The Events tab: “Obsidian new release” (a feed, checked every 3 hours) and “flomo pricing page changed” (a web page, checked every 12 hours), each with test, check now, pause, edit and history"><br><sub><b>Events</b>: Radar watching for a new release and a pricing page change, set up from one sentence</sub></td>
 </tr>
 <tr>
 <td><img src="docs/images/observe.webp" alt="The Insights page: today's spend, tokens, tasks and time to first reply, hourly spend, and spend per Bot"><br><sub><b>Insights</b>: what you spent, how fast, what went wrong, per Bot if you like</sub></td>
@@ -61,7 +55,7 @@ See [Features](docs/features.en.md) for the full list.
 </tr>
 </table>
 
-<sub>Screenshots taken on 2026-11-16 (the v0.24.0 web UI, in Chinese) with demo data: an indie developer launching “Tidal Notes 2.0”. The three Bots and everything on the pages were produced by a real model (DeepSeek). With GitHub in dark mode, the page and board screenshots show the dark theme.</sub>
+<sub>Screenshots taken on 2026-11-16 (the v0.24.0 web UI, in Chinese) with demo data: an indie developer launching “Tidal Notes 2.0”. The three Bots and everything on the pages were produced by a real model (DeepSeek).</sub>
 
 ## Where you use it
 
@@ -139,7 +133,7 @@ uv run uvicorn osa.server:app --port 8765   # open http://127.0.0.1:8765
 [Features](docs/features.en.md) and [the comparison](docs/comparison.en.md) are in English; the other docs are in Chinese for now:
 
 - [Deploy with Docker Compose](docs/docker.md)
-- [Configuration](docs/configuration.md): models, drawing and video generation, web search and reading, limits and prices, the computer, apps, approvals and the vault, the library (databases, external agents, Notion import), routines, push, remote access
+- [Configuration](docs/configuration.md): models, drawing and video generation, web search and reading, limits and prices, the computer, apps, approvals and the vault, routines, push, remote access
 - [Events](docs/events.md): have a Bot act when something happens: webhooks, GitHub, feeds, page changes, mail, calendar, weather, earthquakes, prices, public IP…; addresses and security, writing a new source
 - [Desktop app](docs/desktop.md): running on your computer or connecting to your server, and sending the server's tasks to this Mac
 - [iPhone app (TestFlight)](docs/mobile.md): QR pairing, how pushes reach the phone, what the push relay can see, development

@@ -4,20 +4,12 @@ import type { SearchHit, Avatar, FileEntry, FileListing, Page } from '../types'
 import BotAvatar from './BotAvatar'
 import Markdown from './Markdown'
 import { locale, t, tc } from '../i18n'
-import { ask, notice } from './Dialog'
+import { ask } from './Dialog'
 import { isEnter } from '../keys'
 import { useBack } from '../swipe'
 import { AppletFrame } from './Applet'
 import { FileLink, fileUrl } from './Media'
 import { PC_NAMES } from './Computer'
-import { DocPage, prefetchDoc } from './doc/lazy'
-import { MoveDialog, PageTree, deletePage, newPage } from './PageTree'
-import NotionImport from './NotionImport'
-import DbView from './db/DbView'
-import PropsBar from './db/PropsBar'
-import { newDb } from './db/db'
-
-const icon = (p: Page) => (p.kind === 'db' ? '▦' : p.app ? '▣' : p.format === 'html' ? '◧' : '▤')
 
 const when = (ts: number) => new Date(ts * 1000).toLocaleString(locale, { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
 export const size = (n: number) => n < 1024 ? `${n} B` : n < 1 << 20 ? `${(n / 1024).toFixed(1)} KB` : `${(n / (1 << 20)).toFixed(1)} MB`
@@ -37,7 +29,6 @@ export default function Library() {
   useEffect(() => localStorage.setItem('osa.libtab', tab), [tab])
   const page = useRef<HTMLElement>(null)
   useBack(() => openLibrary(), page, !!pageId)   // 页面 → 资料库列表
-  useEffect(() => { const timer = setTimeout(prefetchDoc, 1500); return () => clearTimeout(timer) }, [])   // 编辑器先在后台下载好
   if (pageId) return <main className="chat library" ref={page}><PageView id={pageId} /></main>
   return (
     <main className="chat library">
@@ -53,11 +44,8 @@ export default function Library() {
   )
 }
 
-function BotTag({ id, agent }: { id: number | null; agent?: number | null }) {
+function BotTag({ id }: { id: number | null }) {
   const bot = useStore(s => s.bots.find(b => b.id === id))
-  const ext = useStore(s => s.agents.find(a => a.id === agent))   // 外部 Agent 建的（osa/agentapi.py）
-  if (!id && agent) return <span className="muted small">{ext?.name || t('一个外部 Agent')}</span>
-  if (!id) return <span className="muted small">{t('你建的')}</span>
   if (!bot) return <span className="muted small">{t('已删除的 Bot')}</span>
   return <span className="bot-tag"><BotAvatar avatar={bot.avatar} size={16} />{bot.name}</span>
 }
@@ -76,48 +64,8 @@ export function useSearch(kind: 'page' | 'memory', botId?: number) {
   return { q, setQ, hits }
 }
 
-// 回收站：删掉的页面、数据库、行留 30 天（osa/library.py）
-type TrashItem = { id: number; page_id: number; title: string; kind: string; format: string; deleted: number; count: number; expires: number }
-function Trash({ onClose }: { onClose: () => void }) {
-  const [list, setList] = useState<TrashItem[] | null>(null)
-  const load = () => api<TrashItem[]>('/api/trash').then(setList).catch(() => setList([]))
-  useEffect(() => { load() }, [])
-  const restore = async (x: TrashItem) => {
-    try { const p = await api(`/api/trash/${x.id}/restore`, { method: 'POST' }); load(); notice(t('「{title}」放回去了。', { title: p.title || t('无标题') })) }
-    catch (e: any) { notice(e.message) }
-  }
-  const drop = async (x?: TrashItem) => {
-    const msg = x ? t('彻底删除「{title}」？删了就找不回来了。', { title: x.title || t('无标题') }) : t('清空回收站？里面的都会彻底删掉，找不回来。')
-    if (!(await ask(msg, { ok: t('彻底删除'), danger: true }))) return
-    await api(x ? `/api/trash/${x.id}` : '/api/trash', { method: 'DELETE' })
-    load()
-  }
-  const days = (ts: number) => Math.max(0, Math.ceil((ts - Date.now() / 1000) / 86400))
-  return (
-    <div className="lib-list">
-      <div className="lib-tools">
-        <button className="btn" onClick={onClose}>← {t('页面')}</button>
-        <b className="grow">{t('回收站')}</b>
-        {!!list?.length && <button className="btn danger-text" onClick={() => drop()}>{t('清空回收站')}</button>}
-      </div>
-      <p className="muted small">{t('删掉的页面、数据库和数据库的行在这里放 30 天，可以放回原来的地方。')}</p>
-      {!list ? <div className="muted">{t('加载中…')}</div> : !list.length ? <div className="muted small">{t('回收站是空的。')}</div> : list.map(x => (
-        <div key={x.id} className="lib-row trash-row">
-          <span className="lib-icon">{x.kind === 'db' ? '▦' : x.kind === 'row' ? '▭' : x.format === 'html' ? '◧' : '▤'}</span>
-          <span className="lib-main"><b>{x.title || t('无标题')}</b>
-            <span className="lib-meta">{t('{time} 删的', { time: when(x.deleted) })}{x.count > 1 ? ' · ' + t('连同 {n} 个子项', { n: x.count - 1 }) : ''} · {t('{n} 天后清掉', { n: days(x.expires) })}</span></span>
-          <button className="btn" onClick={() => restore(x)}>{t('放回去')}</button>
-          <button className="ghost-btn danger-text" onClick={() => drop(x)}>{t('彻底删除')}</button>
-        </div>))}
-    </div>
-  )
-}
-
 function Pages() {
   const [list, setList] = useState<Page[] | null>(null)
-  const [moving, setMoving] = useState<Page | null>(null)
-  const [trash, setTrash] = useState(false)
-  const [notion, setNotion] = useState(false)
   const { q, setQ, hits } = useSearch('page')
   const load = () => api('/api/pages').then(setList)
   useEffect(() => {
@@ -125,45 +73,32 @@ function Pages() {
     window.addEventListener('osa-pages', load)
     return () => window.removeEventListener('osa-pages', load)
   }, [])
-  if (trash) return <Trash onClose={() => { setTrash(false); load() }} />
   if (!list) return <div className="muted">{t('加载中…')}</div>
-  const add = <>
-    <button className="btn" onClick={() => newPage()}>＋ {t('新建页面')}</button>{/* i18n-ignore */}
-    <button className="btn" onClick={() => newDb()}>＋ {t('新建数据库')}</button>{/* i18n-ignore */}
-    <button className="btn" onClick={() => setNotion(true)}>{t('从 Notion 导入')}</button>
-  </>
   if (!list.length) return (
     <div className="lib-empty">
       <p>{t('还没有页面。')}</p>
       <p className="muted small">{t('Bot 做好的报告、清单、网页会存在这里。在对话里说“把结果做成页面”，或者在任务结果下面点“存为页面”。')}</p>
-      <p>{add}</p>
-      <p><button className="link-btn small" onClick={() => setTrash(true)}>{t('回收站')}</button></p>
-      {notion && <NotionImport onClose={() => { setNotion(false); load() }} />}
     </div>
   )
   return (
     <div className="lib-list">
-      <p className="lib-intro muted small">{t('页面是 Bot 做好存下来的成品：报告、清单、网页、小应用，所有 Bot 的都在这里，存在服务的数据库里。markdown 页面你和 Bot 都能直接改，每段记着是谁写的。')}</p>
-      <div className="lib-tools">
-        <input className="lib-search" value={q} placeholder={t('按意思找页面，比如“上次做的竞品对比”')} onChange={e => setQ(e.target.value)} />
-        {add}
-      </div>
+      <p className="lib-intro muted small">{t('页面是 Bot 做好存下来的成品：报告、清单、网页、小应用，所有 Bot 的都在这里，存在服务的数据库里。可以置顶、改名、生成分享链接。')}</p>
+      <input className="lib-search" value={q} placeholder={t('按意思找页面，比如“上次做的竞品对比”')} onChange={e => setQ(e.target.value)} />
       {hits && (hits.length ? hits.map(h => (
         <button key={h.ref} className="lib-row" onClick={() => openLibrary(h.ref)}>
           <span className="lib-icon">▤</span>
           <span className="lib-main"><b>{h.title}</b><span className="lib-meta">{h.snippet}</span></span>
         </button>
       )) : <div className="muted small">{t('没找到相关的页面')}</div>)}
-      {!hits && <PageTree list={list} onMove={setMoving} row={p => <>
-        <span className="lib-icon">{icon(p)}</span>
-        <span className="lib-main">
-          <b>{p.pinned && <span className="pin-mark">📌 </span>}{p.title}</b>
-          <span className="lib-meta"><BotTag id={p.bot_id} agent={p.agent_id} /> · {when(p.updated)}{p.app && <span className="tag">{t('小应用')}</span>}{p.share_token && <span className="tag">{t('已分享')}</span>}</span>
-        </span>
-      </>} />}
-      {moving && <MoveDialog page={moving} list={list} onClose={() => setMoving(null)} />}
-      {!hits && <button className="link-btn small lib-trash" onClick={() => setTrash(true)}>{t('回收站')}</button>}
-      {notion && <NotionImport onClose={() => { setNotion(false); load() }} />}
+      {!hits && list.map(p => (
+        <button key={p.id} className="lib-row" onClick={() => openLibrary(p.id)}>
+          <span className="lib-icon">{p.app ? '▣' : p.format === 'html' ? '◧' : '▤'}</span>
+          <span className="lib-main">
+            <b>{p.pinned && <span className="pin-mark">📌 </span>}{p.title}</b>
+            <span className="lib-meta"><BotTag id={p.bot_id} /> · {when(p.updated)}{p.app && <span className="tag">{t('小应用')}</span>}{p.share_token && <span className="tag">{t('已分享')}</span>}</span>
+          </span>
+        </button>
+      ))}
     </div>
   )
 }
@@ -173,14 +108,6 @@ function PageView({ id }: { id: number }) {
   const [err, setErr] = useState('')
   const [rename, setRename] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
-  const [more, setMore] = useState(false)
-  const [moving, setMoving] = useState<Page[] | null>(null)   // 挪到哪里：打开时取一次页面列表
-  useEffect(() => {   // “⋯”菜单：点别处就收起
-    if (!more) return
-    const close = () => setMore(false)
-    const timer = setTimeout(() => document.addEventListener('click', close), 0)
-    return () => { clearTimeout(timer); document.removeEventListener('click', close) }
-  }, [more])
   const load = () => api(`/api/pages/${id}`).then(setP).catch((e: any) => setErr(e.message))
   useEffect(() => {
     load()
@@ -195,13 +122,13 @@ function PageView({ id }: { id: number }) {
   }
   const copy = (token: string) => { navigator.clipboard?.writeText(shareUrl(token)); setCopied(true); setTimeout(() => setCopied(false), 1500) }
   const del = async () => {
-    if (await deletePage(p!, p!.children?.length || 0)) openLibrary(p!.parent_id)
+    if (!(await ask(t('删除页面「{title}」？分享链接也会失效。', { title: p!.title }), { ok: t('删除'), danger: true }))) return
+    await api(`/api/pages/${id}`, { method: 'DELETE' }); openLibrary()
   }
-  const parent = p?.ancestors?.at(-1)
   return (
     <>
       <header className="chat-head page-head">
-        <button className="ghost-btn back" onClick={() => openLibrary(parent?.id ?? null)}>← {parent ? parent.title : t('资料库')}</button>
+        <button className="ghost-btn back" onClick={() => openLibrary()}>← {t('资料库')}</button>
         {p && (rename !== null
           ? <input className="page-title-input" autoFocus value={rename} onChange={e => setRename(e.target.value)}
               onBlur={() => { patch({ title: rename }); setRename(null) }}
@@ -209,44 +136,20 @@ function PageView({ id }: { id: number }) {
           : <span className="head-name page-title" title={t('点击改名')} onClick={() => setRename(p.title)}>{p.title}</span>)}
         <span className="grow" />
         {p && <div className="page-actions">
+          <button className="btn" onClick={() => patch({ pinned: !p.pinned })}>{p.pinned ? t('取消置顶') : t('置顶')}</button>
           {p.share_token
             ? <><button className="btn" onClick={() => copy(p.share_token!)}>{copied ? t('已复制链接') : t('复制链接')}</button>
                 <button className="btn" onClick={() => share(false)}>{t('取消分享')}</button></>
             : <button className="btn" onClick={() => share(true)}>{t('分享')}</button>}
-          <div className="page-more">
-            <button className="btn" title={t('更多')} onClick={() => setMore(!more)}>⋯</button>
-            {more && <div className="menu">
-              <button onClick={() => patch({ pinned: !p.pinned })}>{p.pinned ? t('取消置顶') : t('置顶')}</button>
-              {p.format === 'markdown' && p.kind !== 'row' && <button title={t('锁定后 Bot 只能读，你照样能改')} onClick={() => patch({ locked: !p.locked })}>
-                {p.locked ? t('解锁') : t('锁定（Bot 只能读）')}</button>}
-              {p.format === 'html' && <button onClick={() => window.open(`/api/pages/${id}/raw`, '_blank', 'noreferrer')}>{t('新窗口打开')}</button>}
-              {p.kind !== 'row' && <button onClick={() => api('/api/pages').then(setMoving)}>{t('挪到…')}</button>}
-              <button className="danger-text" onClick={del}>{t('删除')}</button>
-            </div>}
-          </div>
+          {p.format === 'html' && <a className="btn" href={`/api/pages/${id}/raw`} target="_blank" rel="noreferrer">{t('新窗口')}</a>}
+          <button className="btn danger" onClick={del}>{t('删除')}</button>
         </div>}
       </header>
-      {moving && p && <MoveDialog page={p} list={moving} onClose={() => { setMoving(null); load() }} />}
-      {err ? <div className="lib-body"><div className="error-line">{err}</div></div> : !p || p.id !== id ? <div className="lib-body muted">{t('加载中…')}</div> : (
-        <div className={'scroller' + (p.format === 'html' ? ' frame-wrap' : '') + (p.kind === 'db' ? ' db-page' : '')}>
-          {!!p.ancestors?.length && <div className="page-path small">
-            <button className="link-btn" onClick={() => openLibrary()}>{t('资料库')}</button>
-            {p.ancestors.map(a => <span key={a.id}> / <button className="link-btn" onClick={() => openLibrary(a.id)}>{a.title}</button></span>)}
-          </div>}
-          {p.format !== 'html' && <div className="page-info muted small"><BotTag id={p.bot_id} agent={p.agent_id} /> · {t('更新于 {time}', { time: when(p.updated) })}{p.task_id ? ' · ' + t('来自任务 #{id}', { id: p.task_id }) : ''}
-            {p.share_token && <> · {t('任何拿到链接的人都能看')}</>}{p.locked && <> · {t('已锁定：Bot 只能读')}</>}</div>}
-          {p.kind === 'db' ? <DbView id={id} />
-            : p.format === 'markdown' ? <>
-              {p.kind === 'row' && p.parent_id != null && <PropsBar dbId={p.parent_id} rowId={id} />}
-              <DocPage id={id} content={p.content || ''} />
-            </>
-            : <PageBody format={p.format} content={p.content || ''} rawUrl={`/api/pages/${id}/raw`} applet={p.app ? id : undefined} />}
-          {p.format === 'markdown' && p.kind === 'page' && <div className="page-kids">
-            {!!p.children?.length && <div className="muted small">{t('子页面')}</div>}
-            {p.children?.map(c => <button key={c.id} className="page-kid" onClick={() => openLibrary(c.id)}>{c.kind === 'db' ? '▦' : c.format === 'html' ? '◧' : '▤'} {c.title}</button>)}
-            <span><button className="link-btn small" onClick={() => newPage(id)}>＋ {t('子页面')}</button>{/* i18n-ignore */}
-              <button className="link-btn small" onClick={() => newDb(id)}>＋ {t('数据库')}</button></span>{/* i18n-ignore */}
-          </div>}
+      {err ? <div className="lib-body"><div className="error-line">{err}</div></div> : !p ? <div className="lib-body muted">{t('加载中…')}</div> : (
+        <div className={'scroller' + (p.format === 'html' ? ' frame-wrap' : '')}>
+          {p.format !== 'html' && <div className="page-info muted small"><BotTag id={p.bot_id} /> · {t('更新于 {time}', { time: when(p.updated) })}{p.task_id ? ' · ' + t('来自任务 #{id}', { id: p.task_id }) : ''}
+            {p.share_token && <> · {t('任何拿到链接的人都能看')}</>}</div>}
+          <PageBody format={p.format} content={p.content || ''} rawUrl={`/api/pages/${id}/raw`} applet={p.app ? id : undefined} />
         </div>
       )}
     </>
@@ -267,9 +170,7 @@ export function SharedPage({ token }: { token: string }) {
         <b>{p.title}</b>
         <span className="muted small">{p.bot ? `${p.bot.name} · ` : ''}{when(p.updated)}</span>
       </header>
-      {/* 页面里引用的对话图片（/api/media/编号）要登录才能看：分享页从这个分享链接下面取 */}
-      <PageBody format={p.format} content={p.format === 'markdown' ? p.content.replaceAll('/api/media/', `/api/shared/${token}/media/`) : p.content}
-        rawUrl={`/api/shared/${token}/raw`} />
+      <PageBody format={p.format} content={p.content} rawUrl={`/api/shared/${token}/raw`} />
     </div>
   )
 }

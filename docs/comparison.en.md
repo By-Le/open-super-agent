@@ -13,7 +13,7 @@
 | Phone notifications | Arrive while the app is closed and the phone locked, with the content on the lock screen; end-to-end encrypted through a relay that can't read them | Arrive while the app is open or briefly after it goes to the background; not once iOS suspends or closes it (their docs say this version doesn't do it) |
 | Deployment | `docker compose up` on a server keeps it always on, so your phone and chat apps work with your computer off; or just the macOS desktop app on your computer | The desktop app embeds the server (phones connect to that computer, which must stay on and awake); `npx openmausbot serve` or Docker on a server; the paid MausBot Cloud |
 | Voice | Dictation in the web UI | Spoken replies, voice calls with a Bot, dictation (ElevenLabs, Fish Audio, xAI, built-in Mac voices) |
-| Calling it from elsewhere | Routines; events (webhooks, GitHub, feeds, web page changes, new email, price alerts and more, 15 sources); Claude Code and Codex can read and write the library over MCP | Routines, webhooks; an MCP server (direct Bots from Claude Desktop or Cursor); a CLI for scripts and CI |
+| Calling it from elsewhere | Routines; events (webhooks, GitHub, feeds, web page changes, new email, price alerts and more, 15 sources) | Routines, webhooks; an MCP server (direct Bots from Claude Desktop or Cursor); a CLI for scripts and CI |
 | Installer | 45–51 MB (Python runtime included) | 250–317 MB |
 | Secrets | Encrypted in a vault | Plain text in `config.json` (file mode 0600) |
 | Usage analytics | None | Anonymous usage analytics, can be turned off in Settings |

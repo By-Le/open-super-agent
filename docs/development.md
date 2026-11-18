@@ -104,7 +104,6 @@ OSA_DATA_DIR=/tmp/osa-test OSA_CONFIG=/tmp/osa-test/config.yaml uv run uvicorn o
 
 - **对话**：通过 WebSocket 发送 `{"type":"send","chat_id":1,"text":"..."}`，观察 `message`、`task`、`stream_*` 事件。
 - **界面**：用 Playwright 驱动系统 Chrome（`channel="chrome"`）截图检查，这样不用另外下载浏览器。
-  资料库编辑器、评论、子页面、版本历史、回收站、数据库、外部 Agent 有现成的回归脚本，见 [tests/browser](../tests/browser/README.md)。
 - **电脑**：在 Python 里调用 `osa.computer.get()`，可以直接测试 `start / screenshot / shell`；浏览器工具不给 `key` 时用最前面的标签页：
   `await c.browser("open", url=...)`、`c.browser("snapshot")`。
 - **几个任务同时用电脑**：用 `computer.tools.call` 模拟任务——先 `CLAIM.set("201:")`，再 `await call(SimpleNamespace(id=201, bot_id=1, chat_id=1), "browser_open", {...}, progress)`；
@@ -151,8 +150,6 @@ OSA_DATA_DIR=/tmp/osa-test OSA_CONFIG=/tmp/osa-test/config.yaml uv run uvicorn o
   在同一个进程里起服务（`uvicorn.Server(...).serve()`）的话，可以直接调用 `approvals.request` 造确认请求，把 `channels.save_upload` 换掉就不用开电脑。
 - **资料库**：让 Bot 把结果做成页面，`GET /api/pages` 看列表；HTML 页面在沙箱 iframe 里，
   可以写一个会 `fetch('/api/bootstrap')` 的探针页，确认请求被 CSP 拦下。
-- **外部 Agent**：`POST /api/agent-tokens {"name":"test","scope":"write"}` 拿一个 token（只返回这一次），再用任何 MCP 客户端连 `/mcp`、
-  请求头带 `Authorization: Bearer <token>`；`DELETE /api/agent-tokens/<id>` 撤销后再调应该是 401。测试见 `tests/test_agentapi.py`。
 
 每个阶段的验收标准见 [roadmap.md](roadmap.md)，合并前请按它实测一遍。
 

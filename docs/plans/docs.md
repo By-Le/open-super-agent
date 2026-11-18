@@ -1,5 +1,7 @@
 # 资料库页面变成大家一起写的文档
 
+> 0.25.0 起这部分从 OSA 撤回，拆成独立项目 [Open Agent Docs](https://github.com/kadaliao/open-agent-docs)。下面提到的代码在 OSA 的 git 历史里（最后一版是 `db1352b`）。
+
 ## 为什么
 
 Bot 之间交接工作，常常要一份大家一起改的文档：一个查完资料写初稿，另一个接着改成周报，用户在中间批几句。

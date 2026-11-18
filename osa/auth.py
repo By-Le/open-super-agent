@@ -7,7 +7,6 @@ Tailscale 这类地址，免得别人把自己的域名解析到 127.0.0.1，借
 改密码或删掉 session.key 后，所有设备都要重新登录。
 不用登录就能访问的：登录页、分享页（/s/、/skill/、/template/ 和 /api/shared/）、webhook（有自己的 token）、前端静态文件、
 给视频服务取参考素材的限时地址（/pub/media/，自己验签名，见 generation.public_link）。
-外部 Agent 的 MCP 端点 /mcp 不看登录 cookie，只认它自己的 token（Authorization: Bearer，见 agentapi.py）；来源和 Host 照样查。
 """
 import asyncio
 import fnmatch
@@ -38,7 +37,6 @@ PAIR_TTL = 300               # 手机 App 扫码配对用的票，5 分钟内有
 # 前端构建产物里不含数据的文件：登录页和分享页要用
 PUBLIC_FILES = {"/manifest.json", "/sw.js", "/favicon.png", "/icon-192.png", "/icon-512.png", "/apple-touch-icon.png"}
 PUBLIC_PREFIXES = ("/assets/", "/hooks/", "/api/shared/", "/s/", "/skill/", "/template/", "/avatars/", "/pub/")
-MCP_PATH = "/mcp"   # 外部 Agent 的入口（agentapi.py 查 token）
 # 没开登录时，Host 是这些名字才接受：别人没法让这些名字解析到你的 127.0.0.1
 LOCAL_SUFFIXES = (".localhost", ".local", ".ts.net")
 
@@ -180,7 +178,7 @@ class AuthMiddleware:
                     "请设置 OSA_PASSWORD 打开登录，或者把它加进 config.yaml 的 server.allowed_hosts",
                     host=host_name(headers.get("host"))), text=not path.startswith("/api/"))
             return await self.app(scope, receive, send)
-        if _public(path) or path == MCP_PATH:
+        if _public(path):
             return await self.app(scope, receive, send)
         exp = check_token(_cookies(headers).get(COOKIE))
         if exp is None:

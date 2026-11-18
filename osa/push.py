@@ -186,10 +186,6 @@ def message_for(event: dict) -> tuple[str, str, str, str] | None:
             who = _bot_name(m.get("bot_id"))
             return (i18n.t("{who} 做完了任务", who=who) if ok else i18n.t("{who} 的任务失败了", who=who)), \
                 _plain(m["content"])[:120], url, f"chat-{cid}"
-    if t == "page_comments" and (r := event.get("reply")):   # Bot 回复了你在资料库页面上写的评论
-        who = _bot_name(int(r["by"][4:]) if r.get("by", "").startswith("bot:") and r["by"][4:].isdigit() else None)
-        return i18n.t("{who} 回复了你在「{title}」的评论", who=who, title=r.get("title") or ""), _plain(r.get("text", ""))[:120], \
-            f"/library/pages/{event['page_id']}", f"page-{event['page_id']}"
     if t == "teach" and event.get("draft"):
         return i18n.t("演示录制已结束"), i18n.t("技能草稿「{name}」等你审核", name=event["draft"]["name"]), "/", "teach"
     return None
