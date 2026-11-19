@@ -10,6 +10,7 @@ pub mod i18n;
 pub mod assets;
 pub mod web;
 
+pub mod applets;
 pub mod approvals;
 pub mod apps;
 pub mod observe;
@@ -63,6 +64,9 @@ pub mod worker;
 /// 各模块自己的表（Python 版在 import 时建）
 pub fn modules_migrate() {
     avatars::migrate();
+    library::migrate();
+    search::migrate();
+    unfurl::migrate();
     mcp_hub::migrate();
     media::migrate();
 }
@@ -71,4 +75,5 @@ pub fn modules_migrate() {
 pub fn background() {
     tokio::spawn(media::gc_loop());
     tokio::spawn(prices::price_loop());
+    tokio::spawn(search::startup());
 }

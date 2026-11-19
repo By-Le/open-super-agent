@@ -290,7 +290,156 @@ pub async fn tool_send_file(_c: crate::registry::Call) -> crate::registry::Out {
     crate::builtin::todo("send_file")
 }
 
-/// /api/media、/media/{id}、/pub/media/{id}
-pub fn routes() -> axum::Router {
-    axum::Router::new()
+// ---------- 接口：/api/media、/media/{id}、/pub/media/{id} ----------
+mod api {
+    use super::*;
+    use crate::web::{ApiError, Q, Res, qs};
+    use axum::extract::{DefaultBodyLimit, Path};
+    use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
+    use axum::response::{IntoResponse, Response};
+    use axum::routing::{get, put};
+
+    async fn upload(h: HeaderMap, q: Q, body: axum::body::Bytes) -> Res {
+        let len = h.get(header::CONTENT_LENGTH).and_then(|v| v.to_str().ok()).and_then(|v| v.parse::<usize>().ok()).unwrap_or(0);
+        if len > MAX_BYTES || body.len() > MAX_BYTES {
+            return Err(ApiError::new(413, t!("图片太大了（最多 {n} MB）", n = MAX_BYTES >> 20)));
+        }
+        Ok(axum::Json(save(&body, qs(&q, "name").unwrap_or(""), MAX_BYTES, false)?))
+    }
+
+    /// Range 请求头 → (起, 止)，止也算在内。None：整个发；Some(None)：超出文件（416）
+    fn byte_range(header: Option<&str>, size: i64) -> Option<Option<(i64, i64)>> {
+        static RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\s*bytes=(\d*)-(\d*)\s*$").unwrap());
+        let c = RE.captures(header?)?;
+        let (a, b) = (&c[1], &c[2]);
+        if a.is_empty() && b.is_empty() {
+            return None;
+        }
+        let (ai, bi) = (a.parse::<i64>().ok(), b.parse::<i64>().ok());
+        if let (Some(x), Some(y)) = (ai, bi) {
+            if y < x {
+                return None;
+            }
+        }
+        if a.is_empty() {
+            let n = bi.unwrap_or(0);
+            return Some(if n > 0 && size > 0 { Some(((size - n).max(0), size - 1)) } else { None });
+        }
+        let start = ai.unwrap_or(0);
+        if start >= size {
+            return Some(None);
+        }
+        Some(Some((start, bi.map(|y| y.min(size - 1)).unwrap_or(size - 1))))
+    }
+
+    fn quote(s: &str) -> String {
+        s.bytes()
+            .map(|b| if b.is_ascii_alphanumeric() || b"_.-~/".contains(&b) { (b as char).to_string() } else { format!("%{b:02X}") })
+            .collect()
+    }
+
+    fn respond(mid: &str, download: bool, rng: Option<&str>) -> Response {
+        let Some(got) = info(&json!(mid)) else {
+            return (StatusCode::NOT_FOUND, axum::Json(json!({"detail": "Not Found"}))).into_response();
+        };
+        let mime = got["mime"].as_str().unwrap_or("application/octet-stream").to_string();
+        let size = got["size"].as_i64().unwrap_or(0);
+        let name = got["name"].as_str().unwrap_or("").to_string();
+        let build = |status: u16, body: Vec<u8>, range: Option<String>| {
+            let mut r = Response::new(axum::body::Body::from(body));
+            *r.status_mut() = StatusCode::from_u16(status).unwrap_or(StatusCode::OK);
+            let h = r.headers_mut();
+            h.insert(header::CONTENT_TYPE, HeaderValue::from_str(&mime).unwrap_or(HeaderValue::from_static("application/octet-stream")));
+            h.insert(header::CACHE_CONTROL, HeaderValue::from_static("private, max-age=31536000, immutable"));
+            h.insert("x-content-type-options", HeaderValue::from_static("nosniff"));
+            h.insert("content-security-policy", HeaderValue::from_static("default-src 'none'"));
+            let disp = format!("{}; filename*=UTF-8''{}", if download { "attachment" } else { "inline" }, quote(&name));
+            if let Ok(v) = HeaderValue::from_str(&disp) {
+                h.insert(header::CONTENT_DISPOSITION, v);
+            }
+            if mime.starts_with("video/") {
+                h.insert(header::ACCEPT_RANGES, HeaderValue::from_static("bytes"));
+                // TODO：server.rs 的 CompressionLayer 会压缩视频、去掉 Accept-Ranges（分段就坏了）。那边的判断改成不压 video/* 和 206 之后去掉这行
+                h.insert(header::CONTENT_ENCODING, HeaderValue::from_static("identity"));
+            }
+            if let Some(cr) = range.and_then(|c| HeaderValue::from_str(&c).ok()) {
+                h.insert(header::CONTENT_RANGE, cr);
+            }
+            r
+        };
+        if !mime.starts_with("video/") {
+            return build(200, super::get(mid).map(|g| g.1).unwrap_or_default(), None);
+        }
+        match byte_range(rng, size) {
+            None => build(200, read_range(mid, 0, size), None),
+            Some(None) => {
+                let mut r = Response::new(axum::body::Body::empty());
+                *r.status_mut() = StatusCode::RANGE_NOT_SATISFIABLE;
+                if let Ok(v) = HeaderValue::from_str(&format!("bytes */{size}")) {
+                    r.headers_mut().insert(header::CONTENT_RANGE, v);
+                }
+                r.headers_mut().insert(header::ACCEPT_RANGES, HeaderValue::from_static("bytes"));
+                r.headers_mut().insert(header::CONTENT_ENCODING, HeaderValue::from_static("identity"));
+                r
+            }
+            Some(Some((start, end))) => build(206, read_range(mid, start, end - start + 1), Some(format!("bytes {start}-{end}/{size}"))),
+        }
+    }
+
+    fn truthy_param(v: Option<&str>) -> bool {
+        matches!(v.map(|s| s.to_ascii_lowercase()).as_deref(), Some("1" | "true" | "yes" | "on" | "t" | "y"))
+    }
+
+    async fn api_file(Path(mid): Path<String>, q: Q, h: HeaderMap) -> Response {
+        respond(&mid, truthy_param(qs(&q, "download")), h.get(header::RANGE).and_then(|v| v.to_str().ok()))
+    }
+
+    async fn page_file(Path(mid): Path<String>, h: HeaderMap) -> Response {
+        respond(&mid, false, h.get(header::RANGE).and_then(|v| v.to_str().ok()))
+    }
+
+    /// 给视频服务取参考素材的限时地址：不用登录，签名对、没过期才给
+    async fn public_file(Path(mid): Path<String>, q: Q, h: HeaderMap) -> Response {
+        let exp = qs(&q, "exp").and_then(|e| e.parse::<i64>().ok()).unwrap_or(0);
+        if !verify(&mid, exp, qs(&q, "sig").unwrap_or("")) {
+            return (StatusCode::FORBIDDEN, axum::Json(json!({"detail": "Forbidden"}))).into_response();
+        }
+        let mut r = respond(&mid, false, h.get(header::RANGE).and_then(|v| v.to_str().ok()));
+        r.headers_mut().insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+        r
+    }
+
+    pub fn routes() -> axum::Router {
+        axum::Router::new()
+            .route("/api/media", put(upload).layer(DefaultBodyLimit::max(MAX_BYTES + (1 << 20))))
+            .route("/api/media/{mid}", get(api_file))
+            .route("/media/{mid}", get(page_file))
+            .route("/pub/media/{mid}", get(public_file))
+    }
+}
+
+pub use api::routes;
+
+// ---------- 限时地址的签名（和 Python 版 generation.sign / verify 一样，密钥在 settings 的 media_link_secret） ----------
+/// TODO(generation)：generation 迁好后，public_link 用这里的 sign
+fn link_secret() -> Vec<u8> {
+    let get = || memory::setting_raw("media_link_secret");
+    if get().is_none() {
+        db::exec("insert or ignore into settings values('media_link_secret', ?)", params![crate::util::token_hex(32)]);
+    }
+    let hex = get().unwrap_or_default();
+    (0..hex.len() / 2).filter_map(|i| u8::from_str_radix(&hex[i * 2..i * 2 + 2], 16).ok()).collect()
+}
+
+pub fn sign(mid: &str, exp: i64) -> String {
+    use hmac::{Hmac, Mac};
+    let mut m = Hmac::<sha2::Sha256>::new_from_slice(&link_secret()).expect("hmac");
+    m.update(format!("{mid}:{exp}").as_bytes());
+    let hex: String = m.finalize().into_bytes().iter().map(|b| format!("{b:02x}")).collect();
+    hex[..32].to_string()
+}
+
+pub fn verify(mid: &str, exp: i64, sig: &str) -> bool {
+    let want = sign(mid, exp);
+    exp as f64 >= py::now() && want.len() == sig.len() && want.bytes().zip(sig.bytes()).fold(0u8, |a, (x, y)| a | (x ^ y)) == 0
 }

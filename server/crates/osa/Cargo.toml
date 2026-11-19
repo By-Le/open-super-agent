@@ -21,6 +21,7 @@ bytes = "1"
 chrono = "0.4.45"
 fernet = { version = "0.2", default-features = false, features = ["rustcrypto"] }
 futures = "0.3"
+encoding_rs = "0.8"
 fancy-regex = "0.14"
 flate2 = "1"
 indexmap = "2"
