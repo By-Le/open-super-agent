@@ -90,7 +90,10 @@ Python 到 Rust 的对应：
 
 - **电脑（第 2 步）**：Instabox、Docker、本机 Chrome、整台 Mac、派任务到 Mac，以及靠它的：沙箱在电脑里跑、send_file、
   /api/files、/api/bots/{id}/computer…、演示一遍的录制、聊天软件发来的文件存进电脑、帮忙卡片交还电脑、设置里电脑相关的检查。
-- **事件来源**：收邮件（IMAP）、日历、天气、地震、价格、文件夹。列表里照样有，选了提示“Rust 版还没有这种事件来源”。
+- **事件来源**：2026-11-20 都迁完了（收邮件 IMAP、日历、天气、地震、价格、文件夹）。天气、地震、价格的接口地址写死在代码里，
+  只有单元测试（期望值是 Python 版同样输入跑出来的）；日历、文件夹、收邮件有接口测试（contract/test_sources.py，假日历网站、
+  TLS 的假 IMAP 服务器）。Rust 版的 IMAP 是自己写的小客户端（LOGIN / ID / EXAMINE / UID SEARCH / UID FETCH），
+  连不上时的报错原文和 Python 的 imaplib 不一样（“连不上 主机:端口：”后面那半句）。
 - **没在真环境里跑过的**：Linux 上的沙箱（bwrap / unshare）、飞书 / 钉钉 / 企业微信 / Discord（只编译过）、推送中转连真的 APNs、
   imap 检查、OAuth 连真的服务（假服务上整套流程测过）。上 lsp 之前要在 Linux 上把接口测试跑一遍。
 
