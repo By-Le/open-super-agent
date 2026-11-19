@@ -11,6 +11,15 @@ pub mod assets;
 pub mod web;
 
 pub mod approvals;
+pub mod apps;
+pub mod observe;
+pub mod outputs;
+pub mod unfurl;
+pub mod templates;
+pub mod sources;
+pub mod sandbox;
+pub mod videos;
+pub mod images;
 pub mod auth;
 pub mod avatars;
 pub mod backup;

@@ -10,3 +10,17 @@ pub fn norm(path: &str, workspace: Option<&str>) -> Result<String, String> {
     let full = if p.starts_with('/') { p.to_string() } else { format!("{}/{p}", ws.trim_end_matches('/')) };
     Ok(normpath(&full))
 }
+use crate::registry::{Call, Out};
+pub async fn tool_save_page(_c: Call) -> Out {
+    crate::builtin::todo("save_page")
+}
+pub async fn tool_read_page(_c: Call) -> Out {
+    crate::builtin::todo("read_page")
+}
+pub async fn tool_page_data(_c: Call) -> Out {
+    crate::builtin::todo("page_data")
+}
+/// /api/pages…、/api/shared/{token}…、/api/files/pin
+pub fn routes() -> axum::Router {
+    axum::Router::new()
+}

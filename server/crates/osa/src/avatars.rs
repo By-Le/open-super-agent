@@ -7,3 +7,7 @@ pub fn valid(url: &str) -> bool {
     !id.is_empty() && crate::db::exists("select 1 from avatars where id=?", rusqlite::params![id])
 }
 pub fn gc() {}
+
+pub fn routes() -> axum::Router {
+    axum::Router::new()
+}

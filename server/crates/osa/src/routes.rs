@@ -1,4 +1,26 @@
-//! 其余的接口（按模块迁过来时加在这里）。
+//! 各模块自己的接口，合在一起。每个模块一个 routes()，互不干扰。
 pub fn extra() -> axum::Router {
+    use crate::*;
     axum::Router::new()
+        .merge(settings::routes())
+        .merge(observe::routes())
+        .merge(skills::routes())
+        .merge(templates::routes())
+        .merge(library::routes())
+        .merge(media::routes())
+        .merge(search::routes())
+        .merge(unfurl::routes())
+        .merge(avatars::routes())
+        .merge(outputs::routes())
+        .merge(tools::routes())
+        .merge(images::routes())
+        .merge(videos::routes())
+        .merge(routines::routes())
+        .merge(apps::routes())
+        .merge(channels::routes())
+        .merge(push::routes())
+        .merge(backup::routes())
+        .merge(teach::routes())
+        .merge(catalog::routes())
+        .merge(computer::routes())
 }

@@ -16,3 +16,7 @@ pub fn builtin(_id: &str) -> Option<Value> {
 pub fn items() -> HashMap<String, Value> {
     HashMap::new()
 }
+
+pub fn routes() -> axum::Router {
+    axum::Router::new()
+}

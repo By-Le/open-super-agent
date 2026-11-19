@@ -25,3 +25,7 @@ pub async fn with_task_pc<F: std::future::Future>(f: F) -> F::Output {
     f.await
 }
 pub async fn shutdown() {}
+
+pub fn routes() -> axum::Router {
+    axum::Router::new()
+}

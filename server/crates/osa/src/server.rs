@@ -2,7 +2,7 @@
 
 use crate::web::{ApiError, Body, Q, Res, int, ok, qi, todo};
 use crate::{
-    approvals, auth, bots, config, groups, i18n, mcp_hub, media, memories, memory, providers, py, router, routines, settings, skills, tasklog,
+    approvals, auth, bots, config, groups, i18n, mcp_hub, media, memories, memory, providers, py, router, routines, settings, tasklog,
 };
 use axum::Router;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
@@ -159,7 +159,7 @@ async fn bootstrap(h: HeaderMap) -> Res {
     ok(out)
 }
 
-fn apps_out(h: &HeaderMap) -> Vec<(&'static str, Value)> {
+pub fn apps_out(h: &HeaderMap) -> Vec<(&'static str, Value)> {
     let host = h.get("host").and_then(|v| v.to_str().ok()).unwrap_or("127.0.0.1");
     let scheme = if auth::https(h) { "https" } else { "http" };
     vec![
@@ -324,7 +324,7 @@ async fn cancel_task(Path(task_id): Path<i64>) -> Res {
 }
 
 // ---------- 记忆 ----------
-fn bot_or_404(bot_id: i64) -> Result<Value, ApiError> {
+pub fn bot_or_404(bot_id: i64) -> Result<Value, ApiError> {
     bots::get(bot_id).ok_or_else(|| ApiError::not_found(t!("没有这个 Bot")))
 }
 
@@ -368,44 +368,12 @@ async fn delete_memory(Path(mid): Path<i64>) -> Res {
     ok(json!({"ok": true}))
 }
 
-// ---------- 设置 ----------
-async fn get_settings() -> Res {
-    ok(settings::public())
-}
 
-async fn put_settings(Body(d): Body) -> Res {
-    let out = settings::update(&d).await?;
-    broadcast(json!({"type": "settings_changed"}));
-    ok(out)
-}
 
-async fn onboarding_done() -> Res {
-    settings::finish_onboarding();
-    ok(json!({"ok": true}))
-}
 
-async fn usage() -> Res {
-    ok(memory::usage_stats())
-}
 
-async fn status() -> Res {
-    ok(json!({"mcp": mcp_hub::status_strings(), "mcp_tools": mcp_hub::all_tool_names(), "mcp_confirm": mcp_hub::confirm_list(),
-              "routines": routines::list_for(None).iter().map(|r| json!({"id": r["id"], "bot_id": r["bot_id"], "name": r["name"],
-                   "enabled": r["enabled"], "trigger": routines::describe(&r["trigger"], None)})).collect::<Vec<_>>()}))
-}
 
-async fn list_apps(h: HeaderMap) -> Res {
-    let mut o = json!({});
-    for (k, v) in apps_out(&h) {
-        o[k] = v;
-    }
-    ok(o)
-}
 
-async fn list_skills(Path(bot_id): Path<i64>) -> Res {
-    bot_or_404(bot_id)?;
-    ok(json!(skills::list_for(bot_id)))
-}
 
 // ---------- 前端 ----------
 pub fn dist() -> PathBuf {
@@ -517,12 +485,6 @@ pub fn app() -> Router {
         .route("/api/bots/{bot_id}/memories", get(list_memories).post(add_memory))
         .route("/api/bots/{bot_id}/memories/import", post(import_memories))
         .route("/api/memories/{mid}", patch(update_memory).delete(delete_memory))
-        .route("/api/bots/{bot_id}/skills", get(list_skills))
-        .route("/api/settings", get(get_settings).put(put_settings))
-        .route("/api/onboarding/done", post(onboarding_done))
-        .route("/api/usage", get(usage))
-        .route("/api/status", get(status))
-        .route("/api/apps", get(list_apps))
         .route("/api/build", get(current_build))
         .route("/ws", get(ws_handler))
         .route("/assets/{*p}", get(assets))

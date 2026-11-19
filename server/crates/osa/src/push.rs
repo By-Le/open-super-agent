@@ -7,3 +7,7 @@ pub fn message_for(_e: &Value) -> Option<Value> {
     None
 }
 pub async fn send(_msg: Value, _urgency: &str, _badge: usize) {}
+
+pub fn routes() -> axum::Router {
+    axum::Router::new()
+}

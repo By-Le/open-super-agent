@@ -66,13 +66,25 @@ Python 到 Rust 的对应：
 
 | 步 | 内容 | 状态 |
 |---|---|---|
-| 0 | 计划、接口测试的框架（先在 Python 版上跑通） | 进行中 |
-| 1 | 核心：数据库和迁移、设置、登录、Bot / 对话 / 消息 / 讨论串 / 未读、记忆、调模型（流式）、Router、Worker、任务和任务过程、确认、WebSocket、应用（MCP）、沙箱、内置工具、技能 | 未开始 |
+| 0 | 计划、接口测试的框架（先在 Python 版上跑通） | 完成（2026-11-19） |
+| 1 | 核心：数据库和迁移、设置、登录、Bot / 对话 / 消息 / 讨论串 / 未读、记忆、调模型（流式）、Router、Worker、任务和任务过程、确认、WebSocket、应用（MCP）、沙箱、内置工具、技能 | 进行中：对话、任务、私信、群聊、确认、应用（stdio/HTTP/SSE，OAuth 只用已有令牌）已通过冒烟测试 |
 | 2 | 电脑：Instabox、Docker、本机 Chrome、派任务到 Mac | 未开始 |
 | 3 | 外围：事件、定时任务、消息来源、聊天软件、画图和视频、资料库页面、小应用、备份、推送、中转 | 未开始 |
 | 4 | 桌面 App 把服务链进 Tauri 外壳；Python / uv 用到时再下载；Docker 镜像换成 Rust 版 | 未开始 |
 
 第 1 步做完停下来给用户看：用 Rust 版打开现在的网页，能和 Bot 聊天、能跑带工具的任务，接口测试在两个版本上都通过。
+
+## 迁一个模块的做法
+
+- **一个模块一个文件**（osa/foo.py → server/crates/osa/src/foo.rs），接口写在这个模块自己的 `pub fn routes() -> axum::Router` 里，
+  `routes.rs` 已经把所有模块的 routes() 合起来了。别的模块的文件不改；要别人的函数就调它，它还是桩（stub）就先在自己这边绕开、记下来。
+- 共用的文件只做追加：`lib.rs`（`pub mod`、`modules_migrate()` 里加建表、`background()` 里加后台循环）、`Cargo.toml`（依赖）。
+- 写死在 Python 里的大段常量（工具 schema、提示词、清单）不要手抄：写一个 `server/scripts/dump_<模块>.py`，导出成
+  `assets/<模块>.json` 或 `src/prompts/<模块>/*.txt`，再 `include_str!`。`assets/schemas.json` 是共用的，不要重新生成它。
+- 工具（registry 里的）的 schema、顺序、where、gated、parallel 已经在 `builtin.rs` 登记好了，只要实现 `tool_xxx(c: Call) -> Out`。
+- 写法照着已经迁好的模块：`db::rows / row / exec / insert`、`py::*`（Python 的真假值、json.dumps 的格式、按字符截断）、
+  `t!("中文", n = 3)`、`server::broadcast(json!(...))`、接口报错用 `web::ApiError`（ValueError → 400）。
+- 每个模块配一份接口测试 `contract/test_<模块>.py`：先在 Python 版上跑通，再跑 Rust 版。
 
 ## 发现的问题
 

@@ -14,3 +14,23 @@ pub fn is_quiet(_result: &str) -> bool {
 }
 pub fn import_legacy(_bot_id: i64) {}
 pub async fn scheduler() {}
+use crate::registry::{Call, Out};
+pub async fn tool_create(_c: Call) -> Out {
+    crate::builtin::todo("create_routine")
+}
+pub async fn tool_create_event(_c: Call) -> Out {
+    crate::builtin::todo("create_event")
+}
+pub async fn tool_list(_c: Call) -> Out {
+    crate::builtin::todo("list_routines")
+}
+pub async fn tool_update(_c: Call) -> Out {
+    crate::builtin::todo("update_routine")
+}
+pub async fn tool_delete(_c: Call) -> Out {
+    crate::builtin::todo("delete_routine")
+}
+/// /api/routines…、/api/event-sources、/api/bots/{id}/routines、/hooks/{name}
+pub fn routes() -> axum::Router {
+    axum::Router::new()
+}

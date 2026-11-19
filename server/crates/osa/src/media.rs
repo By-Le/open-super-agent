@@ -285,3 +285,12 @@ pub fn sent_text(att: &Value) -> String {
     let what = if py::truthy(&att["media"]) { "图片已经显示在对话里" } else { "文件卡片已经显示在对话里，用户点开就能看或下载" };
     format!("已发给用户：{}（{what}）。回复里不用再贴链接。", py::str_of(&att["name"]))
 }
+
+pub async fn tool_send_file(_c: crate::registry::Call) -> crate::registry::Out {
+    crate::builtin::todo("send_file")
+}
+
+/// /api/media、/media/{id}、/pub/media/{id}
+pub fn routes() -> axum::Router {
+    axum::Router::new()
+}
