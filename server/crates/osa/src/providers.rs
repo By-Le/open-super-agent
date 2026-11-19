@@ -520,7 +520,7 @@ pub async fn models(name: &str, refresh: bool) -> Result<Value, String> {
 }
 
 // ---------- 增删改 ----------
-fn clean_url(url: &str) -> Result<String, String> {
+pub fn clean_url(url: &str) -> Result<String, String> {
     static R: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^https?://[^\s/]+").unwrap());
     let u = url.trim().trim_end_matches('/').to_string();
     if !R.is_match(&u) {

@@ -70,4 +70,5 @@ pub fn modules_migrate() {
 /// 后台循环（清理、刷新价格……）
 pub fn background() {
     tokio::spawn(media::gc_loop());
+    tokio::spawn(prices::price_loop());
 }
