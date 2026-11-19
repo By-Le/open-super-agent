@@ -69,3 +69,13 @@ pub fn names() -> Vec<Value> {
         .map(|r| json!({"name": r[0], "created": r[1], "ok": get(&r.s(0)).is_some()}))
         .collect()
 }
+
+/// 用这台机器的主密钥加密（备份恢复时把明文写进待换上的数据库用）
+pub fn encrypt_raw(value: &str) -> Vec<u8> {
+    key().encrypt(value.as_bytes()).into_bytes()
+}
+
+/// 解开一条密文（备份导出时读快照里的保险库用）；主密钥换过、解不开返回 None
+pub fn decrypt_raw(token: &[u8]) -> Option<String> {
+    key().decrypt(std::str::from_utf8(token).ok()?).ok().and_then(|b| String::from_utf8(b).ok())
+}
