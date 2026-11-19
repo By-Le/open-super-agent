@@ -1,0 +1,21 @@
+<!doctype html><html lang="{lang}"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#0d0d0e"><link rel="manifest" href="/manifest.json">
+<link rel="icon" type="image/png" href="/favicon.png"><link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Super Agent">
+<title>{login} · Open Super Agent</title><style>
+:root{--bg:#0d0d0e;--bg2:#151517;--line:#26262a;--fg:#ececec;--fg2:#a8a8ad;--fg3:#6e6e74;--acc:#ececec;--acc-fg:#0d0d0e;--bad:#ef6b6b;color-scheme:dark}
+@media (prefers-color-scheme:light){:root{--bg:#fbfbfa;--bg2:#f2f2f0;--line:#e2e2df;--fg:#18181a;--fg2:#57575c;--fg3:#8d8d92;--acc:#18181a;--acc-fg:#fbfbfa;color-scheme:light}}
+*{box-sizing:border-box}html,body{margin:0;height:100%}
+body{display:grid;place-items:center;background:var(--bg);color:var(--fg);font:15px/1.6 -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;-webkit-font-smoothing:antialiased}
+form{width:min(340px,90vw);display:flex;flex-direction:column;gap:14px}
+.logo{font-size:30px;text-align:center}h1{margin:0;font-size:18px;text-align:center;font-weight:600}
+input{font:inherit;color:var(--fg);background:var(--bg2);border:1px solid var(--line);border-radius:10px;padding:10px 12px;outline:none}
+input:focus{border-color:var(--fg3)}
+button{font:inherit;padding:10px;border-radius:10px;border:1px solid var(--acc);background:var(--acc);color:var(--acc-fg);cursor:pointer}
+button:hover{opacity:.88}.err{color:var(--bad);font-size:13px;margin:0;text-align:center}
+</style></head><body><form method="post" action="/login">
+<div class="logo">◆</div><h1>Open Super Agent</h1>
+<input type="hidden" name="next" value="{next}">
+<input type="password" name="password" placeholder="{password}" autocomplete="current-password" autofocus required>
+{error}<button type="submit">{login}</button></form></body></html>

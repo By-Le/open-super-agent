@@ -7,3 +7,4 @@ osa/static/dist/
 .DS_Store
 .env
 .pytest_cache/
+server/target/

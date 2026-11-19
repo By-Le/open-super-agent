@@ -1,0 +1,85 @@
+# 服务端用 Rust 重写
+
+2026-11-19 定的：服务端从 Python（FastAPI）整个换成 Rust，在 `rust` 分支上做（worktree 在 `../open-super-agent-rust`）。
+用户自己维护，main 不冻结；main 上有了新改动，这边按需跟上。
+
+## 为什么、要得到什么
+
+- 内存：lsp 上主服务约 164 MB（RSS 64 + swap 100），Rust 版目标 30–50 MB。
+- 启动：Python 版 import 约 0.66 秒、ready 约 1.25 秒；Rust 版目标 0.1 秒以内，桌面 App 本机模式打开更快。
+- 桌面 App：最后把服务作为库链进 Tauri 外壳，一个进程；不再带 105 MB 的 Python 运行环境（run_code 要的 Python、uvx 用到时再下载）。
+- 和 [Open Agent Docs](https://github.com/kadaliao/open-agent-docs) 同一套技术栈（axum 0.8、tokio、rusqlite、rmcp、reqwest），
+  资料库以后可以直接把 OAD 的 crate 挂进来（见 OAD 的 `examples/rust-mount`）。
+
+不指望它解决的：任务里的等待（模型、第三方接口、网页打开）、第三方应用进程的内存、打开 App 时的白屏
+（白屏是前端 1.3 MB 的包没压缩、没缓存头，见文末“顺手修的”）。
+
+## 原则：对外一个字不改
+
+- **接口、WebSocket 消息、SQLite 表结构、config.yaml、数据目录的布局都和 Python 版一样。** 网页、桌面 App、手机 App 不用改；
+  同一个数据目录能在两个版本之间来回切，出了问题随时退回 Python 版。
+- **给模型的提示词逐字照搬**（包括中文标点、换行）。提示词是产品的一部分，改它要单独决定，不在重写里顺手改。
+- **用户看到的文字照旧走 i18n**：中文原文是键，`osa/locales/en.json` 编进二进制。
+- **行为以 Python 版为准**。读不懂、觉得是 bug 的地方先照搬，记进本文“发现的问题”，单独决定改不改。
+
+## 怎么验证：接口测试（tests/contract）
+
+新写的一套黑盒测试，只通过 HTTP、WebSocket 和数据库文件和服务打交道，同一套测试跑两个版本：
+
+```
+uv run pytest tests/contract                 # 跑 Python 版
+OSA_IMPL=rust uv run pytest tests/contract   # 跑 Rust 版（先 cargo build）
+```
+
+- 假模型是一个真的 HTTP 服务（`tests/contract/fakellm_http.py`），按剧本流式返回文字或工具调用，和 `tests/fakellm.py` 一样按系统提示词认角色。
+- 假应用是一个 stdio 的 MCP 服务（`tests/contract/fake_mcp.py`），测应用的工具、确认卡片。
+- 每个测试模块起一个服务进程，临时数据目录、临时 config.yaml。
+- 一个模块迁完的标准：它的接口测试在两个版本上都通过。原来的 `tests/`（进程内的单元测试）留着测 Python 版，Rust 版的单元测试写在各自的模块里。
+
+## 代码结构
+
+```
+server/                     Rust 工作区（独立的，不和 desktop/、mobile/ 的 Cargo 工作区混）
+  Cargo.toml
+  crates/osa/               服务本体（lib + bin osa-server）
+    src/
+      main.rs               命令行：--host --port，和 uvicorn 的用法对上
+      lib.rs                模块清单
+      config.rs  memory.rs  bots.rs  router.rs  worker.rs ……   和 osa/*.py 一一对应，名字不变
+```
+
+Python 到 Rust 的对应：
+
+| Python | Rust |
+|---|---|
+| 模块里的全局变量（TASKS、RUNTIMES、pending……） | 模块里的 `static`（`LazyLock<Mutex<…>>`），名字不变 |
+| `memory.conn`（一个 sqlite3 连接，check_same_thread=False） | 一个 `rusqlite::Connection` 放在 `Mutex` 里（`memory::db()`），语义一样：同一时间一条语句 |
+| dict / list（接口、事件、meta） | `serde_json::Value`；结构固定、用得多的（Task、Bot）写成 struct |
+| `asyncio.create_task` | `tokio::spawn` |
+| 任务取消（`handle.cancel()` 抛 CancelledError，except 里收尾） | `CancellationToken` + `select!`，取消后照样走收尾的那段 |
+| `ContextVar`（WHO、TASK_PC、CLAIM） | `tokio::task_local!` |
+| `notify = broadcast` 这类回调 | `server::broadcast` 直接调（Rust 里没有循环导入的问题） |
+| openai SDK 流式调用 | reqwest 自己解析 SSE（`providers::stream`），重试规则照搬 SDK：5 次、0.5–8 秒退避 |
+| mcp SDK | rmcp |
+
+## 进度
+
+| 步 | 内容 | 状态 |
+|---|---|---|
+| 0 | 计划、接口测试的框架（先在 Python 版上跑通） | 进行中 |
+| 1 | 核心：数据库和迁移、设置、登录、Bot / 对话 / 消息 / 讨论串 / 未读、记忆、调模型（流式）、Router、Worker、任务和任务过程、确认、WebSocket、应用（MCP）、沙箱、内置工具、技能 | 未开始 |
+| 2 | 电脑：Instabox、Docker、本机 Chrome、派任务到 Mac | 未开始 |
+| 3 | 外围：事件、定时任务、消息来源、聊天软件、画图和视频、资料库页面、小应用、备份、推送、中转 | 未开始 |
+| 4 | 桌面 App 把服务链进 Tauri 外壳；Python / uv 用到时再下载；Docker 镜像换成 Rust 版 | 未开始 |
+
+第 1 步做完停下来给用户看：用 Rust 版打开现在的网页，能和 Bot 聊天、能跑带工具的任务，接口测试在两个版本上都通过。
+
+## 发现的问题
+
+（重写时读到的、Python 版里可能不对的地方，记在这里，单独决定改不改）
+
+## 顺手修的
+
+- 首屏：`/assets` 加 `Cache-Control: public, max-age=31536000, immutable`，接口和静态文件按 `Accept-Encoding` 压缩（br / gzip）。
+  Python 版没有，lsp 的 Caddy 上 osa / demo 两个站点也没开 `encode`，1.29 MB 的 JS 原样传（gzip 后 407 KB）。
+  这一条不改接口，Rust 版直接带上。

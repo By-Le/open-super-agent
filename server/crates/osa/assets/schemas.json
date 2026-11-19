@@ -1,0 +1,2348 @@
+{
+ "registry": [
+  {
+   "name": "web_search",
+   "schema": {
+    "type": "function",
+    "function": {
+     "name": "web_search",
+     "description": "搜索网页，返回标题、链接、日期和摘要。要新闻、近况、最近的讨论时填 days（只要最近几天的）。搜索词里可以写 site:域名 只搜某个网站。查资料用这个，不要在浏览器里打开搜索引擎的网站去搜",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "query": {
+        "type": "string",
+        "description": "搜索词"
+       },
+       "days": {
+        "type": "integer",
+        "description": "可选：只要最近几天的结果，比如 7、30"
+       }
+      },
+      "required": [
+       "query"
+      ]
+     }
+    }
+   },
+   "where": [
+    "applet",
+    "worker"
+   ],
+   "gated": true,
+   "parallel": 2,
+   "describe": "搜索网页，返回标题、链接、日期和摘要；能只要最近几天的（days）",
+   "group": "",
+   "has_when": false,
+   "owner": "builtin"
+  },
+  {
+   "name": "search_posts",
+   "schema": {
+    "type": "function",
+    "function": {
+     "name": "search_posts",
+     "description": "搜社交平台上的帖子，看大家怎么说（口碑、讨论、最近的反应）：返回作者、日期、点赞评论转发数、链接和正文开头。platform 是 x（推特）、reddit、xiaohongshu（小红书）之一。要最近的填 days。X 按条收钱：只想知道 X 上现在在热议什么时别搜 X，用 fetch_url 读 https://getdaytrends.com/国家/（比如 united-states、japan、united-kingdom，全球是 https://getdaytrends.com/），再用 web_search 查感兴趣的话题，都很便宜；已经有 X 帖子链接的，用 fetch_url 读，不要钱",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "platform": {
+        "type": "string",
+        "description": "x、reddit 或 xiaohongshu"
+       },
+       "query": {
+        "type": "string",
+        "description": "搜索词。X 的搜索词可以用 lang:zh、from:用户名、-is:reply、has:links 这类写法（min_faves 这类网页上的写法接口不认）"
+       },
+       "days": {
+        "type": "integer",
+        "description": "可选：只要最近几天的，比如 7、30"
+       },
+       "count": {
+        "type": "integer",
+        "description": "可选：要几条，默认 10"
+       }
+      },
+      "required": [
+       "platform",
+       "query"
+      ]
+     }
+    }
+   },
+   "where": [
+    "applet",
+    "worker"
+   ],
+   "gated": true,
+   "parallel": 2,
+   "describe": "搜 X、Reddit、小红书上的帖子，看大家怎么说（带点赞、评论数）；能只要最近几天的",
+   "group": "",
+   "has_when": false,
+   "owner": "builtin"
+  },
+  {
+   "name": "fetch_url",
+   "schema": {
+    "type": "function",
+    "function": {
+     "name": "fetch_url",
+     "description": "读网页正文（截断到 8000 字）。要跑脚本才显示内容的网页一般也能读；X 的单条帖子、Reddit 的帖子和评论也能读",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "url": {
+        "type": "string",
+        "description": "网址"
+       }
+      },
+      "required": [
+       "url"
+      ]
+     }
+    }
+   },
+   "where": [
+    "applet",
+    "worker"
+   ],
+   "gated": true,
+   "parallel": 3,
+   "describe": "读网页正文（截断到 8000 字）",
+   "group": "",
+   "has_when": false,
+   "owner": "builtin"
+  },
+  {
+   "name": "save_page",
+   "schema": {
+    "type": "function",
+    "function": {
+     "name": "save_page",
+     "description": "把成品（报告、清单、对比表、网页等）保存成资料库里的页面，返回页面链接。用户要“做成页面/报告/可以分享的页面”，或结果很长、以后还要看时用。给 page_id 就是更新那个页面。要做成可交互的小应用（表单、看板、计算器、能点按钮查东西的面板）时 format=html 并填 app，页面里用 window.osa 调工具、读写数据、给你发消息（见系统提示词里的说明）。",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "title": {
+        "type": "string"
+       },
+       "content": {
+        "type": "string",
+        "description": "页面全文。markdown 用 Markdown；html 是完整的 HTML（可以带内联 CSS 和脚本）"
+       },
+       "format": {
+        "type": "string",
+        "enum": [
+         "markdown",
+         "html"
+        ]
+       },
+       "page_id": {
+        "type": "integer",
+        "description": "可选：要更新的页面编号"
+       },
+       "app": {
+        "type": "object",
+        "description": "可选，只对 html 有效：填了就是小应用。tools 是页面里允许调用的工具名（只能是你现在有的工具）；chat 为 true 时页面能替用户给你发消息",
+        "properties": {
+         "tools": {
+          "type": "array",
+          "items": {
+           "type": "string"
+          }
+         },
+         "chat": {
+          "type": "boolean"
+         }
+        }
+       }
+      },
+      "required": [
+       "title",
+       "content"
+      ]
+     }
+    }
+   },
+   "where": [
+    "router",
+    "worker"
+   ],
+   "gated": false,
+   "parallel": 0,
+   "describe": "",
+   "group": "",
+   "has_when": true,
+   "owner": "builtin"
+  },
+  {
+   "name": "read_page",
+   "schema": {
+    "type": "function",
+    "function": {
+     "name": "read_page",
+     "description": "读资料库里一个页面的全文（html 页面只给文字）。页面编号可以用 search_memory 查到",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "page_id": {
+        "type": "integer"
+       }
+      },
+      "required": [
+       "page_id"
+      ]
+     }
+    }
+   },
+   "where": [
+    "router",
+    "worker"
+   ],
+   "gated": false,
+   "parallel": 3,
+   "describe": "",
+   "group": "",
+   "has_when": false,
+   "owner": "builtin"
+  },
+  {
+   "name": "page_data",
+   "schema": {
+    "type": "function",
+    "function": {
+     "name": "page_data",
+     "description": "读或写一个小应用的数据（键值对）。用户在小应用里填的内容在这里；你写进去的数据小应用里马上能看到（osa.store / osa.on('data')）。不给 set 就只读。",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "page_id": {
+        "type": "integer"
+       },
+       "set": {
+        "type": "object",
+        "description": "要写入的键值（值可以是任何 JSON；设为 null 删除这个键）"
+       }
+      },
+      "required": [
+       "page_id"
+      ]
+     }
+    }
+   },
+   "where": [
+    "router",
+    "worker"
+   ],
+   "gated": false,
+   "parallel": 0,
+   "describe": "",
+   "group": "",
+   "has_when": false,
+   "owner": "builtin"
+  },
+  {
+   "name": "send_file",
+   "schema": {
+    "type": "function",
+    "function": {
+     "name": "send_file",
+     "description": "把电脑里的文件发给用户：图片直接显示在对话里，其他文件显示成能点开、下载的卡片。截图、画好的图、做好的表格和文档要交给用户时用。不要自己拼下载链接。",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "path": {
+        "type": "string",
+        "description": "文件在电脑里的路径（可以写相对工作文件夹的）"
+       }
+      },
+      "required": [
+       "path"
+      ]
+     }
+    }
+   },
+   "where": [
+    "router",
+    "worker"
+   ],
+   "gated": false,
+   "parallel": 0,
+   "describe": "",
+   "group": "",
+   "has_when": true,
+   "owner": "builtin"
+  },
+  {
+   "name": "generate_image",
+   "schema": {
+    "type": "function",
+    "function": {
+     "name": "generate_image",
+     "description": "按描述画一张图，画好直接显示在对话里。默认会先弹卡片请用户确认（上面写着模型和价格）。描述写具体：主体、风格、构图、颜色、光线；图里要有文字就写清楚是哪几个字。用户要照着图片改、照着画（换风格、换背景、加减东西、照这个人物或商品画）时，把那几张图放进 images，描述里写清楚怎么改、每张图是干什么用的。",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "prompt": {
+        "type": "string",
+        "description": "画面描述，最多 1000 字"
+       },
+       "images": {
+        "type": "array",
+        "items": {
+         "type": "string"
+        },
+        "maxItems": 16,
+        "description": "参考图（可选）：对话里图片的编号（“[图片]”后面那串）或者电脑里图片的路径（“[附件]”后面那个）"
+       }
+      },
+      "required": [
+       "prompt"
+      ]
+     }
+    }
+   },
+   "where": [
+    "router"
+   ],
+   "gated": false,
+   "parallel": 0,
+   "describe": "",
+   "group": "",
+   "has_when": false,
+   "owner": "builtin"
+  },
+  {
+   "name": "generate_video",
+   "schema": {
+    "type": "function",
+    "function": {
+     "name": "generate_video",
+     "description": "按描述生成一段几秒到十几秒的视频，好了直接显示在对话里。要等几分钟；默认先弹卡片请用户确认（写着模型、时长和价格）。描述写清楚：主体、动作、镜头怎么动、风格、光线。用户要让一张图动起来，或者照着图里的人物、商品、风格拍，把图放进 images；照着某段视频的动作、运镜拍，把视频放进 videos。",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "prompt": {
+        "type": "string",
+        "description": "视频描述，最多 1000 字"
+       },
+       "images": {
+        "type": "array",
+        "items": {
+         "type": "string"
+        },
+        "maxItems": 10,
+        "description": "图片（可选）：对话里图片的编号（“[图片]”后面那串）或电脑里图片的路径（“[附件]”后面那个）"
+       },
+       "image_use": {
+        "type": "string",
+        "enum": [
+         "frames",
+         "reference"
+        ],
+        "description": "frames：第 1 张当开头画面（有第 2 张就当结尾画面），视频从这张图动起来；reference：参考图里的人物、商品、风格，画面重新拍。不写时能当开头画面就当开头画面"
+       },
+       "videos": {
+        "type": "array",
+        "items": {
+         "type": "string"
+        },
+        "maxItems": 3,
+        "description": "参考视频（可选）：对话里视频的编号（“[视频]”后面那串）或电脑里视频的路径"
+       },
+       "seconds": {
+        "type": "integer",
+        "description": "想要几秒（可选，模型不支持就取最接近的）"
+       },
+       "ratio": {
+        "type": "string",
+        "description": "画面比例（可选）：16:9、9:16、1:1 这类；不写时有开头画面就跟着它"
+       }
+      },
+      "required": [
+       "prompt"
+      ]
+     }
+    }
+   },
+   "where": [
+    "router"
+   ],
+   "gated": false,
+   "parallel": 0,
+   "describe": "",
+   "group": "",
+   "has_when": false,
+   "owner": "builtin"
+  },
+  {
+   "name": "search_memory",
+   "schema": {
+    "type": "function",
+    "function": {
+     "name": "search_memory",
+     "description": "按意思查长期记忆和资料库里的页面。提示词里只放了最近的记忆；用户提到以前说过的事、以前做过的报告或页面，或者要参考之前的结果时用它。查到页面要看全文用 read_page。",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "query": {
+        "type": "string",
+        "description": "要找什么，用自然的说法；可以多写几个同义的词"
+       },
+       "scope": {
+        "type": "string",
+        "enum": [
+         "all",
+         "memories",
+         "pages"
+        ],
+        "description": "默认 all"
+       }
+      },
+      "required": [
+       "query"
+      ]
+     }
+    }
+   },
+   "where": [
+    "router",
+    "worker"
+   ],
+   "gated": false,
+   "parallel": 3,
+   "describe": "",
+   "group": "",
+   "has_when": false,
+   "owner": "builtin"
+  },
+  {
+   "name": "use_skill",
+   "schema": {
+    "type": "function",
+    "function": {
+     "name": "use_skill",
+     "description": "取一个技能的做法和它带的文件（脚本、参考资料）。要按某个技能做事时先调用它，再照着做",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "name": {
+        "type": "string",
+        "description": "技能名，不带 /"
+       },
+       "file": {
+        "type": "string",
+        "description": "可选：要看全文的文件，写技能带的文件的相对路径（比如 scripts/fill.py）"
+       },
+       "offset": {
+        "type": "integer",
+        "description": "可选：内容太长分段取时，从第几个字开始"
+       }
+      },
+      "required": [
+       "name"
+      ]
+     }
+    }
+   },
+   "where": [
+    "router",
+    "worker"
+   ],
+   "gated": false,
+   "parallel": 3,
+   "describe": "按技能名取技能的做法和它带的文件（脚本、参考资料）",
+   "group": "",
+   "has_when": false,
+   "owner": "builtin"
+  },
+  {
+   "name": "create_routine",
+   "schema": {
+    "type": "function",
+    "function": {
+     "name": "create_routine",
+     "description": "新建定时任务：按时间跑（某个时间点一次、每天、每月、每隔一段时间）。某件事发生时才做的用 create_event",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "name": {
+        "type": "string",
+        "description": "名字"
+       },
+       "prompt": {
+        "type": "string",
+        "description": "每次运行要做的事，写完整"
+       },
+       "skill": {
+        "type": "string",
+        "description": "可选：每次按哪个技能做（不带 /）"
+       },
+       "kind": {
+        "type": "string",
+        "enum": [
+         "once",
+         "daily",
+         "monthly",
+         "every"
+        ],
+        "description": "once：某个时间点跑一次（提醒用这个）；daily：每天 / 每周几；monthly：每月几号；every：每隔几分钟"
+       },
+       "at": {
+        "type": "string",
+        "description": "once 用：YYYY-MM-DD HH:MM（本地时间）"
+       },
+       "times": {
+        "type": "array",
+        "items": {
+         "type": "string"
+        },
+        "description": "daily、monthly 用：HH:MM 列表"
+       },
+       "days": {
+        "type": "array",
+        "items": {
+         "type": "integer"
+        },
+        "description": "daily 用：周几运行，周一=1，留空=每天"
+       },
+       "month_days": {
+        "type": "array",
+        "items": {
+         "type": "integer"
+        },
+        "description": "monthly 用：每月几号（1-31，这个月没有的在月底跑）"
+       },
+       "minutes": {
+        "type": "integer",
+        "description": "every 用：间隔分钟，至少 5"
+       },
+       "bot": {
+        "type": "string",
+        "description": "只有主 Bot 能填：给哪个 Bot 建（名字），它以自己的身份、用自己的技能跑。不填是给你自己"
+       }
+      },
+      "required": [
+       "name",
+       "kind"
+      ]
+     }
+    }
+   },
+   "where": [
+    "router"
+   ],
+   "gated": false,
+   "parallel": 0,
+   "describe": "",
+   "group": "",
+   "has_when": false,
+   "owner": "builtin"
+  },
+  {
+   "name": "create_event",
+   "schema": {
+    "type": "function",
+    "function": {
+     "name": "create_event",
+     "description": "新建事件：某件事发生时在后台处理一次（收到 webhook、GitHub 有新 issue、订阅源有新文章、网页内容变了、收到邮件、价格到了、明天要下雨……），结果发到对话里。按时间跑的用 create_routine",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "name": {
+        "type": "string",
+        "description": "名字"
+       },
+       "prompt": {
+        "type": "string",
+        "description": "事件来了要做什么，写完整（比如“总结这篇文章，和 AI 无关的写 [无新内容]”）"
+       },
+       "skill": {
+        "type": "string",
+        "description": "可选：按哪个技能做（不带 /）"
+       },
+       "source": {
+        "type": "string",
+        "description": "事件来源，比如 rss（订阅源有新文章）、web_change（网页变了）、github（GitHub 推送）、webhook（收到任意 webhook）……不确定有哪些、要填什么参数时先不填 source 调一次，会返回清单"
+       },
+       "params": {
+        "type": "object",
+        "description": "这个来源的参数，比如 rss 填 {\"url\": \"订阅源地址\"}"
+       },
+       "every": {
+        "type": "integer",
+        "description": "要定时去看的来源（rss、网页……）：多少分钟看一次，不填用默认"
+       },
+       "include": {
+        "type": "array",
+        "items": {
+         "type": "string"
+        },
+        "description": "只处理含这些词之一的事件（可选）"
+       },
+       "exclude": {
+        "type": "array",
+        "items": {
+         "type": "string"
+        },
+        "description": "含这些词的事件不处理（可选）"
+       },
+       "llm_filter": {
+        "type": "string",
+        "description": "可选：先让模型按这条规则判断要不要处理，比如“只有报告 bug 的才处理”"
+       },
+       "bot": {
+        "type": "string",
+        "description": "只有主 Bot 能填：给哪个 Bot 建（名字），它以自己的身份、用自己的技能跑。不填是给你自己"
+       }
+      },
+      "required": [
+       "name"
+      ]
+     }
+    }
+   },
+   "where": [
+    "router"
+   ],
+   "gated": false,
+   "parallel": 0,
+   "describe": "",
+   "group": "",
+   "has_when": false,
+   "owner": "builtin"
+  },
+  {
+   "name": "list_routines",
+   "schema": {
+    "type": "function",
+    "function": {
+     "name": "list_routines",
+     "description": "查看定时任务和事件：编号、做什么、什么时候跑 / 盯着什么、上次结果。填 id 看那一个的完整要求、地址和最近几次运行。主 Bot 不填 bot 看所有 Bot 的，别的 Bot 只看得到自己的",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "id": {
+        "type": "integer"
+       },
+       "bot": {
+        "type": "string",
+        "description": "只有主 Bot 能填：只看哪个 Bot 的（名字）"
+       }
+      }
+     }
+    }
+   },
+   "where": [
+    "router"
+   ],
+   "gated": false,
+   "parallel": 0,
+   "describe": "",
+   "group": "",
+   "has_when": false,
+   "owner": "builtin"
+  },
+  {
+   "name": "update_routine",
+   "schema": {
+    "type": "function",
+    "function": {
+     "name": "update_routine",
+     "description": "按编号修改定时任务或事件，只填要改的。暂停填 enabled=false，恢复填 true。主 Bot 能改所有 Bot 的，别的 Bot 只能改自己的",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "id": {
+        "type": "integer"
+       },
+       "ids": {
+        "type": "array",
+        "items": {
+         "type": "integer"
+        },
+        "description": "同样的改动用在多个上时填（比如全部暂停），代替 id"
+       },
+       "name": {
+        "type": "string"
+       },
+       "prompt": {
+        "type": "string",
+        "description": "改完后的完整要求：先用 list_routines 看原文，只改用户要改的地方，其余照抄"
+       },
+       "skill": {
+        "type": "string",
+        "description": "每次按哪个技能做（不带 /）；空字符串表示不再按技能做"
+       },
+       "kind": {
+        "type": "string",
+        "enum": [
+         "once",
+         "daily",
+         "monthly",
+         "every"
+        ],
+        "description": "定时任务改触发方式时才填"
+       },
+       "at": {
+        "type": "string",
+        "description": "once 用：YYYY-MM-DD HH:MM（本地时间）"
+       },
+       "times": {
+        "type": "array",
+        "items": {
+         "type": "string"
+        },
+        "description": "daily、monthly 用：HH:MM 列表"
+       },
+       "days": {
+        "type": "array",
+        "items": {
+         "type": "integer"
+        },
+        "description": "daily 用：周几运行，周一=1，留空=每天"
+       },
+       "month_days": {
+        "type": "array",
+        "items": {
+         "type": "integer"
+        },
+        "description": "monthly 用：每月几号（1-31，这个月没有的在月底跑）"
+       },
+       "minutes": {
+        "type": "integer",
+        "description": "every 用：间隔分钟，至少 5"
+       },
+       "params": {
+        "type": "object",
+        "description": "这个来源的参数，比如 rss 填 {\"url\": \"订阅源地址\"}"
+       },
+       "every": {
+        "type": "integer",
+        "description": "要定时去看的来源（rss、网页……）：多少分钟看一次，不填用默认"
+       },
+       "include": {
+        "type": "array",
+        "items": {
+         "type": "string"
+        },
+        "description": "只处理含这些词之一的事件（可选）"
+       },
+       "exclude": {
+        "type": "array",
+        "items": {
+         "type": "string"
+        },
+        "description": "含这些词的事件不处理（可选）"
+       },
+       "llm_filter": {
+        "type": "string",
+        "description": "可选：先让模型按这条规则判断要不要处理，比如“只有报告 bug 的才处理”"
+       },
+       "enabled": {
+        "type": "boolean",
+        "description": "false 暂停，true 恢复"
+       }
+      }
+     }
+    }
+   },
+   "where": [
+    "router"
+   ],
+   "gated": false,
+   "parallel": 0,
+   "describe": "",
+   "group": "",
+   "has_when": false,
+   "owner": "builtin"
+  },
+  {
+   "name": "delete_routine",
+   "schema": {
+    "type": "function",
+    "function": {
+     "name": "delete_routine",
+     "description": "按编号删除一个定时任务或事件，运行记录一起删、不能恢复。只在用户明确要删时用；只是先不跑就用 update_routine 暂停。主 Bot 能删所有 Bot 的，别的 Bot 只能删自己的",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "id": {
+        "type": "integer"
+       }
+      },
+      "required": [
+       "id"
+      ]
+     }
+    }
+   },
+   "where": [
+    "router"
+   ],
+   "gated": false,
+   "parallel": 0,
+   "describe": "",
+   "group": "",
+   "has_when": false,
+   "owner": "builtin"
+  },
+  {
+   "name": "run_code",
+   "schema": {
+    "type": "function",
+    "function": {
+     "name": "run_code",
+     "description": "在沙箱里跑一段代码（python / bash / node），返回输出和产出的文件。算数、算日期、换单位、统计和处理数据、画图表、转换文件格式都用它算，不要心算。在沙箱里跑：当前目录在工作文件夹里，用相对路径写的文件会留下来（结果里列出路径，可以 send_file），工作文件夹外改不了；电脑是用户自己的电脑时读不到用户的其他文件，也可能不能联网（要下载的先用 fetch_url 或浏览器存进工作文件夹）。",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "lang": {
+        "type": "string",
+        "enum": [
+         "python",
+         "bash",
+         "node"
+        ],
+        "description": "语言，默认 python"
+       },
+       "code": {
+        "type": "string",
+        "description": "要跑的代码，结果用 print / echo 输出"
+       },
+       "files": {
+        "type": "object",
+        "additionalProperties": {
+         "type": "string"
+        },
+        "description": "可选：一起放进去的文字文件 {相对路径: 内容}，比如数据、要调用的脚本"
+       },
+       "timeout": {
+        "type": "integer",
+        "description": "最多跑多少秒，默认 60，最多 600"
+       }
+      },
+      "required": [
+       "code"
+      ]
+     }
+    }
+   },
+   "where": [
+    "worker"
+   ],
+   "gated": false,
+   "parallel": 0,
+   "describe": "在沙箱里跑 Python / bash / node 代码：算数、处理表格和数据、画图表、转换格式",
+   "group": "",
+   "has_when": true,
+   "owner": "builtin"
+  },
+  {
+   "name": "quick_code",
+   "schema": {
+    "type": "function",
+    "function": {
+     "name": "quick_code",
+     "description": "在沙箱里马上跑一小段 Python，返回输出。算数、换单位、算日期和星期、算时差、算百分比这类要算准的，用它算，不要心算。在沙箱里跑：5 秒内要跑完，不能联网，工作文件夹外改不了。要处理文件、联网或跑得久的派任务。",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "code": {
+        "type": "string",
+        "description": "Python 代码，结果用 print 输出"
+       }
+      },
+      "required": [
+       "code"
+      ]
+     }
+    }
+   },
+   "where": [
+    "router"
+   ],
+   "gated": false,
+   "parallel": 0,
+   "describe": "",
+   "group": "",
+   "has_when": true,
+   "owner": "builtin"
+  }
+ ],
+ "router_tools": [
+  {
+   "type": "function",
+   "function": {
+    "name": "browser_open",
+    "description": "在电脑的浏览器里打开网址（当前标签页），返回页面上可操作元素的编号列表和正文开头",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "url": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "url"
+     ]
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "browser_snapshot",
+    "description": "查看浏览器当前页面：可操作元素（带编号 [n]）、正文开头、滚动位置。页面变了或不确定时用。",
+    "parameters": {
+     "type": "object",
+     "properties": {},
+     "required": []
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "browser_click",
+    "description": "点击页面元素，ref 是 browser_snapshot 里的编号",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "ref": {
+       "type": "integer"
+      }
+     },
+     "required": [
+      "ref"
+     ]
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "browser_type",
+    "description": "在输入框里输入文字（先清空原内容）。ref 是输入框编号；submit=true 时输入完按回车。",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "ref": {
+       "type": "integer"
+      },
+      "text": {
+       "type": "string"
+      },
+      "submit": {
+       "type": "boolean"
+      }
+     },
+     "required": [
+      "ref",
+      "text"
+     ]
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "browser_key",
+    "description": "在页面上按一个键：Enter、Tab、Escape、Backspace、ArrowDown、ArrowUp、PageDown 等",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "key": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "key"
+     ]
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "browser_scroll",
+    "description": "页面滚动一屏",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "direction": {
+       "type": "string",
+       "enum": [
+        "up",
+        "down"
+       ]
+      }
+     },
+     "required": [
+      "direction"
+     ]
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "browser_back",
+    "description": "浏览器后退",
+    "parameters": {
+     "type": "object",
+     "properties": {},
+     "required": []
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "browser_read",
+    "description": "读取当前页面的完整正文（每次最多 12000 字，用 offset 往后翻）",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "offset": {
+       "type": "integer"
+      }
+     },
+     "required": []
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "computer_screenshot",
+    "description": "截取浏览器里当前页面的画面，返回图片。要看页面长什么样（图片、图表、布局、验证码、操作是否成功）时用；网页内容和元素用 browser_snapshot。save=true 时把截图存进电脑的工作文件夹（screenshots 子文件夹）并返回路径，要把网页截图发给用户就用 send_file 发这个文件。",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "save": {
+       "type": "boolean"
+      }
+     },
+     "required": []
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "computer_click",
+    "description": "【备用】按截图上的坐标 (x, y) 点击页面。只在 browser_click 做不到时用（画布、没有编号的元素），坐标以 computer_screenshot 的截图为准。",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "x": {
+       "type": "integer"
+      },
+      "y": {
+       "type": "integer"
+      },
+      "button": {
+       "type": "string",
+       "enum": [
+        "left",
+        "right",
+        "middle"
+       ]
+      },
+      "double": {
+       "type": "boolean"
+      }
+     },
+     "required": [
+      "x",
+      "y"
+     ]
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "computer_type",
+    "description": "【备用】在页面当前焦点处输入文字。网页输入框用 browser_type",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "text": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "text"
+     ]
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "computer_key",
+    "description": "在页面上按键或组合键，例如 Enter、Tab、ctrl+a、shift+Tab、Escape（浏览器自己的快捷键如新标签页不起作用）",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "keys": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "keys"
+     ]
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "computer_scroll",
+    "description": "【备用】在页面中间滚动鼠标滚轮。网页用 browser_scroll",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "direction": {
+       "type": "string",
+       "enum": [
+        "up",
+        "down",
+        "left",
+        "right"
+       ]
+      },
+      "amount": {
+       "type": "integer"
+      }
+     },
+     "required": [
+      "direction"
+     ]
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "dispatch",
+    "description": "派发后台任务",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "goal": {
+       "type": "string",
+       "description": "完整、自包含的任务描述"
+      },
+      "mode": {
+       "type": "string",
+       "enum": [
+        "single",
+        "heavy"
+       ]
+      },
+      "mac": {
+       "type": "string",
+       "description": "只在任务必须用用户自己的 Mac 才做得了时写（见能力清单里的“用户的 Mac”）：那台 Mac 的名字。不写就在你自己的电脑上做"
+      },
+      "handoff_to": {
+       "type": "string",
+       "description": "只在群聊里用：任务完成后把结果交给哪个成员接着做"
+      },
+      "handoff_note": {
+       "type": "string",
+       "description": "交接时要对方做什么"
+      }
+     },
+     "required": [
+      "goal"
+     ]
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "save_skill",
+    "description": "保存或覆盖一个技能（可复用的做事方法）",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "name": {
+       "type": "string",
+       "description": "简短的名字，用于 /名字 调用，不含空格"
+      },
+      "description": {
+       "type": "string",
+       "description": "一句话说明什么时候用"
+      },
+      "body": {
+       "type": "string",
+       "description": "完整的做法：步骤、要用的网站或应用、输出格式"
+      }
+     },
+     "required": [
+      "name",
+      "body"
+     ]
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "remember",
+    "description": "记下一条长期记忆（以后的对话都会带着）",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "text": {
+       "type": "string",
+       "description": "独立完整的一句话，例如“用户希望回答先给结论”"
+      },
+      "shared": {
+       "type": "boolean",
+       "description": "关于用户本人的基本事实（名字、时区、所在城市等）为 true，所有 Bot 共享"
+      },
+      "replace_id": {
+       "type": "integer",
+       "description": "可选：用这条替换已有的那条记忆"
+      }
+     },
+     "required": [
+      "text"
+     ]
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "forget",
+    "description": "删除一条长期记忆",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "id": {
+       "type": "integer"
+      }
+     },
+     "required": [
+      "id"
+     ]
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "list_tasks",
+    "description": "查看任务状态",
+    "parameters": {
+     "type": "object",
+     "properties": {}
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "cancel_task",
+    "description": "取消任务",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "task_id": {
+       "type": "integer"
+      }
+     },
+     "required": [
+      "task_id"
+     ]
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "resolve_approval",
+    "description": "处理一个待确认的写操作",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "id": {
+       "type": "integer"
+      },
+      "approve": {
+       "type": "boolean"
+      },
+      "note": {
+       "type": "string",
+       "description": "用户附带的意见，例如修改要求"
+      },
+      "always": {
+       "type": "boolean",
+       "description": "用户明确说以后同类操作都不用问时为 true"
+      },
+      "scope": {
+       "type": "string",
+       "description": "同意时管多久：once 只这一次（默认）；task 这个任务里同类操作不再问；minutes:N 接下来 N 分钟不再问；always 同 always=true（终端命令按命令开头的词）。用户没说清楚就别填"
+      }
+     },
+     "required": [
+      "id",
+      "approve"
+     ]
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "recall",
+    "description": "按 id 取回早先消息原文",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "id": {
+       "type": "integer"
+      }
+     },
+     "required": [
+      "id"
+     ]
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "look_at_screen",
+    "description": "看一眼共用电脑现在的屏幕（截图 + 当前窗口标题），就是用户在右栏看到的画面。用户问屏幕上有什么、或者你要判断下一步该派什么任务时用。几个任务同时在做时屏幕上只显示其中一个窗口，问任务进度用 list_tasks。只看不操作。",
+    "parameters": {
+     "type": "object",
+     "properties": {}
+    }
+   }
+  }
+ ],
+ "message_bot": {
+  "type": "function",
+  "function": {
+   "name": "message_bot",
+   "description": "私信另一个 Bot，请它帮忙做事。它在自己的私聊里处理，回信会自动回到当前对话，你到时再接着说",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "to": {
+      "type": "string",
+      "description": "Bot 的名字"
+     },
+     "text": {
+      "type": "string",
+      "description": "要它做什么，写完整、自包含（它看不到这里的对话）"
+     }
+    },
+    "required": [
+     "to",
+     "text"
+    ]
+   }
+  }
+ },
+ "handoff": {
+  "type": "function",
+  "function": {
+   "name": "handoff",
+   "description": "在群聊里把工作交给另一个 Bot，它会马上接着做",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "to": {
+      "type": "string",
+      "description": "成员的名字"
+     },
+     "request": {
+      "type": "string",
+      "description": "要它做什么，写完整（它能看到群里之前的消息）"
+     }
+    },
+    "required": [
+     "to",
+     "request"
+    ]
+   }
+  }
+ },
+ "computer_schemas": [
+  {
+   "type": "function",
+   "function": {
+    "name": "browser_open",
+    "description": "在电脑的浏览器里打开网址（当前标签页），返回页面上可操作元素的编号列表和正文开头",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "url": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "url"
+     ]
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "browser_snapshot",
+    "description": "查看浏览器当前页面：可操作元素（带编号 [n]）、正文开头、滚动位置。页面变了或不确定时用。",
+    "parameters": {
+     "type": "object",
+     "properties": {},
+     "required": []
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "browser_click",
+    "description": "点击页面元素，ref 是 browser_snapshot 里的编号",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "ref": {
+       "type": "integer"
+      }
+     },
+     "required": [
+      "ref"
+     ]
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "browser_type",
+    "description": "在输入框里输入文字（先清空原内容）。ref 是输入框编号；submit=true 时输入完按回车。",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "ref": {
+       "type": "integer"
+      },
+      "text": {
+       "type": "string"
+      },
+      "submit": {
+       "type": "boolean"
+      }
+     },
+     "required": [
+      "ref",
+      "text"
+     ]
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "browser_key",
+    "description": "在页面上按一个键：Enter、Tab、Escape、Backspace、ArrowDown、ArrowUp、PageDown 等",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "key": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "key"
+     ]
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "browser_scroll",
+    "description": "页面滚动一屏",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "direction": {
+       "type": "string",
+       "enum": [
+        "up",
+        "down"
+       ]
+      }
+     },
+     "required": [
+      "direction"
+     ]
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "browser_back",
+    "description": "浏览器后退",
+    "parameters": {
+     "type": "object",
+     "properties": {},
+     "required": []
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "browser_read",
+    "description": "读取当前页面的完整正文（每次最多 12000 字，用 offset 往后翻）",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "offset": {
+       "type": "integer"
+      }
+     },
+     "required": []
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "browser_upload",
+    "description": "把电脑里的文件传到网页上：ref 是“上传 / 选择文件”按钮或文件输入框的编号，paths 是文件的完整路径",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "ref": {
+       "type": "integer"
+      },
+      "paths": {
+       "type": "array",
+       "items": {
+        "type": "string"
+       }
+      }
+     },
+     "required": [
+      "ref",
+      "paths"
+     ]
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "computer_screenshot",
+    "description": "截取浏览器里当前页面的画面，返回图片。要看页面长什么样（图片、图表、布局、验证码、操作是否成功）时用；网页内容和元素用 browser_snapshot。save=true 时把截图存进电脑的工作文件夹（screenshots 子文件夹）并返回路径，要把网页截图发给用户就用 send_file 发这个文件。",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "save": {
+       "type": "boolean"
+      }
+     },
+     "required": []
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "computer_click",
+    "description": "【备用】按截图上的坐标 (x, y) 点击页面。只在 browser_click 做不到时用（画布、没有编号的元素），坐标以 computer_screenshot 的截图为准。",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "x": {
+       "type": "integer"
+      },
+      "y": {
+       "type": "integer"
+      },
+      "button": {
+       "type": "string",
+       "enum": [
+        "left",
+        "right",
+        "middle"
+       ]
+      },
+      "double": {
+       "type": "boolean"
+      }
+     },
+     "required": [
+      "x",
+      "y"
+     ]
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "computer_type",
+    "description": "【备用】在页面当前焦点处输入文字。网页输入框用 browser_type",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "text": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "text"
+     ]
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "computer_key",
+    "description": "在页面上按键或组合键，例如 Enter、Tab、ctrl+a、shift+Tab、Escape（浏览器自己的快捷键如新标签页不起作用）",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "keys": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "keys"
+     ]
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "computer_scroll",
+    "description": "【备用】在页面中间滚动鼠标滚轮。网页用 browser_scroll",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "direction": {
+       "type": "string",
+       "enum": [
+        "up",
+        "down",
+        "left",
+        "right"
+       ]
+      },
+      "amount": {
+       "type": "integer"
+      }
+     },
+     "required": [
+      "direction"
+     ]
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "computer_shell",
+    "description": "在电脑的终端执行 bash 命令（工作目录 /data/workspace，文件会保留）。适合下载、处理数据、运行脚本。",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "cmd": {
+       "type": "string"
+      },
+      "timeout": {
+       "type": "integer"
+      }
+     },
+     "required": [
+      "cmd"
+     ]
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "computer_read_file",
+    "description": "读取电脑里的文本文件",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "path": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "path"
+     ]
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "computer_write_file",
+    "description": "在电脑里写入文本文件（会覆盖）",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "path": {
+       "type": "string"
+      },
+      "content": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "path",
+      "content"
+     ]
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "ask_human",
+    "description": "遇到只有人能完成的步骤（登录、验证码、扫码、支付验证、需要用户本人决定的选择）时调用：用户会接手电脑处理，处理完交还给你后再继续。说明清楚需要用户做什么。",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "reason": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "reason"
+     ]
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "ask_approval",
+    "description": "在执行有后果的操作之前调用，例如提交表单、下单付款、发送消息或邮件、删除数据、发布内容。说明要做什么、影响是什么。用户同意后才能继续。",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "action": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "action"
+     ]
+    }
+   }
+  }
+ ],
+ "desk_schemas": [
+  {
+   "type": "function",
+   "function": {
+    "name": "desktop_screenshot",
+    "description": "截取用户这台 Mac 的整个屏幕（主显示器），返回图片，以及前台 App、屏幕上的窗口、鼠标位置。要操作浏览器以外的 App 时先用它看屏幕；desktop_click 等工具的坐标以这张截图为准。save=true 时把这张截图存进工作文件夹（screenshots 子文件夹），返回文件路径，要把截图发给用户就用 send_file 发这个文件。",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "save": {
+       "type": "boolean"
+      }
+     },
+     "required": []
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "desktop_click",
+    "description": "按 desktop_screenshot 截图上的坐标点击屏幕（真实的鼠标，会把点到的窗口换到前面）",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "x": {
+       "type": "integer"
+      },
+      "y": {
+       "type": "integer"
+      },
+      "button": {
+       "type": "string",
+       "enum": [
+        "left",
+        "right",
+        "middle"
+       ]
+      },
+      "double": {
+       "type": "boolean"
+      }
+     },
+     "required": [
+      "x",
+      "y"
+     ]
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "desktop_drag",
+    "description": "按住鼠标左键从 (x, y) 拖到 (to_x, to_y)：拖文件、拖滑块、框选",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "x": {
+       "type": "integer"
+      },
+      "y": {
+       "type": "integer"
+      },
+      "to_x": {
+       "type": "integer"
+      },
+      "to_y": {
+       "type": "integer"
+      }
+     },
+     "required": [
+      "x",
+      "y",
+      "to_x",
+      "to_y"
+     ]
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "desktop_type",
+    "description": "在屏幕上当前有焦点的地方输入文字（用粘贴输入，中文也行，不受输入法影响；不会按回车）。先点一下要输入的地方",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "text": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "text"
+     ]
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "desktop_key",
+    "description": "按键或组合键，例如 enter、esc、tab、backspace、cmd+a、cmd+c、cmd+v、cmd+tab、cmd+space（聚焦搜索）、cmd+w（关窗口）、cmd+q（退出 App）、cmd+shift+g（在访达里前往文件夹）、up、down。要按顺序按几个键就用空格隔开，一次按完，例如 \"1 2 3 * 4 5 enter\"、\"down down enter\"",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "keys": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "keys"
+     ]
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "desktop_scroll",
+    "description": "把鼠标移到截图上的 (x, y) 再滚动",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "x": {
+       "type": "integer"
+      },
+      "y": {
+       "type": "integer"
+      },
+      "direction": {
+       "type": "string",
+       "enum": [
+        "up",
+        "down",
+        "left",
+        "right"
+       ]
+      },
+      "amount": {
+       "type": "integer"
+      }
+     },
+     "required": [
+      "x",
+      "y",
+      "direction"
+     ]
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "desktop_open_app",
+    "description": "打开一个 App，或者把它切到最前面（例如 微信、访达、备忘录、日历、Safari、系统设置），name 写 App 的名字",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "name": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "name"
+     ]
+    }
+   }
+  }
+ ],
+ "provider_presets": [
+  {
+   "id": "deepseek",
+   "title": "DeepSeek",
+   "base_url": "https://api.deepseek.com",
+   "color": "#4d6bfe",
+   "key_url": "https://platform.deepseek.com/api_keys",
+   "models": [
+    "deepseek-flash",
+    "deepseek-v4-flash"
+   ],
+   "desc": "便宜，中文好；默认配置用它"
+  },
+  {
+   "id": "openai",
+   "title": "OpenAI",
+   "base_url": "https://api.openai.com/v1",
+   "color": "#111111",
+   "key_url": "https://platform.openai.com/api-keys",
+   "embedding": "text-embedding-3-small",
+   "models": [
+    "gpt-6.1-terra",
+    "gpt-6-sol",
+    "gpt-5.6-terra"
+   ],
+   "desc": "GPT 系列"
+  },
+  {
+   "id": "openrouter",
+   "title": "OpenRouter",
+   "base_url": "https://openrouter.ai/api/v1",
+   "color": "#6467f2",
+   "key_url": "https://openrouter.ai/settings/keys",
+   "models": [
+    "deepseek/deepseek-v4.1-flash",
+    "google/gemini-3.8-flash",
+    "openai/gpt-6.1-terra"
+   ],
+   "desc": "一个密钥用几百个模型"
+  },
+  {
+   "id": "siliconflow",
+   "title": "硅基流动",
+   "base_url": "https://api.siliconflow.cn/v1",
+   "color": "#7c3aed",
+   "key_url": "https://cloud.siliconflow.cn/account/ak",
+   "embedding": "BAAI/bge-m3",
+   "models": [
+    "zai-org/GLM-5.3-Flash",
+    "Qwen/Qwen3.8-27B",
+    "Pro/moonshotai/Kimi-K2.6"
+   ],
+   "desc": "开源模型多，有免费的 embedding"
+  },
+  {
+   "id": "dashscope",
+   "title": "阿里云百炼",
+   "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+   "color": "#ff6a00",
+   "key_url": "https://bailian.console.aliyun.com/?apiKey=1",
+   "embedding": "text-embedding-v4",
+   "models": [
+    "qwen3.8-flash",
+    "qwen3.7-plus",
+    "qwen3.6-flash"
+   ],
+   "desc": "通义千问"
+  },
+  {
+   "id": "zhipu",
+   "title": "智谱",
+   "base_url": "https://open.bigmodel.cn/api/paas/v4",
+   "color": "#3859ff",
+   "key_url": "https://bigmodel.cn/usercenter/proj-mgmt/apikeys",
+   "embedding": "embedding-3",
+   "models": [
+    "glm-5.3-flash",
+    "glm-5v-turbo",
+    "glm-4.6v"
+   ],
+   "desc": "GLM 系列"
+  },
+  {
+   "id": "moonshot",
+   "title": "Kimi",
+   "base_url": "https://api.moonshot.cn/v1",
+   "color": "#16191e",
+   "key_url": "https://platform.moonshot.cn/console/api-keys",
+   "models": [
+    "kimi-k3",
+    "kimi-k2.6"
+   ],
+   "desc": "月之暗面"
+  },
+  {
+   "id": "ollama",
+   "title": "Ollama",
+   "base_url": "http://localhost:11434/v1",
+   "color": "#5b5b63",
+   "no_key": true,
+   "embedding": "nomic-embed-text",
+   "desc": "本机跑的模型，不用密钥",
+   "note": "用 Docker 部署时，地址写 http://host.docker.internal:11434/v1"
+  },
+  {
+   "id": "custom",
+   "title": "其他",
+   "base_url": "",
+   "color": "#5b5b63",
+   "desc": "任何兼容 OpenAI 的接口：vLLM、LM Studio、one-api……"
+  }
+ ],
+ "botadmin_primary": [
+  {
+   "type": "function",
+   "function": {
+    "name": "get_bot",
+    "description": "查看 Bot 的资料，不用确认。不填 name：所有 Bot 的概况（职责开头、技能和定时任务个数、在哪些群、最近什么时候聊过、有没有在做的任务）；填 name：这个 Bot 的完整资料（全部职责、技能和做法、定时任务、所在群聊、正在做的任务）。改职责或技能之前先用它看原文",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "name": {
+       "type": "string",
+       "description": "可选：Bot 的名字"
+      },
+      "skill": {
+       "type": "string",
+       "description": "可选：只看它的这个技能的完整做法（不带 /）"
+      }
+     }
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "create_bot",
+    "description": "新建一个 Bot。会先弹卡片请用户确认（上面有名字、职责和技能），用户同意后自动建好；有了结果（建好、用户没同意、没建成）你会接着说一轮，建好后要做的事（比如私信它交代事情）到时再做。",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "name": {
+       "type": "string",
+       "description": "名字，最多 40 个字，不能和现有的 Bot 重名"
+      },
+      "instructions": {
+       "type": "string",
+       "description": "它的职责和做事方式，写完整：负责什么、怎么做、有哪些硬性约束。别的 Bot 也靠这段判断什么事该找它"
+      },
+      "avatar": {
+       "type": "object",
+       "description": "可选：头像，一个形状加一个颜色",
+       "properties": {
+        "shape": {
+         "type": "string",
+         "enum": [
+          "square",
+          "sparkle",
+          "clover",
+          "flower",
+          "heart",
+          "house",
+          "star",
+          "circle"
+         ]
+        },
+        "color": {
+         "type": "string",
+         "enum": [
+          "#7c9cff",
+          "#ff8a65",
+          "#4fc3a1",
+          "#f6c453",
+          "#c792ea",
+          "#ff6b9a",
+          "#5cc8ff",
+          "#a3a3a3"
+         ]
+        }
+       }
+      },
+      "skills": {
+       "type": "array",
+       "description": "可选：一起给它的技能（可复用的做法），最多 10 个",
+       "items": {
+        "type": "object",
+        "properties": {
+         "name": {
+          "type": "string",
+          "description": "简短的名字，用于 /名字 调用，不含空格"
+         },
+         "description": {
+          "type": "string",
+          "description": "一句话说明什么时候用"
+         },
+         "body": {
+          "type": "string",
+          "description": "完整的做法：步骤、要用的网站或应用、输出格式"
+         }
+        },
+        "required": [
+         "name",
+         "body"
+        ]
+       }
+      }
+     },
+     "required": [
+      "name",
+      "instructions"
+     ]
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "update_bot",
+    "description": "修改一个 Bot：名字、职责、头像、技能，只填要改的。会先弹卡片请用户确认（上面有改前改后），用户同意后自动改好；有了结果你会接着说一轮",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "name": {
+       "type": "string",
+       "description": "要改哪个 Bot（现在的名字），改你自己就填你的名字"
+      },
+      "new_name": {
+       "type": "string",
+       "description": "可选：新名字，最多 40 个字"
+      },
+      "instructions": {
+       "type": "string",
+       "description": "可选：改完后的完整职责，是全文，不是只写改动。先用 get_bot 看原文，只改要改的地方，其余一字不差照抄"
+      },
+      "avatar": {
+       "type": "object",
+       "description": "可选：头像，一个形状加一个颜色",
+       "properties": {
+        "shape": {
+         "type": "string",
+         "enum": [
+          "square",
+          "sparkle",
+          "clover",
+          "flower",
+          "heart",
+          "house",
+          "star",
+          "circle"
+         ]
+        },
+        "color": {
+         "type": "string",
+         "enum": [
+          "#7c9cff",
+          "#ff8a65",
+          "#4fc3a1",
+          "#f6c453",
+          "#c792ea",
+          "#ff6b9a",
+          "#5cc8ff",
+          "#a3a3a3"
+         ]
+        }
+       }
+      },
+      "skills": {
+       "type": "array",
+       "description": "可选：给它新增的技能，或者同名的整个替换掉（做法写全文），最多 10 个",
+       "items": {
+        "type": "object",
+        "properties": {
+         "name": {
+          "type": "string",
+          "description": "简短的名字，用于 /名字 调用，不含空格"
+         },
+         "description": {
+          "type": "string",
+          "description": "一句话说明什么时候用"
+         },
+         "body": {
+          "type": "string",
+          "description": "完整的做法：步骤、要用的网站或应用、输出格式"
+         }
+        },
+        "required": [
+         "name",
+         "body"
+        ]
+       }
+      },
+      "remove_skills": {
+       "type": "array",
+       "items": {
+        "type": "string"
+       },
+       "description": "可选：要删掉的它的技能，写名字（不带 /）"
+      }
+     },
+     "required": [
+      "name"
+     ]
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "delete_bot",
+    "description": "删除一个 Bot，连同它的私聊记录、技能、定时任务和它自己的记忆，删了不能恢复；它会退出所在的群聊，在做的任务会停掉。只在用户明确要删时用。会先弹卡片请用户确认，同意后才删；有了结果你会接着说一轮",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "name": {
+       "type": "string",
+       "description": "要删的 Bot 的名字"
+      },
+      "reason": {
+       "type": "string",
+       "description": "为什么删，写在卡片上给用户看"
+      }
+     },
+     "required": [
+      "name"
+     ]
+    }
+   }
+  }
+ ],
+ "botadmin_other": [
+  {
+   "type": "function",
+   "function": {
+    "name": "update_bot",
+    "description": "修改你自己：名字、职责、头像、技能，只填要改的。会先弹卡片请用户确认（上面有改前改后），用户同意后自动改好；有了结果你会接着说一轮",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "name": {
+       "type": "string",
+       "description": "填你自己的名字：你不是主 Bot，只能改你自己"
+      },
+      "new_name": {
+       "type": "string",
+       "description": "可选：新名字，最多 40 个字"
+      },
+      "instructions": {
+       "type": "string",
+       "description": "可选：改完后的完整职责，是全文，不是只写改动。先用 get_bot 看原文，只改要改的地方，其余一字不差照抄"
+      },
+      "avatar": {
+       "type": "object",
+       "description": "可选：头像，一个形状加一个颜色",
+       "properties": {
+        "shape": {
+         "type": "string",
+         "enum": [
+          "square",
+          "sparkle",
+          "clover",
+          "flower",
+          "heart",
+          "house",
+          "star",
+          "circle"
+         ]
+        },
+        "color": {
+         "type": "string",
+         "enum": [
+          "#7c9cff",
+          "#ff8a65",
+          "#4fc3a1",
+          "#f6c453",
+          "#c792ea",
+          "#ff6b9a",
+          "#5cc8ff",
+          "#a3a3a3"
+         ]
+        }
+       }
+      },
+      "skills": {
+       "type": "array",
+       "description": "可选：给它新增的技能，或者同名的整个替换掉（做法写全文），最多 10 个",
+       "items": {
+        "type": "object",
+        "properties": {
+         "name": {
+          "type": "string",
+          "description": "简短的名字，用于 /名字 调用，不含空格"
+         },
+         "description": {
+          "type": "string",
+          "description": "一句话说明什么时候用"
+         },
+         "body": {
+          "type": "string",
+          "description": "完整的做法：步骤、要用的网站或应用、输出格式"
+         }
+        },
+        "required": [
+         "name",
+         "body"
+        ]
+       }
+      },
+      "remove_skills": {
+       "type": "array",
+       "items": {
+        "type": "string"
+       },
+       "description": "可选：要删掉的它的技能，写名字（不带 /）"
+      }
+     },
+     "required": [
+      "name"
+     ]
+    }
+   }
+  }
+ ]
+}
