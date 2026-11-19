@@ -146,21 +146,29 @@ def snapshot() -> Path:
     """数据库的一致快照（服务照常运行）。放在临时目录里。"""
     from . import memory
     work = Path(tempfile.mkdtemp(prefix="osa-backup-"))
-    db = sqlite3.connect(work / "osa.db")
-    memory.conn.commit()
-    memory.conn.backup(db)
-    db.close()
+    try:
+        db = sqlite3.connect(work / "osa.db")
+        try:
+            memory.conn.commit()
+            memory.conn.backup(db)
+        finally:
+            db.close()
+    except BaseException:
+        shutil.rmtree(work, ignore_errors=True)
+        raise
     return work / "osa.db"
 
 
 def export(passphrase: str, snap: Path | None = None) -> tuple[Path, dict]:
     """打一个备份，返回 (文件路径, 摘要)。文件在临时目录里，用完由调用方删掉整个目录。
     snap：先在事件循环里做好的快照，其余（解密密钥、压缩、加密）可以放到线程里做。"""
-    check_passphrase(passphrase)
-    from . import vault
-    snap = snap or snapshot()
-    work = snap.parent
+    work = snap.parent if snap else None   # 出错时整个临时目录删掉，传进来的快照也算
     try:
+        check_passphrase(passphrase)
+        from . import vault
+        if snap is None:
+            snap = snapshot()
+            work = snap.parent
         db = sqlite3.connect(snap)
         secrets, unreadable = {}, []
         for name, ct in db.execute("select name, ciphertext from vault").fetchall():
@@ -189,7 +197,8 @@ def export(passphrase: str, snap: Path | None = None) -> tuple[Path, dict]:
         zpath.unlink()
         return out, meta
     except BaseException:
-        shutil.rmtree(work, ignore_errors=True)
+        if work:
+            shutil.rmtree(work, ignore_errors=True)
         raise
 
 

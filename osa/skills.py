@@ -141,7 +141,7 @@ def clean_apps(apps) -> list[str]:
         apps = re.split(r"[\s,，、]+", apps)
     if not isinstance(apps, list):
         return []
-    out = [str(a).strip().lstrip("@").lower() for a in apps if isinstance(a, (str, int))]
+    out = [str(a).strip().lstrip("@").lower() for a in apps if isinstance(a, (str, int)) and not isinstance(a, bool)]   # YAML 的 true 不是应用名
     return list(dict.fromkeys(a for a in out if APP_ID.match(a)))[:20]
 
 

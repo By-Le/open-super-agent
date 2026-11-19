@@ -243,3 +243,18 @@ async def test_missing_apns_key_is_a_clean_error(fake, phone, monkeypatch):
     monkeypatch.setattr(relay, "KEY_FILE", "/nonexistent/AuthKey.p8")
     out, = await push.send("t", "b")
     assert "502" in out and "not configured" in out and push.count() == 1
+
+
+async def test_endpoint_with_default_port(fake, phone):
+    """订阅地址写了 :443 时，签的 aud 不带端口，中转照样认（它按 https://域名 校验）。"""
+    push.unsubscribe(phone["endpoint"])
+    with_port = phone["endpoint"].replace(ORIGIN, ORIGIN + ":443")
+    push.subscribe({"endpoint": with_port, "keys": {"p256dh": push.b64u(_point(phone["priv"])), "auth": push.b64u(phone["secret"])}})
+    try:
+        assert await push.send("t", "b") == ["ok"]
+    finally:
+        push.unsubscribe(with_port)
+    aud = lambda url: json.loads(relay.unb64u(push.vapid_header(url).split("t=")[1].split(".")[1]))["aud"]
+    assert aud("https://push.example:443/w/1") == "https://push.example"
+    assert aud("http://push.example:80/w/1") == "http://push.example"
+    assert aud("https://push.example:8443/w/1") == "https://push.example:8443"   # 别的端口照写

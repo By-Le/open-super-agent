@@ -135,3 +135,10 @@ async def test_index_is_revalidated(no_password):
         for path in ("/", "/library/pages/3"):
             r = await c.get(path)
             assert r.status_code == 200 and r.headers.get("cache-control") == "no-cache", path
+
+
+def test_task_result_without_content():
+    """任务结果的消息没有 content：照样推，正文空着，不报错。"""
+    title, body, url, tag = push.message_for({"type": "message", "chat_id": 3, "message": {
+        "role": "task", "bot_id": None, "meta": {"kind": "result", "status": "done"}}})
+    assert body == "" and url == "/?chat=3" and tag == "chat-3"
