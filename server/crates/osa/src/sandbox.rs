@@ -244,11 +244,53 @@ pub async fn execute(lang: &str, code: &Value, files: &Value, timeout: &Value, n
     } else {
         on_host(&lang, code, &inputs, timeout, net).await
     };
-    // TODO（第 2 步 B）：派到用户 Mac 上的任务（computer::current().kind() == "mac"），把产出的文件传到那台 Mac（sandbox.py 的 _to_mac）
-    match r {
+    let r = match r {
         Ok(r) => r,
-        Err(e) => res(format!("没跑成：{e}")),
+        Err(e) => return res(format!("没跑成：{e}")),
+    };
+    let mac = crate::computer::current();
+    if !r.files.is_empty() && mac.kind() == "mac" {
+        // 派到你的 Mac 上的任务：文件工具看的是那台 Mac 的工作文件夹，传过去
+        return to_mac(&mac, &wh, r).await;
     }
+    r
+}
+
+/// 把服务器这边跑出来的文件传到那台 Mac 的工作文件夹（同样放在 .run/<编号>/ 下），结果里的路径换成 Mac 上的
+async fn to_mac(mac: &crate::computer::Computer, wh: &str, r: RunResult) -> RunResult {
+    let name = mac.backend.name();
+    let mut text = r.text.clone();
+    let mut out = vec![];
+    let sep = format!("/{RUN}/");
+    let moved: Result<(), String> = async {
+        for f in &r.files {
+            let rel = f.split_once(&sep).map(|x| x.1.to_string()).unwrap_or_default();
+            let data = if wh == "computer" {
+                crate::computer::get(0).read_bytes(f, 32 << 20).await.map_err(|e| e.0)?
+            } else {
+                std::fs::read(f).map_err(|e| e.to_string())?
+            };
+            mac.write_bytes(&format!("{RUN}/{rel}"), &data).await.map_err(|e| e.0)?;
+            let ws = mac.workspace();
+            let p = if ws.is_empty() { format!("{RUN}/{rel}") } else { crate::util::normpath(&format!("{ws}/{RUN}/{rel}")) };
+            text = text.replace(&format!("- {f}"), &format!("- {p}"));
+            out.push(p);
+        }
+        Ok(())
+    }
+    .await;
+    if let Err(e) = moved {
+        return RunResult { text: format!("{}\n（代码在服务器上跑的，产出的文件没能传到「{name}」：{e}）", r.text), files: r.files, timed_out: r.timed_out };
+    }
+    if wh != "computer" {
+        if let Some((head, rel)) = r.files[0].split_once(&sep) {
+            let first = rel.split('/').next().unwrap_or("");
+            if !first.is_empty() {
+                let _ = std::fs::remove_dir_all(Path::new(head).join(RUN).join(first));
+            }
+        }
+    }
+    RunResult { text: format!("{text}\n（代码在服务器上跑的，读不到「{name}」上的文件；产出的文件已经传到那台 Mac 的工作文件夹）"), files: out, timed_out: r.timed_out }
 }
 
 // ---------- 电脑里（Docker / Instabox） ----------
@@ -421,7 +463,7 @@ fn python_known() -> Option<String> {
 }
 
 /// 找 Python，没有就用 uv 装一份（第一次会下载，几十秒）
-async fn python() -> Option<String> {
+pub async fn python() -> Option<String> {
     if let Some(p) = tokio::task::spawn_blocking(python_known).await.ok().flatten() {
         return Some(p);
     }

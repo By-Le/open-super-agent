@@ -309,7 +309,7 @@ async fn run(task: &Arc<Task>, c: &Arc<Computer>, name: &str, args: &Value, key:
     let mut paths: Vec<String> = vec![];
     if name == "browser_upload" {
         let given: Vec<String> = args["paths"].as_array().map(|p| p.iter().take(10).map(py::str_of).collect()).unwrap_or_default();
-        paths = c.backend.upload_paths(given);
+        paths = c.backend.upload_paths(given)?;
         if paths.is_empty() {
             return Ok(("没有给要上传的文件路径".into(), None));
         }

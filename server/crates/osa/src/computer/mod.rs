@@ -4,11 +4,15 @@
 //! instabox（云电脑）；auto 是桌面 App 里用 host，否则有 Instabox 的 API key 用 Instabox、没有用 Docker。
 //! 服务器上的 Bot 还可以把某个任务派到你的 Mac 上做（mac / link，第 2 步 B）：current() 给出“这个任务用的电脑”。
 
+pub mod agent;
 pub mod api;
 pub mod base;
 pub mod host;
 pub mod instabox;
+pub mod link;
 pub mod local;
+pub mod mac;
+pub mod macdesk;
 pub mod pc;
 pub mod tools;
 
@@ -26,6 +30,7 @@ use std::sync::{Arc, LazyLock};
 
 pub fn migrate() {
     db::batch("create table if not exists computers(bot_id integer primary key, backend text, ref text)");
+    link::migrate();
 }
 
 pub const SHARED: i64 = 0;
@@ -241,21 +246,50 @@ pub async fn direct(bot_id: i64, bot_name: &str, chat_id: i64, name: &str, args:
     }
 }
 
-// ---------- 派任务到你的 Mac（第 2 步 B） ----------
+// ---------- 派任务到你的 Mac（link.rs、mac.rs） ----------
 pub fn link_rows() -> Vec<Value> {
-    vec![]
+    link::rows()
 }
 
+/// dispatch 的 mac：按名字找用户登记过的 Mac。找不到、没连上返回 (None, 给模型的话)。演示服务器由 router 先挡掉
 pub fn pick_mac(name: &str) -> (Option<Value>, String) {
-    (None, format!("没派发：没有叫「{name}」的 Mac。用户登记过的 Mac：没有"))
+    let Some(r) = link::find(name) else {
+        let names: Vec<String> = link::rows().iter().map(|x| format!("「{}」", py::str_of(&x["name"]))).collect();
+        let names = if names.is_empty() { "没有".to_string() } else { names.join("、") };
+        return (None, format!("没派发：没有叫「{name}」的 Mac。用户登记过的 Mac：{names}"));
+    };
+    if r["connected"] != true {
+        return (None, format!("没派发：「{}」现在没连上（那台 Mac 上的 App 没开、没联网，或者电脑睡着了）。请告诉用户。", py::str_of(&r["name"])));
+    }
+    (Some(r), String::new())
 }
 
+/// 派到你的 Mac 上的任务：先问你同不同意，同意了这个任务的电脑工具就用那台 Mac。不行返回原因（任务按失败结束）
 pub async fn use_mac(task: &Arc<Task>) -> String {
-    t!("「{name}」已经移除了，没有做", name = task.mac_name.clone())
+    let Some(r) = link::row(task.mac) else {
+        return t!("「{name}」已经移除了，没有做", name = task.mac_name.clone());
+    };
+    let name = py::str_of(&r["name"]);
+    let args = json!({"电脑": name, "任务": py::head(&task.goal, 500)});
+    let (ok, note) = if crate::approvals::decide("use_mac", None, &args).0 {
+        let (ok, note, _) = crate::approvals::request(task, "use_mac", &args, crate::approvals::Req::default()).await;
+        (ok, note)
+    } else {
+        (true, String::new())
+    };
+    if !ok {
+        let base = t!("你没同意在「{name}」上做这个任务", name = name.clone());
+        return if note.is_empty() { base.trim().to_string() } else { format!("{base}：{note}").trim().to_string() };
+    }
+    if link::connected(task.mac).is_none() {
+        return link::offline(&name);
+    }
+    set_task_pc(mac::get(task.mac));
+    String::new()
 }
 
 pub async fn macs_state() -> Vec<Value> {
-    vec![]
+    mac::macs_state().await
 }
 
 pub fn routes() -> axum::Router {

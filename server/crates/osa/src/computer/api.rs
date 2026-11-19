@@ -1,5 +1,5 @@
 //! 电脑的接口：右栏的电脑面板、接手 / 交还、Instabox 的机器和 API key、看哪个任务、VNC 画面转发、资料库里电脑里的文件。
-//! 对应 osa/server.py 里电脑和文件那两段。派任务到你的 Mac（/api/computer/links、/api/computer/macs…、/api/computer/link）是第 2 步 B。
+//! 对应 osa/server.py 里电脑和文件那两段，加上你的 Mac（/api/computer/links、/api/computer/macs…、/api/computer/link）。
 
 use super::base::{Computer, Vnc};
 use super::{HOSTS, get, public_state};
@@ -204,6 +204,94 @@ async fn pc_macs() -> Res {
     ok(json!(super::macs_state().await))
 }
 
+// ---------- 你的 Mac：派任务的去处（link.rs、mac.rs） ----------
+async fn pc_link_create(Body(d): Body) -> Res {
+    if security::demo() {
+        return Err(ApiError::new(403, t!("演示服务器上不能把任务派到你的电脑")));
+    }
+    let name = if py::truthy(&d["name"]) { py::str_of(&d["name"]) } else { "Mac".into() };
+    let (lid, token) = super::link::create(&name);
+    ok(json!({"id": lid, "token": token}))
+}
+
+async fn pc_link_delete(Path(lid): Path<i64>) -> Res {
+    let c = super::mac::get(lid);
+    if !c.st.lock().users.is_empty() || !c.backend.desk_owner().is_empty() {
+        return Err(ApiError::bad(t!("有任务在「{name}」上做，等它做完或者先停掉", name = c.backend.name())));
+    }
+    super::link::revoke(lid).await;
+    super::mac::drop_mac(lid);
+    ok(json!({"ok": true}))
+}
+
+fn mac_pc(lid: i64) -> Result<Arc<Computer>, ApiError> {
+    if security::demo() {
+        return Err(ApiError::new(403, t!("演示服务器上不能把任务派到你的电脑")));
+    }
+    if super::link::row(lid).is_none() {
+        return Err(ApiError::not_found(t!("没有这台 Mac")));
+    }
+    Ok(super::mac::get(lid))
+}
+
+async fn mac_state_out(lid: i64) -> Value {
+    let st = match super::link::row(lid) {
+        Some(r) => super::mac::mac_state(&r).await,
+        None => Value::Null,
+    };
+    server::broadcast(json!({"type": "macs", "macs": super::macs_state().await}));
+    st
+}
+
+async fn pc_mac_update(Path(lid): Path<i64>, Body(d): Body) -> Res {
+    mac_pc(lid)?;
+    if d.get("shell").is_some() {
+        super::link::set_shell(lid, py::truthy(&d["shell"]));
+    }
+    ok(mac_state_out(lid).await)
+}
+
+async fn pc_mac_shot(Path(lid): Path<i64>, q: Q) -> Response {
+    let c = match mac_pc(lid) {
+        Ok(c) => c,
+        Err(e) => return e.into_response(),
+    };
+    match c.backend.peek(&c, "jpeg", qs(&q, "view").unwrap_or("")).await {
+        Ok(data) => ([(header::CONTENT_TYPE, "image/jpeg"), (header::CACHE_CONTROL, "no-store")], data).into_response(),
+        Err(e) => ApiError::new(409, e.0).into_response(),
+    }
+}
+
+async fn pc_mac_action(Path((lid, action)): Path<(i64, String)>) -> Res {
+    let c = mac_pc(lid)?;
+    match action.as_str() {
+        "grant" => {
+            if !c.backend.desk_supported() {
+                return Err(ApiError::bad(t!("「{name}」不能操作整个屏幕", name = c.backend.name())));
+            }
+            c.backend.grant(&c).await.map_err(bad)?;
+        }
+        "takeover" => {
+            c.takeover();
+            c.changed();
+        }
+        "handback" => {
+            c.handback();
+            c.changed();
+            let ids: Vec<i64> = approvals::pending_public()
+                .iter()
+                .filter(|a| a["mac"].as_i64() == Some(lid) && a["kind"] == "help")
+                .filter_map(|a| a["id"].as_i64())
+                .collect();
+            for id in ids {
+                approvals::resolve(id, true, "", false, &Value::Null, None, None);
+            }
+        }
+        _ => return Err(ApiError::not_found(t!("未知操作"))),
+    }
+    ok(mac_state_out(lid).await)
+}
+
 /// 网页上的 noVNC ⇄ 电脑的 VNC。只做字节转发
 async fn pc_vnc(Path(bot_id): Path<i64>, h: HeaderMap, up: WebSocketUpgrade) -> Response {
     let proto = h.get("sec-websocket-protocol").and_then(|v| v.to_str().ok()).unwrap_or("").contains("binary");
@@ -399,12 +487,19 @@ async fn download(q: Q, h: HeaderMap) -> Result<Response, ApiError> {
     let path = qs(&q, "path").ok_or_else(|| ApiError::new(422, "Field required: path"))?.to_string();
     let mac = qi(&q, "mac").unwrap_or(0);
     let force = qbool(&q, "download");
-    if mac != 0 {
-        // 派到你的 Mac 上的任务发的文件（第 2 步 B）
-        return Err(ApiError::not_found(t!("这台 Mac 已经移除")));
-    }
-    let p = library::norm(&path, None).map_err(ApiError::bad)?;
-    let c = files_pc(true).await?.ok_or_else(|| ApiError::bad("电脑没开"))?;
+    let (c, p) = if mac != 0 {
+        // 派到你的 Mac 上的任务发的文件：在那台 Mac 上
+        if super::link::row(mac).is_none() {
+            return Err(ApiError::not_found(t!("这台 Mac 已经移除")));
+        }
+        let c = super::mac::get(mac);
+        let ws = super::link::connected(mac).map(|l| l.workspace.clone()).ok_or_else(|| ApiError::bad(super::link::offline(&c.backend.name())))?;
+        let p = library::norm(&path, Some(&ws)).map_err(ApiError::bad)?;
+        (c, p)
+    } else {
+        let p = library::norm(&path, None).map_err(ApiError::bad)?;
+        (files_pc(true).await?.ok_or_else(|| ApiError::bad("电脑没开"))?, p)
+    };
     let st = c.stat_paths(std::slice::from_ref(&p)).await.map_err(bad)?.get(&p).cloned();
     let Some(st) = st.filter(|s| s["dir"] != true) else {
         return Err(ApiError::not_found(t!("文件不存在：{path}", path = p.clone())));
@@ -531,6 +626,12 @@ pub fn routes() -> axum::Router {
         .route("/api/computer/instabox-key", put(pc_instabox_key))
         .route("/api/computer/watch", post(pc_watch))
         .route("/api/computer/macs", rget(pc_macs))
+        .route("/api/computer/links", post(pc_link_create))
+        .route("/api/computer/links/{lid}", axum::routing::delete(pc_link_delete))
+        .route("/api/computer/macs/{lid}", put(pc_mac_update))
+        .route("/api/computer/macs/{lid}/shot", rget(pc_mac_shot))
+        .route("/api/computer/macs/{lid}/{action}", post(pc_mac_action))
+        .route("/api/computer/link", rget(super::link::ws))
         .route("/api/files", rget(list_files).delete(delete_file))
         .route("/api/files/download", rget(download_file))
         .route("/files/download", rget(download_file))
