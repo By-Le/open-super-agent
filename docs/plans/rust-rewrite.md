@@ -88,8 +88,7 @@ Python 到 Rust 的对应：
 
 ## 还没迁的（2026-11-19）
 
-- **电脑（第 2 步 B）**：本机 Chrome（host）、整台 Mac（macdesk）、派任务到你的 Mac（mac / link / agent，/api/computer/links、
-  /api/computer/macs/{id}…、/api/computer/link）。现在选了 host 会照实说“Rust 版还没有本机电脑”；macs 列表是空的。
+- **整台 Mac 的真实鼠标键盘**（desktop_*）：代码照搬了，接口测试只测到权限检查那一层（测试里不动你的鼠标键盘），要在真机上点一遍。
 - **事件来源**：2026-11-20 都迁完了（收邮件 IMAP、日历、天气、地震、价格、文件夹）。天气、地震、价格的接口地址写死在代码里，
   只有单元测试（期望值是 Python 版同样输入跑出来的）；日历、文件夹、收邮件有接口测试（contract/test_sources.py，假日历网站、
   TLS 的假 IMAP 服务器）。Rust 版的 IMAP 是自己写的小客户端（LOGIN / ID / EXAMINE / UID SEARCH / UID FETCH），
@@ -108,11 +107,25 @@ Python 到 Rust 的对应：
   desk(op, key, args)（screenshot / inspect / focused / click / drag / type / key / scroll / open_app，返回的 JSON 里截图放在
   "png"，base64）、desk_claim / desk_release / desk_allowed / desk_ok / desk_denied / set_desk_denied，mac 用的 lid、name。
 - 派到 Mac 的任务：router 跑任务时包了 `computer::with_task_pc`，B 在 use_mac 里调 `computer::set_task_pc(那台 Mac)`，
-  `computer::current()` 就是它。pick_mac / use_mac / link_rows / macs_state 现在是 mod.rs 里的占位。
+  `computer::current()` 就是它（第 2 步 B 已经接上，见下面）。
 - 电脑里运行的三个脚本不改：cdp_helper.py（字节原样写进电脑，路径 /tmp/osa-cdp-<sha1 前 8 位>.py）、computerd.py、镜像。
 - 接口测试 contract/test_computer.py 用真的 osa-computer:2 容器加测试里的假 computerd（和 lsp 上 compose 的电脑容器同一条路），
   没装 Docker、没有镜像就跳过；Instabox 用假 API（INSTABOX_API_URL）。这台 Mac 的 shell 设了 DOCKER_DEFAULT_PLATFORM，
   起容器要带 --platform（local.rs 的 platform() 也是为这个）。
+
+### 第 2 步 B：本机电脑和你的 Mac（2026-11-20）
+
+- `computer/host.rs` 一个类型两种地方：`Place::Local`（这台机器：本机跑 cdp_helper.py、读写工作文件夹、macdesk）和
+  `Place::Mac(编号)`（经 link.rs 的连接交给那台 Mac 上的小程序）。对应 Python 的 HostComputer / MacComputer（后者继承前者）。
+- **macdesk 留着 Python**：osa/computer/macdesk.py 原样编进二进制，第一次用到时写到数据目录 `computers/host/macdesk-<哈希>/`，
+  由一个常驻的 Python 小进程按行收发 JSON（`computer/macdesk.rs`），每个函数和 Python 版里直接调用的一样。改成原生
+  （CoreGraphics / AX 的 FFI）不难但要细测坐标换算、剪贴板、按键表，先不做。整屏的判断逻辑（不碰自己的窗口、你一动鼠标就停、
+  占屏幕排队）在 Rust 里照搬 host.py。权限照旧记在启动服务的 App 名下（小进程是服务的子进程）。
+- **cdp_helper.py 在本机也照旧用 Python 跑**（和 Docker / Instabox 里一样每个动作一个进程），Python 按 sandbox.rs 的顺序找。
+  找不到 Python 时报“找不到 Python：Bot 的 Chrome 由一个 Python 小脚本控制……”（Python 版不会有这一句：它自己就是 Python）。
+- **你的 Mac 上的小程序**：`osa-server agent`（环境变量和 `python -m osa.computer.agent` 一样）。线上的消息和 Python 版逐字段一样，
+  四种组合都测过（contract/test_mac.py）：Python 服务器 ⇄ Python / Rust 小程序、Rust 服务器 ⇄ Python / Rust 小程序。
+  桌面 App 改成起 `osa-server agent` 放在第 4 步。
 
 ## 迁一个模块的做法
 

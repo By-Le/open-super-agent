@@ -181,8 +181,8 @@ pub trait Backend: Send + Sync {
     async fn rm(&self, c: &Computer, path: &str) -> Result<(), String> {
         c.rm_sh(path).await
     }
-    fn upload_paths(&self, paths: Vec<String>) -> Vec<String> {
-        paths
+    fn upload_paths(&self, paths: Vec<String>) -> R<Vec<String>> {
+        Ok(paths)
     }
     async fn helper_run(&self, c: &Computer, payload: &Value) -> R<Value> {
         c.helper_run_sh(payload).await
@@ -263,6 +263,10 @@ pub trait Backend: Send + Sync {
         None
     }
     fn set_desk_denied(&self, _key: &str) {}
+    /// 谁占着屏幕（移除一台 Mac 前要看）
+    fn desk_owner(&self) -> String {
+        String::new()
+    }
     /// 派到的 Mac：登记的编号（mac 后端用）
     fn lid(&self) -> i64 {
         0

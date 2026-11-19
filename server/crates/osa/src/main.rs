@@ -1,4 +1,5 @@
 //! osa-server：和 `uvicorn osa.server:app --host … --port …` 一样的用法。
+//! `osa-server agent`：你的 Mac 上替服务器上的 Bot 干活的小程序（Python 版的 `python -m osa.computer.agent`，见 computer/agent.rs）。
 
 use std::net::SocketAddr;
 
@@ -8,6 +9,9 @@ async fn main() -> anyhow::Result<()> {
         .with_env_filter(tracing_subscriber::EnvFilter::try_from_env("OSA_LOG").unwrap_or_else(|_| "info".into()))
         .with_target(false)
         .init();
+    if std::env::args().nth(1).as_deref() == Some("agent") {
+        return osa::computer::agent::main().await;
+    }
     let mut host = "127.0.0.1".to_string();
     let mut port: u16 = 8765;
     let mut args = std::env::args().skip(1);
