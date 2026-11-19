@@ -321,16 +321,12 @@ fn transport(name: &str, a: &Value) -> Result<Transport, String> {
     if kind == "http" || kind == "sse" {
         let mut missing = vec![];
         let url = resolve(&a["url"], &mut missing);
-        let mut headers: HashMap<String, String> = a["headers"].as_object().map(|o| o.iter().map(|(k, v)| (k.clone(), resolve(v, &mut missing))).collect()).unwrap_or_default();
+        let headers: HashMap<String, String> = a["headers"].as_object().map(|o| o.iter().map(|(k, v)| (k.clone(), resolve(v, &mut missing))).collect()).unwrap_or_default();
         if !missing.is_empty() {
             return Err(t!("缺少密钥：{names}", names = missing.join(", ")));
         }
-        if py::truthy(&a["oauth"]) {
-            if let Some(tok) = mcp_oauth::access_token(name) {
-                headers.insert("Authorization".into(), format!("Bearer {tok}"));
-            }
-        }
-        return Ok(if kind == "sse" { Transport::Sse { url, headers } } else { Transport::Http { url, headers } });
+        let auth = if py::truthy(&a["oauth"]) { Some(mcp_oauth::provider(name, a, &url)?) } else { None };
+        return Ok(if kind == "sse" { Transport::Sse { url, headers, auth } } else { Transport::Http { url, headers, auth } });
     }
     let mut env: HashMap<String, String> = std::env::vars().filter(|(k, _)| k != "OSA_PASSWORD").collect();
     env.extend(env_of(a)?);
@@ -409,8 +405,14 @@ async fn serve(name: String, a: Value, ready: tokio::sync::oneshot::Sender<Resul
     let r: Result<(), (Later, bool)> = async {
         let tr = transport(&name, &a).map_err(|e| (Later::new("连接失败：{error}", &[("error", json!(py::head(&e, 300)))]), false))?;
         let session = Session::connect(tr, mcpapps::capability(), Duration::from_secs_f64(wait_s.max(1.0))).await.map_err(|e| match e {
-            McpError::Unauthorized(_) if py::truthy(&a["oauth"]) => (Later::plain("需要重新登录授权"), true),
+            // OAuth 要用户登录授权（还没授权、授权过期、没完成、取消了）
+            McpError::Unauthorized(m) if py::truthy(&a["oauth"]) => (Later::plain(&m), true),
             McpError::Transport(m) if m == "timeout" => (Later::plain("连接超时"), false),
+            e if e.to_string().contains("Token exchange failed") => {
+                let s = e.to_string();
+                let detail = s.split_once(": ").map(|x| x.1.to_string()).unwrap_or(s);
+                (Later::new("登录后没换到令牌，检查一下客户端 ID、密钥和回调地址：{error}", &[("error", json!(py::head(&detail, 200)))]), false)
+            }
             e => (Later::new("连接失败：{error}", &[("error", json!(py::head(&e.to_string(), 300)))]), false),
         })?;
         let tools = session.list_tools().await.map_err(|e| (Later::new("连接失败：{error}", &[("error", json!(py::head(&e.to_string(), 300)))]), false))?;

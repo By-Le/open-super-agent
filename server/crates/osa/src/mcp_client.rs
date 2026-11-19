@@ -77,8 +77,16 @@ impl Drop for Session {
 
 pub enum Transport {
     Stdio { command: String, args: Vec<String>, env: HashMap<String, String> },
-    Http { url: String, headers: HashMap<String, String> },
-    Sse { url: String, headers: HashMap<String, String> },
+    Http { url: String, headers: HashMap<String, String>, auth: Option<Arc<dyn Auth>> },
+    Sse { url: String, headers: HashMap<String, String>, auth: Option<Arc<dyn Auth>> },
+}
+
+/// 远程应用的登录授权（OAuth，见 mcp_oauth.rs）：每个请求前给出 Authorization，收到 401 时走一遍授权再重发
+pub trait Auth: Send + Sync {
+    /// 请求前要带的 Authorization（令牌过期了先刷新）。protocol：已经商定的协议版本
+    fn header(&self, protocol: Option<String>) -> futures::future::BoxFuture<'_, Option<String>>;
+    /// 收到 401：走完整的授权（可能要等用户在弹窗里登录），成功后调用方重发一次
+    fn unauthorized(&self, www_authenticate: Option<String>, protocol: Option<String>) -> futures::future::BoxFuture<'_, Result<(), McpError>>;
 }
 
 fn handle_incoming(msg: Value, pending: &Pending, out: &mpsc::UnboundedSender<Value>) {
@@ -187,7 +195,7 @@ impl Session {
                 }));
                 child_slot = Some(child);
             }
-            Transport::Http { url, headers } => {
+            Transport::Http { url, headers, auth } => {
                 let client = http_client(&headers)?;
                 let p = pending.clone();
                 let back = out_tx.clone();
@@ -196,20 +204,43 @@ impl Session {
                 tasks.push(tokio::spawn(async move {
                     while let Some(m) = out_rx.recv().await {
                         let is_init = m["method"] == "initialize";
-                        let mut rb = client.post(&url).header("accept", "application/json, text/event-stream").header("content-type", "application/json").json(&m);
-                        if let Some(s) = sid.lock().clone() {
-                            rb = rb.header("mcp-session-id", s);
-                        }
-                        if let Some(v) = proto.lock().clone() {
-                            rb = rb.header("mcp-protocol-version", v);
-                        }
                         let id = m["id"].as_i64();
-                        let r = match rb.send().await {
+                        let mut tried_auth = false;
+                        let r = loop {
+                            let mut rb = client.post(&url).header("accept", "application/json, text/event-stream").header("content-type", "application/json").json(&m);
+                            if let Some(s) = sid.lock().clone() {
+                                rb = rb.header("mcp-session-id", s);
+                            }
+                            let pv = proto.lock().clone();
+                            if let Some(v) = pv.clone() {
+                                rb = rb.header("mcp-protocol-version", v);
+                            }
+                            if let Some(a) = &auth {
+                                if let Some(h) = a.header(pv.clone()).await {
+                                    rb = rb.header("authorization", h);
+                                }
+                            }
+                            let r = match rb.send().await {
+                                Ok(r) => r,
+                                Err(e) => break Err(McpError::Transport(e.to_string())),
+                            };
+                            match &auth {
+                                Some(a) if r.status().as_u16() == 401 && !tried_auth => {
+                                    tried_auth = true;
+                                    let www = r.headers().get("www-authenticate").and_then(|v| v.to_str().ok()).map(String::from);
+                                    if let Err(e) = a.unauthorized(www, pv).await {
+                                        break Err(e);
+                                    }
+                                }
+                                _ => break Ok(r),
+                            }
+                        };
+                        let r = match r {
                             Ok(r) => r,
                             Err(e) => {
                                 if let Some(id) = id {
                                     if let Some(tx) = p.lock().remove(&id) {
-                                        let _ = tx.send(Err(McpError::Transport(e.to_string())));
+                                        let _ = tx.send(Err(e));
                                     }
                                 }
                                 continue;
@@ -280,9 +311,26 @@ impl Session {
                     let _ = closed_tx.send(Some(String::new()));
                 }));
             }
-            Transport::Sse { url, headers } => {
+            Transport::Sse { url, headers, auth } => {
                 let client = http_client(&headers)?;
-                let r = client.get(&url).header("accept", "text/event-stream").send().await.map_err(|e| McpError::Transport(e.to_string()))?;
+                let mut tried_auth = false;
+                let r = loop {
+                    let mut rb = client.get(&url).header("accept", "text/event-stream");
+                    if let Some(a) = &auth {
+                        if let Some(h) = a.header(None).await {
+                            rb = rb.header("authorization", h);
+                        }
+                    }
+                    let r = rb.send().await.map_err(|e| McpError::Transport(e.to_string()))?;
+                    match &auth {
+                        Some(a) if r.status().as_u16() == 401 && !tried_auth => {
+                            tried_auth = true;
+                            let www = r.headers().get("www-authenticate").and_then(|v| v.to_str().ok()).map(String::from);
+                            a.unauthorized(www, None).await?;
+                        }
+                        _ => break r,
+                    }
+                };
                 if r.status().as_u16() == 401 {
                     return Err(McpError::Unauthorized("401 Unauthorized".into()));
                 }
@@ -312,12 +360,19 @@ impl Session {
                     let _ = closed_tx.send(Some(String::new()));
                     fail_all(&p, "");
                 }));
+                let auth2 = auth.clone();
                 let endpoint = tokio::time::timeout(Duration::from_secs(30), ep_rx).await.map_err(|_| McpError::Transport("SSE 没有给出 endpoint".into()))?.map_err(|_| McpError::Closed(String::new()))?;
                 let p = pending.clone();
                 tasks.push(tokio::spawn(async move {
                     while let Some(m) = out_rx.recv().await {
                         let id = m["id"].as_i64();
-                        match client.post(&endpoint).json(&m).send().await {
+                        let mut rb = client.post(&endpoint).json(&m);
+                        if let Some(a) = &auth2 {
+                            if let Some(h) = a.header(None).await {
+                                rb = rb.header("authorization", h);
+                            }
+                        }
+                        match rb.send().await {
                             Ok(r) if r.status().is_success() => {}
                             Ok(r) => {
                                 if let Some(tx) = id.and_then(|id| p.lock().remove(&id)) {

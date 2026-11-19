@@ -451,7 +451,7 @@ fn items(r: &Value, d: &Value) -> R<Vec<Value>> {
 async fn mcp_call(url: &str, tool: &str, args: &Value, timeout: f64) -> R<String> {
     use crate::mcp_client::{Session, Transport};
     let t = Duration::from_secs_f64(timeout);
-    let s = Session::connect(Transport::Http { url: url.into(), headers: HashMap::new() }, json!({}), t).await.map_err(|e| mcp_err(&e.to_string()))?;
+    let s = Session::connect(Transport::Http { url: url.into(), headers: HashMap::new(), auth: None }, json!({}), t).await.map_err(|e| mcp_err(&e.to_string()))?;
     let res = tokio::time::timeout(t, s.call_tool(tool, args)).await.map_err(|_| Failed(t!("连接超时")))?.map_err(|e| mcp_err(&e.to_string()));
     s.shutdown().await;
     let res = res?;
