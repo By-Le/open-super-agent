@@ -579,9 +579,10 @@ async def update_skill(sid: int, data: dict = Body(...)):
     if not old:
         raise HTTPException(404, i18n.t("没有这个技能"))
     owner = old["bot_id"] if "shared" not in data else (None if data["shared"] else data.get("bot_id", old["bot_id"]))
+    def keep(k):   # 没传或传了 null：保持原样
+        return old[k] if data.get(k) is None else data[k]
     try:   # files、apps 没传就保持原样
-        s = skills.save(owner, data.get("name", old["name"]), data.get("body", old["body"]),
-                        data.get("description", old["description"]), old["source"], sid=sid,
+        s = skills.save(owner, keep("name"), keep("body"), keep("description"), old["source"], sid=sid,
                         files=(data["files"] or {}) if "files" in data else None,
                         **({"apps": data["apps"]} if "apps" in data else {}))
     except ValueError as e:
@@ -1673,6 +1674,15 @@ async def _app_out(name: str) -> dict:
     return next(x for x in mcp_hub.public() if x["name"] == name)
 
 
+# 对方不认密钥时常见的报错。状态码前后不能挨着数字（端口、编号里的 401 不算）
+_KEY_ERROR = re.compile(r"(?<!\d)40[13](?!\d)|400 Bad Request|Unauthorized|parse JSON|密钥无效|鉴权失败|invalid or expired")
+
+
+def _key_rejected(item_id: str, msg: str) -> bool:
+    """没连上像是因为密钥不对：只算要填密钥的应用（免配置的、账号登录的没有密钥可查）。"""
+    return catalog.items()[item_id]["kind"] == "token" and bool(_KEY_ERROR.search(msg))
+
+
 @app.post("/api/market/{item_id}")
 async def install_app(item_id: str, data: dict = Body(default={})):
     """从应用市场添加：values 是用户填的内容（token 之类），密钥存进保险库，配置里只留引用。"""
@@ -1693,7 +1703,7 @@ async def install_app(item_id: str, data: dict = Body(default={})):
         await mcp_hub.disconnect(item_id)
         mcp_hub.remove(item_id)
         await broadcast({"type": "apps_changed"})
-        if any(w in msg for w in ("401", "403", "400 Bad Request", "Unauthorized", "parse JSON", "密钥无效", "鉴权失败", "invalid or expired")):
+        if _key_rejected(item_id, msg):
             msg = i18n.t("对方没有接受这个密钥，检查一下有没有复制完整。（{msg}）", msg=msg[:120])
         _err(ValueError(msg))
     return await _app_out(item_id)

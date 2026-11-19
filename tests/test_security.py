@@ -258,3 +258,14 @@ def test_market_values_cannot_carry_references():
     for v in ("{env:OSA_PASSWORD}", "env:OSA_PASSWORD", "x{vault:LLM_KEY_DEEPSEEK}"):
         with pytest.raises(ValueError, match="引用"):
             catalog.build("filesystem", {"path": v})
+
+
+def test_key_error_hint_only_for_key_apps():
+    """没连上时提示“检查密钥”：只给要填密钥的应用、只认像鉴权失败的报错。"""
+    assert server._key_rejected("github", "HTTP 401 Unauthorized")
+    assert server._key_rejected("github", "Client error '403 Forbidden'")
+    assert server._key_rejected("github", "鉴权失败")
+    assert not server._key_rejected("github", "connect to 127.0.0.1:4013 failed")   # 端口里的 401 不算
+    assert not server._key_rejected("github", "timed out after 14010 ms")
+    assert not server._key_rejected("fetch", "HTTP 401 Unauthorized")             # 免配置的应用没有密钥可查
+    assert not server._key_rejected("train", "Failed to parse JSON")

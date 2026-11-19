@@ -184,3 +184,14 @@ def test_prompts_mention_applets():
     assert "window.osa" in router.ROUTER_PROMPT and "page_data" in router.ROUTER_PROMPT
     assert "window.osa" in worker.PAGE_HINT
     assert any(s["function"]["name"] == "page_data" for s in registry.schemas(registry.ROUTER, router.ROUTER_ENV))
+
+
+async def test_bool_is_not_a_page_id(bot, monkeypatch):
+    """JSON 里的 true 在 Python 里是 1，不能当成 1 号页面。"""
+    b = bot()
+    asked = []
+    monkeypatch.setattr(library, "get_page", lambda pid, *a: asked.append(pid))
+    assert "没有页面" in await library.tool_page_data(b["id"], {"page_id": True})
+    assert "没有页面" in library.tool_read_page({"page_id": True})
+    assert "没有页面" in library.tool_read_page({"page_id": False})
+    assert asked == []

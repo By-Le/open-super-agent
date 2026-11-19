@@ -64,10 +64,22 @@ def public_key() -> str:
     return b64u(_point(vapid_key().public_key()))
 
 
-def vapid_header(endpoint: str) -> str:
+def _origin(endpoint: str) -> str:
+    """推送服务的源（scheme://host[:port]），默认端口不写：中转服务器按不带 :443 的地址校验 aud。"""
     u = urlparse(endpoint)
+    host = f"[{u.hostname}]" if ":" in (u.hostname or "") else (u.hostname or "")
+    try:
+        port = u.port
+    except ValueError:   # 端口写坏了：不写端口
+        port = None
+    if port and port != {"https": 443, "http": 80}.get(u.scheme):
+        host += f":{port}"
+    return f"{u.scheme}://{host}"
+
+
+def vapid_header(endpoint: str) -> str:
     head = b64u(json.dumps({"typ": "JWT", "alg": "ES256"}).encode())
-    claims = b64u(json.dumps({"aud": f"{u.scheme}://{u.netloc}", "exp": int(time.time()) + 12 * 3600, "sub": SUBJECT}).encode())
+    claims = b64u(json.dumps({"aud": _origin(endpoint), "exp": int(time.time()) + 12 * 3600, "sub": SUBJECT}).encode())
     r, s = decode_dss_signature(vapid_key().sign(f"{head}.{claims}".encode(), ec.ECDSA(hashes.SHA256())))
     jwt = f"{head}.{claims}.{b64u(r.to_bytes(32, 'big') + s.to_bytes(32, 'big'))}"
     return f"vapid t={jwt}, k={public_key()}"
@@ -185,7 +197,7 @@ def message_for(event: dict) -> tuple[str, str, str, str] | None:
             ok = (m.get("meta") or {}).get("status") == "done"
             who = _bot_name(m.get("bot_id"))
             return (i18n.t("{who} 做完了任务", who=who) if ok else i18n.t("{who} 的任务失败了", who=who)), \
-                _plain(m["content"])[:120], url, f"chat-{cid}"
+                _plain(m.get("content") or "")[:120], url, f"chat-{cid}"
     if t == "teach" and event.get("draft"):
         return i18n.t("演示录制已结束"), i18n.t("技能草稿「{name}」等你审核", name=event["draft"]["name"]), "/", "teach"
     return None

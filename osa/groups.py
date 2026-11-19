@@ -141,12 +141,14 @@ def unexpect(chat_id: int, to_id: int):
 async def after_task(task):
     """填了 handoff_to 的任务结束了：做完就交接，失败就说一声。"""
     h = task.handoff
-    unexpect(task.chat_id, h["to"])
     if task.status != "done":
+        unexpect(task.chat_id, h["to"])   # 不会交接了：还没轮到的点名照常说
         await note(task.chat_id, i18n.t("任务 #{id} 没做完，没有交给 {name}", id=task.id, name=_name(h["to"])))
         return
     g = get(task.chat_id)
     async with g.lock:
+        # 拿到锁再撤：派任务的那一轮可能还没说完，点名给对方的发言要继续跳过，不然对方会说两次
+        unexpect(task.chat_id, h["to"])
         request = h["note"] or i18n.t("资料在上面，请接着做")
         await _message(task.chat_id, "task", i18n.t("→ {name}：{text}（任务 #{id} 的结果）", name=_name(h["to"]), text=request, id=task.id),
                        task.bot_id, kind="handoff", to=h["to"], note=i18n.t("任务 #{id} 的结果在上面。{text}", id=task.id, text=request),

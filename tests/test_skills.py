@@ -326,3 +326,19 @@ def test_schema_migration_adds_columns():
     cols = {r[1] for r in memory.conn.execute("pragma table_info(skills)")}
     assert {"files", "apps", "share_token"} <= cols
     assert json.loads(json.dumps(skills.USE_SKILL))["function"]["parameters"]["required"] == ["name"]
+
+
+def test_yaml_booleans_are_not_apps():
+    assert skills.clean_apps([True, "notion", False]) == ["notion"]
+    assert skills.from_file("---\nname: a\napps: [true, notion]\n---\nx")["apps"] == ["notion"]
+
+
+async def test_update_with_null_keeps_old(bot):
+    b = bot()
+    s = skills.save(b["id"], "keep-me", "做法", "说明")
+    async with http() as c:
+        r = await c.put(f"/api/skills/{s['id']}", json={"name": None, "body": None, "description": None})
+        assert r.status_code == 200, r.text
+        assert (r.json()["name"], r.json()["body"], r.json()["description"]) == ("keep-me", "做法", "说明")
+        r = await c.put(f"/api/skills/{s['id']}", json={"name": None, "body": "新做法"})
+        assert r.json()["name"] == "keep-me" and r.json()["body"] == "新做法"

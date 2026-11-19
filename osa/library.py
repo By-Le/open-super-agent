@@ -172,7 +172,7 @@ PAGE_DATA = {"type": "function", "function": {
 
 async def tool_page_data(bot_id: int, args: dict) -> str:
     pid = args.get("page_id")
-    p = get_page(pid, False) if isinstance(pid, int) else None
+    p = get_page(pid, False) if isinstance(pid, int) and not isinstance(pid, bool) else None   # true 不是 1 号页面
     if not p:
         return f"没有页面 #{pid}"
     if not p.get("app"):
@@ -202,7 +202,8 @@ READ_PAGE = {"type": "function", "function": {
 
 def tool_read_page(args: dict, limit: int = 12000) -> str:
     from . import search
-    p = get_page(args.get("page_id")) if isinstance(args.get("page_id"), int) else None
+    pid = args.get("page_id")
+    p = get_page(pid) if isinstance(pid, int) and not isinstance(pid, bool) else None   # true 不是 1 号页面
     if not p:
         return f"没有页面 #{args.get('page_id')}"
     text = search._plain(p["content"] or "", p["format"])
