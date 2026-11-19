@@ -1,7 +1,8 @@
 //! 菜单栏图标：旁边显示有几个操作等你确认；菜单里打开窗口、在浏览器里打开、切换服务器、开机启动、退出，
-//! 以及“不再让服务器派任务到这台 Mac”（见 link.rs），没允许时是灰的；新版本装好后“检查更新”变成“重启更新”。
+//! 以及“不再让服务器派任务到这台 Mac”（见 link.rs），没允许时是灰的；新版本装好后“检查更新”变成“重启更新”；
+//! “下载源”：自动 / 国内镜像 / 官方源（uv、Python、应用的安装包从哪下载，见 onboard.rs）。
 
-use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem};
+use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::tray::TrayIconBuilder;
 use tauri::{AppHandle, Manager, Wry};
 use tauri_plugin_autostart::ManagerExt;
@@ -11,6 +12,7 @@ use crate::tr;
 struct Autostart(CheckMenuItem<Wry>);
 struct Link(MenuItem<Wry>);
 struct Update(MenuItem<Wry>);
+struct Mirror([CheckMenuItem<Wry>; 3]);
 
 pub fn create(app: &AppHandle) -> tauri::Result<()> {
     let item = |id: &str, text: &str| MenuItem::with_id(app, id, text, true, None::<&str>);
@@ -18,6 +20,12 @@ pub fn create(app: &AppHandle) -> tauri::Result<()> {
     let autostart = CheckMenuItem::with_id(app, "autostart", tr("开机时启动", "Open at login"), true, enabled, None::<&str>)?;
     let unlink = MenuItem::with_id(app, "unlink", tr("不再让服务器派任务到这台 Mac", "Stop taking tasks from the server on this Mac"), false, None::<&str>)?;
     let update = item("update", tr("检查更新…", "Check for updates…"))?;
+    let mirror = [
+        CheckMenuItem::with_id(app, "mirror_auto", tr("自动", "Automatic"), true, true, None::<&str>)?,
+        CheckMenuItem::with_id(app, "mirror_cn", tr("国内镜像", "China mirrors"), true, false, None::<&str>)?,
+        CheckMenuItem::with_id(app, "mirror_global", tr("官方源", "Official sources"), true, false, None::<&str>)?,
+    ];
+    let mirror_menu = Submenu::with_items(app, tr("下载源", "Download source"), true, &[&mirror[0], &mirror[1], &mirror[2]])?;
     let menu = Menu::with_items(
         app,
         &[
@@ -28,6 +36,7 @@ pub fn create(app: &AppHandle) -> tauri::Result<()> {
             &unlink,
             &PredefinedMenuItem::separator(app)?,
             &autostart,
+            &mirror_menu,
             &item("logs", tr("打开日志文件夹", "Open logs folder"))?,
             &update,
             &PredefinedMenuItem::separator(app)?,
@@ -37,6 +46,7 @@ pub fn create(app: &AppHandle) -> tauri::Result<()> {
     app.manage(Autostart(autostart));
     app.manage(Link(unlink));
     app.manage(Update(update));
+    app.manage(Mirror(mirror));
     let mut tray = TrayIconBuilder::with_id("main")
         .tooltip("Open Super Agent")
         .menu(&menu)
@@ -82,5 +92,19 @@ pub fn set_link(app: &AppHandle, linked: bool) {
 pub fn set_update(app: &AppHandle, version: &str) {
     if let Some(u) = app.try_state::<Update>() {
         let _ = u.0.set_text(format!("{}{version}", tr("重启更新到 ", "Restart to update to ")));
+    }
+}
+
+/// “下载源”打勾：pref 是手动选的（None 是自动），detected 是测出来的（自动后面写上现在用的是哪边）
+pub fn set_mirror(app: &AppHandle, pref: Option<&str>, detected: Option<&str>) {
+    let Some(m) = app.try_state::<Mirror>() else { return };
+    let now = match detected {
+        Some("cn") => tr("（现在：国内镜像）", " (now: China mirrors)"),
+        Some(_) => tr("（现在：官方源）", " (now: official sources)"),
+        None => "",
+    };
+    let _ = m.0[0].set_text(format!("{}{now}", tr("自动", "Automatic")));
+    for (item, v) in m.0.iter().zip([None, Some("cn"), Some("global")]) {
+        let _ = item.set_checked(pref == v);
     }
 }

@@ -92,7 +92,8 @@ uv 第一次用到时（装 uvx 应用、run_code 要 Python、操作整台 Mac�
 第一次打开（`desktop/setup/`，步骤在 `src-tauri/src/onboard.rs`）：欢迎页选用法 → “正在准备”一步一步显示：检查网络、启动服务、
 下载 uv、安装 Python（`osa-server setup` 一行一行报进度）→ “准备好了”。下载失败可以重试、换下载源，或者先用着（用到时再下载）。
 检查网络的办法照 Linger：同时从官方源和阿里云镜像下载 uv 安装包的前 512 KB，镜像快 1.5 倍以上就算国内网络，记在 `desktop.json` 的
-`mirror`（`cn` / `global`），启动页上能换。服务带着 `OSA_MIRROR=cn` 起来时，uv 的包（阿里云 PyPI）、Python（npmmirror 的
+`mirror`（`cn` / `global`）。菜单栏的“下载源”能换：自动（每次启动后在后台再测一次，下次启动按新结果，不拖慢启动）、
+国内镜像、官方源（手动选的记在 `mirror_pref`，换了马上带着新设置重新起本机服务）；第一次的启动页上也能换。服务带着 `OSA_MIRROR=cn` 起来时，uv 的包（阿里云 PyPI）、Python（npmmirror 的
 python-build-standalone）、npm（npmmirror）都走国内镜像，已经单独设了的环境变量不动。
 
 ## 发布

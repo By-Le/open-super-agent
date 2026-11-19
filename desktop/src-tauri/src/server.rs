@@ -193,7 +193,7 @@ fn rust_launch(resources: Option<PathBuf>, args: &[&str], log_name: &str, extra:
         // uv 下载的 Python 放在 App 自己的目录里：不和你自己的 uv 混在一起，删掉 App 的数据就干净了
         ("UV_PYTHON_INSTALL_DIR".into(), runtime.join("python").display().to_string()),
         // 国内网络：uv、Python、npm 都从国内镜像下载（见 server/crates/osa/src/runtime.rs）
-        ("OSA_MIRROR".into(), store::load().mirror.unwrap_or_else(|| "global".into())),
+        ("OSA_MIRROR".into(), store::effective_mirror(&store::load())),
     ];
     env.extend(extra);
     let args: Vec<String> = args.iter().map(|s| s.to_string()).collect();

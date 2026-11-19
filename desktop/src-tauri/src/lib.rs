@@ -131,19 +131,18 @@ fn start_local(app: &AppHandle, first: bool) {
             store::save(&cfg);
         }
         // 测网络：第一次，或者上次没测出来
-        let mirror = st.cfg.lock().unwrap().mirror.clone();
-        if first || mirror.is_none() {
+        // 第一次（或者还没测过、也没手动选）要先测：测出来的决定这次服务从哪下载
+        let (mirror, pref) = {
+            let cfg = st.cfg.lock().unwrap();
+            (cfg.mirror.clone(), cfg.mirror_pref.clone())
+        }; // 手动选过就不用测
+        if first || (mirror.is_none() && pref.is_none()) {
             ob.set("network", "running", None);
-            let found = match mirror {
-                Some(m) if first => Some(m), // 启动页上手动换过
-                _ => onboard::detect().map(String::from),
-            };
-            let mut cfg = st.cfg.lock().unwrap();
-            if found.is_some() {
-                cfg.mirror = found.clone();
-                store::save(&cfg);
+            if pref.is_none() {
+                detect_mirror(&app);
             }
-            ob.set("network", "done", Some(cfg.mirror.clone().unwrap_or_default()));
+            let cfg = st.cfg.lock().unwrap();
+            ob.set("network", "done", Some(store::effective_mirror(&cfg)));
         }
         ob.set("service", "running", None);
         let port = pick_port(&app);
@@ -174,8 +173,12 @@ fn start_local(app: &AppHandle, first: bool) {
         }
         let origin = Url::parse(&format!("http://127.0.0.1:{port}/")).unwrap();
         login_local(&app, &origin, "/");
+        // 下载源是自动的：在后台再测一次网络（开关代理、出国回国都跟得上），下次启动按新结果；不拖慢这次启动
+        if st.cfg.lock().unwrap().mirror_pref.is_none() {
+            detect_mirror(&app);
+        }
         // 从带 Python 的旧版升级上来的：在后台悄悄把 uv 和 Python 装好，不用等到第一次用
-        if !store::home().join("runtime/bin/uv").exists() {
+        if !store::home().join("runtime/python").exists() {
             if let Ok(mut c) = server::setup_child(app.path().resource_dir().ok()) {
                 let _ = c.wait();
             }
@@ -201,6 +204,47 @@ fn finish_local(app: &AppHandle) {
     state(app).onboard.clear();
     let origin = Url::parse(&format!("http://127.0.0.1:{port}/")).unwrap();
     login_local(app, &origin, "/");
+}
+
+/// 菜单栏里换下载源（None 是自动）。现在用的那边变了、服务又在这台电脑上跑着，就带着新设置重新起服务（50 毫秒左右，页面会刷新一次）
+fn set_mirror_pref(app: &AppHandle, pref: Option<&str>) {
+    let st = state(app);
+    let (before, need_detect) = {
+        let mut cfg = st.cfg.lock().unwrap();
+        let before = store::effective_mirror(&cfg);
+        cfg.mirror_pref = pref.map(String::from);
+        store::save(&cfg);
+        (before, pref.is_none() && cfg.mirror.is_none())
+    };
+    sync_mirror_menu(app);
+    let app = app.clone();
+    std::thread::spawn(move || {
+        if need_detect {
+            detect_mirror(&app);
+        }
+        let st = state(&app);
+        let after = store::effective_mirror(&st.cfg.lock().unwrap());
+        if after != before && is_local(&app) && st.server.alive() {
+            st.server.stop();
+            start_local(&app, false);
+        }
+    });
+}
+
+/// 测一下网络，记下来（自动的话下次启动按它）
+fn detect_mirror(app: &AppHandle) {
+    if let Some(found) = onboard::detect() {
+        let st = state(app);
+        let mut cfg = st.cfg.lock().unwrap();
+        cfg.mirror = Some(found.into());
+        store::save(&cfg);
+    }
+    sync_mirror_menu(app);
+}
+
+fn sync_mirror_menu(app: &AppHandle) {
+    let cfg = state(app).cfg.lock().unwrap().clone();
+    tray::set_mirror(app, cfg.mirror_pref.as_deref(), cfg.mirror.as_deref());
 }
 
 /// 端口定下来就一直用它；被别的程序占了才换一个并记住
@@ -326,7 +370,7 @@ fn setup_state(app: AppHandle) -> serde_json::Value {
     let cfg = st.cfg.lock().unwrap().clone();
     let (phase, message) = st.phase.lock().unwrap().clone();
     json!({ "mode": cfg.mode, "url": cfg.url, "phase": phase, "message": message, "zh": zh(),
-            "mirror": cfg.mirror, "steps": st.onboard.snapshot() })
+            "mirror": store::effective_mirror(&cfg), "steps": st.onboard.snapshot() })
 }
 
 /// 启动页上选“在这台电脑上运行”：还没用过这种用法就走一遍第一次的准备
@@ -355,9 +399,12 @@ fn setup_mirror(app: AppHandle, mirror: String) {
     let st = state(&app);
     {
         let mut cfg = st.cfg.lock().unwrap();
-        cfg.mirror = Some(if mirror == "cn" { "cn" } else { "global" }.into());
+        let m = if mirror == "cn" { "cn" } else { "global" };
+        cfg.mirror = Some(m.into());
+        cfg.mirror_pref = Some(m.into()); // 在启动页上手动换的，以后就固定用它（菜单栏里能改回自动）
         store::save(&cfg);
     }
+    sync_mirror_menu(&app);
     st.server.stop();
     start_local(&app, true);
 }
@@ -592,6 +639,9 @@ pub fn on_menu(app: &AppHandle, id: &str) {
             std::thread::spawn(move || tauri::async_runtime::block_on(check_update(&app, true)));
         }
         "autostart" => tray::toggle_autostart(app),
+        "mirror_auto" => set_mirror_pref(app, None),
+        "mirror_cn" => set_mirror_pref(app, Some("cn")),
+        "mirror_global" => set_mirror_pref(app, Some("global")),
         "unlink" => link::menu_unlink(app),
         "quit" => app.exit(0),
         _ => {}
@@ -776,6 +826,7 @@ pub fn run() {
             #[cfg(debug_assertions)]
             start_autotest(&handle);
             tray::create(&handle)?;
+            sync_mirror_menu(&handle);
             start_update_loop(&handle);
             // ⌘⇧空格（Windows 上 Ctrl+Shift+空格）呼出或藏起窗口；被别的程序占了就算了
             let _ = handle.global_shortcut().register(Shortcut::new(Some(Modifiers::SUPER | Modifiers::SHIFT), Code::Space));

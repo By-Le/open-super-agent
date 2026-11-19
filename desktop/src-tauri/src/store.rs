@@ -19,9 +19,17 @@ pub struct Config {
     /// 网页设置里选的外观："light" / "dark"；None 是跟随系统。下次启动一开始就用它，启动页不会先闪成另一种
     #[serde(default)]
     pub theme: Option<String>,
-    /// 下载用哪边："cn"（国内镜像）/ "global"（官方源）；None 是还没测过。第一次打开时测一下网络自动选，启动页上能换
+    /// 测出来的下载源："cn"（国内镜像）/ "global"（官方源）；None 是还没测过
     #[serde(default)]
     pub mirror: Option<String>,
+    /// 菜单栏“下载源”里手动选的："cn" / "global"；None 是自动（用上面测出来的，每次启动后在后台再测一次，下次启动生效）
+    #[serde(default)]
+    pub mirror_pref: Option<String>,
+}
+
+/// 现在用哪边下载：手动选的优先，没选就用测出来的，都没有就是官方源
+pub fn effective_mirror(cfg: &Config) -> String {
+    cfg.mirror_pref.clone().or_else(|| cfg.mirror.clone()).unwrap_or_else(|| "global".into())
 }
 
 pub fn home() -> PathBuf {

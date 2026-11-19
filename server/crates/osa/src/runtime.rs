@@ -5,7 +5,7 @@
 //! 按写死的 sha256 校验。没设 OSA_RUNTIME_DIR（Docker、自己部署）就不下载，和原来一样只找 PATH。
 //!
 //! 国内网络：OSA_MIRROR=cn 时 uv 从阿里云的 PyPI 镜像下载，并且（没单独设的话）给 uv、npm 都换上国内镜像——
-//! uvx 应用装包、uv 下载 Python、npx 应用装包都走国内。桌面 App 第一次打开时测一下网络自动选，设置里能改。
+//! uvx 应用装包、uv 下载 Python、npx 应用装包都走国内。桌面 App 第一次打开时测一下网络自动选，菜单栏的“下载源”里能换。
 //!
 //! `osa-server setup`：桌面 App 第一次打开时调它，把 uv 和 Python 提前装好，每一步一行 JSON 报进度。
 
