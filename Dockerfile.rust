@@ -1,0 +1,77 @@
+# open-super-agent 服务镜像（Rust 版）：服务本身是一个 Rust 程序（osa-server），另带 osa-relay（手机推送中转）。
+# 和 Dockerfile（Python 版）对外一样：端口 8765、数据目录、config.yaml、应用要用的 Node（npx）和 uv（uvx）都照旧。
+# 镜像里还留着 Python：run_code 的沙箱、uvx 装的应用、电脑里的浏览器控制脚本要用它；服务本身不靠它。
+#
+#   docker build -f Dockerfile.rust -t open-super-agent:rust .
+#   docker build -f Dockerfile.rust --target test .      # 在 Linux 上把接口测试（两个版本）跑一遍
+#
+# 国内网络可以加 --build-arg NPM_REGISTRY=https://registry.npmmirror.com --build-arg PYPI_INDEX=https://mirrors.ustc.edu.cn/pypi/simple
+# （Rust 依赖走 crates.io；要镜像的话加 --build-arg CARGO_MIRROR=sparse+https://rsproxy.cn/index/）
+
+FROM node:24-bookworm-slim AS web
+ARG NPM_REGISTRY=
+WORKDIR /src/web
+COPY web/package.json web/package-lock.json ./
+RUN if [ -n "$NPM_REGISTRY" ]; then npm config set registry "$NPM_REGISTRY"; fi && npm ci --no-audit --no-fund
+COPY web/ ./
+RUN npm run build    # 产物在 /src/osa/static/dist
+
+FROM rust:1-bookworm AS build
+ARG CARGO_MIRROR=
+WORKDIR /src
+RUN if [ -n "$CARGO_MIRROR" ]; then mkdir -p $CARGO_HOME && printf '[source.crates-io]\nreplace-with = "m"\n[source.m]\nregistry = "%s"\n' "$CARGO_MIRROR" > $CARGO_HOME/config.toml; fi
+# 编进程序的数据（语言包、应用清单、技能、配方）在 osa/ 下面，所以整个拷进来
+COPY osa/ osa/
+COPY server/ server/
+RUN --mount=type=cache,target=/usr/local/cargo/registry --mount=type=cache,target=/src/server/target \
+    cd server && cargo build --release --locked --bins && mkdir -p /out && cp target/release/osa-server target/release/osa-relay /out/
+
+FROM node:24-bookworm-slim AS node
+
+FROM python:3.13-slim-bookworm AS base
+ARG NPM_REGISTRY=
+ARG PYPI_INDEX=
+ENV PYTHONUNBUFFERED=1 \
+    TZ=Asia/Shanghai \
+    UV_CACHE_DIR=/cache/uv \
+    UV_PYTHON_INSTALL_DIR=/cache/python \
+    UV_LINK_MODE=copy \
+    npm_config_cache=/cache/npm \
+    npm_config_update_notifier=false \
+    OSA_ROOT=/app \
+    OSA_PYTHON=/usr/local/bin/python3
+COPY --from=node /usr/local/bin/node /usr/local/bin/node
+COPY --from=node /usr/local/lib/node_modules /usr/local/lib/node_modules
+RUN ln -s ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
+ && ln -s ../lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx \
+ && if [ -n "$NPM_REGISTRY" ]; then npm config set registry "$NPM_REGISTRY"; fi \
+ && apt-get update && apt-get install -y --no-install-recommends curl ca-certificates && rm -rf /var/lib/apt/lists/* \
+ && pip install --no-cache-dir --root-user-action=ignore ${PYPI_INDEX:+--index-url "$PYPI_INDEX"} uv==0.13.6 \
+ && if [ -n "$PYPI_INDEX" ]; then mkdir -p /etc/uv && printf '[[index]]\nurl = "%s"\ndefault = true\n' "$PYPI_INDEX" > /etc/uv/uv.toml; fi
+WORKDIR /app
+
+# ---------- 在 Linux 上跑接口测试：Python 版和 Rust 版各一遍 ----------
+FROM base AS test
+RUN apt-get update && apt-get install -y --no-install-recommends bubblewrap && rm -rf /var/lib/apt/lists/*
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --no-install-project
+COPY config.yaml ./
+COPY osa/ osa/
+COPY tests/ tests/
+COPY contract/ contract/
+COPY --from=web /src/osa/static/dist osa/static/dist
+COPY --from=build /out/ server/target/debug/
+RUN uv run pytest contract -q -p no:cacheprovider --ignore=contract/test_parity.py \
+ && OSA_IMPL=rust uv run pytest contract -q -p no:cacheprovider --ignore=contract/test_parity.py \
+ && uv run pytest contract/test_parity.py -q -p no:cacheprovider
+
+# ---------- 运行的镜像 ----------
+FROM base
+COPY config.yaml LICENSE ./
+COPY --from=web /src/osa/static/dist osa/static/dist
+COPY --from=build /out/osa-server /out/osa-relay /usr/local/bin/
+EXPOSE 8765
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+  CMD curl -fsS http://127.0.0.1:8765/manifest.json -o /dev/null || exit 1
+# 反向代理转发来的真实 IP：FORWARDED_ALLOW_IPS=* 时信任 X-Forwarded-For（compose 里设好了，和 Python 版一样）
+CMD ["osa-server", "--host", "0.0.0.0", "--port", "8765"]

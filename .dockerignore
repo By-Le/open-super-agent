@@ -11,3 +11,5 @@ osa/static/dist/
 *.db
 .DS_Store
 docs/
+server/target
+**/__pycache__
