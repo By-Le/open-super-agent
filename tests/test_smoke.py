@@ -1,6 +1,9 @@
 """冒烟测试：私聊派任务、群聊交接、Bot 之间私信、确认卡片进私聊。"""
+import asyncio
+import json
+
 from conftest import find, settle, until
-from fakellm import Call
+from fakellm import Call, role_of
 from osa import approvals, bots, mcp_hub, server
 
 
@@ -74,3 +77,36 @@ async def test_approval_goes_to_private_chat(llm, events, make_bot, mcp_tool):
     assert "记好了" in result[0]["content"]
     tool_out = [m for m in llm.bodies("worker")[-1]["messages"] if m["role"] == "tool"]
     assert tool_out and "已创建笔记：明天开会" in tool_out[0]["content"]
+
+
+async def test_group_handoff_when_task_finishes_first(llm, events, make_bot):
+    """任务比派它的这一轮先做完：被点名的接手人还是只说一次（交接时），不会先按点名说一次。"""
+    a, b = make_bot("Quick"), make_bot("Taker")
+    group = bots.create_group([a["id"], b["id"]], lead=a["id"])
+    llm.script("router:Quick", Call("dispatch", {"goal": "查资料", "handoff_to": "Taker", "handoff_note": "写个总结"}),
+               "我先查，查完交给 Taker")
+    llm.script("worker", "资料：两条要点")
+    llm.script("router:Taker", "总结：两条要点")
+    handle, seen = llm.transport.handler, []
+
+    async def slow_lead(request):   # Quick 的第二次请求（派完任务之后）等任务结果出来、交接排上了再回
+        if request.url.path.endswith("/chat/completions") and role_of(json.loads(request.content)) == ("router", "Quick"):
+            seen.append(1)
+            if len(seen) == 2:
+                await until(lambda: find(group["id"], kind="result"), what="任务结果")
+                await asyncio.sleep(0.2)
+        return handle(request)
+    llm.transport.handler = slow_lead
+
+    try:
+        await server.safe_handle(group, "@Quick 查资料，查完交给 @Taker 写总结")
+        await until(lambda: find(group["id"], role="assistant", bot_id=b["id"]), what="Taker 的总结")
+        await settle()
+
+        assert len(llm.bodies("router", "Taker")) == 1
+        assert len(find(group["id"], role="assistant", bot_id=b["id"])) == 1
+        assert len(seen) == 2
+        assert find(group["id"], kind="handoff", text="任务 #")
+    finally:   # 测试库里 Bot 有上限，大家共用
+        for x in (a, b):
+            bots.delete(x["id"])
