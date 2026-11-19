@@ -48,4 +48,3 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 aes-gcm = "0.10"
 scrypt = { version = "0.11", default-features = false }
-zip = { version = "2", default-features = false, features = ["deflate"] }
