@@ -161,17 +161,30 @@ pub fn for_bot(bot_id: i64, limit: usize, own_hosts: &[String]) -> Vec<Value> {
             }
             if py::truthy(&a["media"]) {
                 let media = py::str_of(&a["media"]);
-                put(&mut items, format!("image:{media}"), merge(&src, json!({"kind": "image",
+                put(
+                    &mut items,
+                    format!("image:{media}"),
+                    merge(
+                        &src,
+                        json!({"kind": "image",
                     "title": if py::truthy(&a["name"]) { a["name"].clone() } else { json!("") }, "media": media,
                     "mime": a.get("mime").cloned().unwrap_or(Value::Null), "size": a.get("size").cloned().unwrap_or(Value::Null),
                     "w": a.get("w").cloned().unwrap_or(Value::Null), "h": a.get("h").cloned().unwrap_or(Value::Null),
-                    "path": a.get("path").cloned().unwrap_or(Value::Null)})));
+                    "path": a.get("path").cloned().unwrap_or(Value::Null)}),
+                    ),
+                );
             } else if py::truthy(&a["path"]) {
                 let path = py::str_of(&a["path"]);
                 let mac = a["mac"].as_i64().filter(|_| a["mac"].is_i64());
                 let title = if py::truthy(&a["name"]) { py::str_of(&a["name"]) } else { path.rsplit('/').next().unwrap_or("").to_string() };
-                put(&mut items, format!("file:{}:{path}", mac.filter(|m| *m != 0).map(|m| m.to_string()).unwrap_or_default()),
-                    merge(&src, json!({"kind": "file", "title": title, "path": path, "size": a.get("size").cloned().unwrap_or(Value::Null), "mac": mac})));
+                put(
+                    &mut items,
+                    format!("file:{}:{path}", mac.filter(|m| *m != 0).map(|m| m.to_string()).unwrap_or_default()),
+                    merge(
+                        &src,
+                        json!({"kind": "file", "title": title, "path": path, "size": a.get("size").cloned().unwrap_or(Value::Null), "mac": mac}),
+                    ),
+                );
             }
         }
         for (u, title) in links(&content) {
@@ -191,8 +204,12 @@ pub fn for_bot(bot_id: i64, limit: usize, own_hosts: &[String]) -> Vec<Value> {
         }
     }
     for r in db::rows("select id, title, format, share_token, task_id, created, updated from pages where bot_id=?", [bot_id]) {
-        put(&mut items, format!("page:{}", r.i(0)), json!({"kind": "page", "ts": r[5], "updated": r[6], "title": r[1], "page_id": r[0],
-            "format": r[2], "shared": py::truthy(&r[3]), "task_id": r[4], "chat_id": null, "msg_id": null}));
+        put(
+            &mut items,
+            format!("page:{}", r.i(0)),
+            json!({"kind": "page", "ts": r[5], "updated": r[6], "title": r[1], "page_id": r[0],
+            "format": r[2], "shared": py::truthy(&r[3]), "task_id": r[4], "chat_id": null, "msg_id": null}),
+        );
     }
     let mut out: Vec<Value> = items.into_values().collect();
     out.sort_by(|a, b| b["ts"].as_f64().unwrap_or(0.0).partial_cmp(&a["ts"].as_f64().unwrap_or(0.0)).unwrap_or(std::cmp::Ordering::Equal));
@@ -203,11 +220,16 @@ pub fn for_bot(bot_id: i64, limit: usize, own_hosts: &[String]) -> Vec<Value> {
 
 /// 裸链接用网页标题当名字：链接卡片抓成功过的直接拿来用
 fn name_links(items: &mut [Value]) {
-    let bare: Vec<usize> = (0..items.len()).filter(|i| items[*i]["kind"] == "link" && items[*i]["title"].as_str().unwrap_or("").is_empty()).collect();
+    let bare: Vec<usize> =
+        (0..items.len()).filter(|i| items[*i]["kind"] == "link" && items[*i]["title"].as_str().unwrap_or("").is_empty()).collect();
     for chunk in bare.chunks(500) {
         let urls: Vec<String> = chunk.iter().map(|i| py::str_of(&items[*i]["url"])).collect();
-        let rows = db::rows(&format!("select url, data from unfurls where ok=1 and url in ({})", vec!["?"; urls.len()].join(",")), rusqlite::params_from_iter(urls.iter()));
-        let got: std::collections::HashMap<String, String> = rows.iter().map(|r| (r.s(0), r.j(1)["title"].as_str().unwrap_or("").to_string())).collect();
+        let rows = db::rows(
+            &format!("select url, data from unfurls where ok=1 and url in ({})", vec!["?"; urls.len()].join(",")),
+            rusqlite::params_from_iter(urls.iter()),
+        );
+        let got: std::collections::HashMap<String, String> =
+            rows.iter().map(|r| (r.s(0), r.j(1)["title"].as_str().unwrap_or("").to_string())).collect();
         for i in chunk {
             if let Some(t) = got.get(items[*i]["url"].as_str().unwrap_or("")).filter(|t| !t.is_empty()) {
                 items[*i]["title"] = json!(t);

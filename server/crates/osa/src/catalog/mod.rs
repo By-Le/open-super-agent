@@ -27,12 +27,31 @@ pub const CATEGORIES: [(&str, &str); 8] = [
     ("life", "生活"),
 ];
 const GLYPHS: [&str; 19] = [
-    "globe", "folder", "mail", "search", "train", "pin", "book", "doc", "feather", "plug", "chat", "hash", "package", "cloud", "palette", "table",
-    "calendar", "check", "notebook",
+    "globe", "folder", "mail", "search", "train", "pin", "book", "doc", "feather", "plug", "chat", "hash", "package", "cloud", "palette",
+    "table", "calendar", "check", "notebook",
 ];
 const KEYS: [&str; 21] = [
-    "title", "category", "order", "by", "icon", "desc", "about", "can", "example", "note", "how", "steps", "link", "link_label", "copy", "fields",
-    "check", "deny", "confirm", "connect", "en",
+    "title",
+    "category",
+    "order",
+    "by",
+    "icon",
+    "desc",
+    "about",
+    "can",
+    "example",
+    "note",
+    "how",
+    "steps",
+    "link",
+    "link_label",
+    "copy",
+    "fields",
+    "check",
+    "deny",
+    "confirm",
+    "connect",
+    "en",
 ];
 const EN_TEXT: [&str; 8] = ["title", "by", "desc", "about", "example", "note", "how", "link_label"];
 const EN_LIST: [&str; 2] = ["can", "steps"];
@@ -88,7 +107,13 @@ fn local_files() -> Vec<(String, PathBuf, i128)> {
                 continue;
             }
             let stem = p.file_stem().and_then(|s| s.to_str()).unwrap_or("").to_string();
-            let mt = e.metadata().ok().and_then(|m| m.modified().ok()).and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map(|d| d.as_nanos() as i128).unwrap_or(0);
+            let mt = e
+                .metadata()
+                .ok()
+                .and_then(|m| m.modified().ok())
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_nanos() as i128)
+                .unwrap_or(0);
             out.push((stem, p, mt));
         }
     }
@@ -185,10 +210,10 @@ pub fn parse(name: &str, m: &Value) -> Result<Value, String> {
         }
     };
     let texts = |bad: &mut Vec<String>, v: Option<&Value>, where_: &str| {
-        if let Some(v) = v.filter(|v| !v.is_null()) {
-            if !v.as_array().is_some_and(|a| a.iter().all(is_text)) {
-                bad.push(format!("{where_} 应该是一组文字"));
-            }
+        if let Some(v) = v.filter(|v| !v.is_null())
+            && !v.as_array().is_some_and(|a| a.iter().all(is_text))
+        {
+            bad.push(format!("{where_} 应该是一组文字"));
         }
     };
     for k in ["title", "by", "desc"] {
@@ -204,10 +229,11 @@ pub fn parse(name: &str, m: &Value) -> Result<Value, String> {
     if !CATEGORIES.iter().any(|(k, _)| *k == cat) {
         bad.push(format!("category 应该是 {} 之一", CATEGORIES.iter().map(|(k, _)| *k).collect::<Vec<_>>().join("、")));
     }
-    if let Some(o) = mo.get("order") {
-        if !o.is_i64() && !o.is_u64() {
-            bad.push("order 应该是一个整数".into());
-        }
+    if let Some(o) = mo.get("order")
+        && !o.is_i64()
+        && !o.is_u64()
+    {
+        bad.push("order 应该是一个整数".into());
     }
     let cf = mo.get("confirm").cloned().unwrap_or(json!("auto"));
     let cf_ok = matches!(cf.as_str(), Some("auto") | Some("all") | Some("none"))
@@ -244,7 +270,13 @@ pub fn parse(name: &str, m: &Value) -> Result<Value, String> {
     out.insert("id".into(), json!(name));
     out.insert("order".into(), mo.get("order").cloned().unwrap_or(json!(100)));
     out.insert("confirm".into(), mo.get("confirm").cloned().unwrap_or(json!("auto")));
-    let kind = if oauth { "oauth" } else if fields.iter().any(|f| py::truthy(&f["secret"])) { "token" } else { "none" };
+    let kind = if oauth {
+        "oauth"
+    } else if fields.iter().any(|f| py::truthy(&f["secret"])) {
+        "token"
+    } else {
+        "none"
+    };
     out.insert("kind".into(), json!(kind));
     out.insert("client".into(), json!(o.is_object() && o.get("client_id").is_some()));
     out.insert("can".into(), or("can", json!([])));
@@ -300,7 +332,10 @@ fn check_en(en: Option<&Value>, m: &Map<String, Value>, fields: &[Value], bad: &
         let (want, got) = (mentions(z), mentions(e));
         if got != want {
             let w: Vec<String> = want.iter().map(|x| format!("@{x}")).collect();
-            bad.push(format!("en.example 要和中文的 example 一样 @ 这些应用：{}", if w.is_empty() { "（没有）".into() } else { w.join("、") }));
+            bad.push(format!(
+                "en.example 要和中文的 example 一样 @ 这些应用：{}",
+                if w.is_empty() { "（没有）".into() } else { w.join("、") }
+            ));
         }
     }
     if let Some(cp) = eo.get("copy").filter(|v| !v.is_null()) {
@@ -379,17 +414,17 @@ fn check_icon(ic: Option<&Value>, bad: &mut Vec<String>) {
     if o.contains_key("svg") && o.contains_key("glyph") {
         bad.push("icon 里 svg 和 glyph 只写一个".into());
     }
-    if let Some(s) = o.get("svg") {
-        if !s.as_str().is_some_and(|s| SVG_PATH.is_match(s)) {
-            bad.push("icon.svg 应该是 24×24 的 SVG path（<path d=\"…\"> 里 d 的值）".into());
-        }
+    if let Some(s) = o.get("svg")
+        && !s.as_str().is_some_and(|s| SVG_PATH.is_match(s))
+    {
+        bad.push("icon.svg 应该是 24×24 的 SVG path（<path d=\"…\"> 里 d 的值）".into());
     }
-    if let Some(g) = o.get("glyph") {
-        if !g.as_str().is_some_and(|g| GLYPHS.contains(&g)) {
-            let mut gs: Vec<&str> = GLYPHS.to_vec();
-            gs.sort();
-            bad.push(format!("icon.glyph 应该是 {} 之一", gs.join("、")));
-        }
+    if let Some(g) = o.get("glyph")
+        && !g.as_str().is_some_and(|g| GLYPHS.contains(&g))
+    {
+        let mut gs: Vec<&str> = GLYPHS.to_vec();
+        gs.sort();
+        bad.push(format!("icon.glyph 应该是 {} 之一", gs.join("、")));
     }
 }
 
@@ -432,10 +467,10 @@ fn check_fields(fields: Option<&Value>, bad: &mut Vec<String>) -> Vec<Value> {
                 bad.push(format!("{where_}：{s} 应该是文字（数字请加引号）"));
             }
         }
-        if let Some(p) = fo.get("pattern").and_then(|v| v.as_str()) {
-            if let Err(e) = fancy_regex::Regex::new(p) {
-                bad.push(format!("{where_}：pattern 不是有效的正则（{e}）"));
-            }
+        if let Some(p) = fo.get("pattern").and_then(|v| v.as_str())
+            && let Err(e) = fancy_regex::Regex::new(p)
+        {
+            bad.push(format!("{where_}：pattern 不是有效的正则（{e}）"));
         }
         out.push(f.clone());
     }
@@ -457,10 +492,10 @@ fn check_connect(c: Option<&Value>, keys: &BTreeSet<String>, bad: &mut Vec<Strin
         }
     }
     let strmap = |bad: &mut Vec<String>, k: &str| {
-        if let Some(v) = co.get(k).filter(|v| !v.is_null()) {
-            if !v.as_object().is_some_and(|o| o.values().all(|x| x.is_string())) {
-                bad.push(format!("connect.{k} 的值都要是文字（数字请加引号，比如 '993'）"));
-            }
+        if let Some(v) = co.get(k).filter(|v| !v.is_null())
+            && !v.as_object().is_some_and(|o| o.values().all(|x| x.is_string()))
+        {
+            bad.push(format!("connect.{k} 的值都要是文字（数字请加引号，比如 '993'）"));
         }
     };
     let t = co.get("type").and_then(|v| v.as_str()).unwrap_or("");
@@ -468,10 +503,10 @@ fn check_connect(c: Option<&Value>, keys: &BTreeSet<String>, bad: &mut Vec<Strin
         if !co.get("command").is_some_and(is_text) {
             bad.push("本机运行的应用（type: stdio）要写 command".into());
         }
-        if let Some(a) = co.get("args") {
-            if !a.as_array().is_some_and(|a| a.iter().all(|x| x.is_string())) {
-                bad.push("connect.args 应该是一组文字（数字请加引号）".into());
-            }
+        if let Some(a) = co.get("args")
+            && !a.as_array().is_some_and(|a| a.iter().all(|x| x.is_string()))
+        {
+            bad.push("connect.args 应该是一组文字（数字请加引号）".into());
         }
         strmap(bad, "env");
         for k in ["url", "headers", "oauth"] {
@@ -519,10 +554,10 @@ fn check_oauth(o: Option<&Value>, bad: &mut Vec<String>) {
     if oo.contains_key("client_secret") && !oo.contains_key("client_id") {
         bad.push("connect.oauth 写了 client_secret 就要写 client_id".into());
     }
-    if let Some(p) = oo.get("params").filter(|v| !v.is_null()) {
-        if !p.as_object().is_some_and(|o| o.values().all(|x| x.is_string())) {
-            bad.push("connect.oauth.params 的值都要是文字".into());
-        }
+    if let Some(p) = oo.get("params").filter(|v| !v.is_null())
+        && !p.as_object().is_some_and(|o| o.values().all(|x| x.is_string()))
+    {
+        bad.push("connect.oauth.params 的值都要是文字".into());
     }
 }
 
@@ -577,7 +612,15 @@ pub fn en_of(it: &Value) -> Value {
         o["copy"] = py::merge(&it["copy"], cp);
     }
     if let Some(ef) = en.get("fields") {
-        o["fields"] = json!(it["fields"].as_array().cloned().unwrap_or_default().iter().map(|f| py::merge(f, &ef[f["key"].as_str().unwrap_or("")])).collect::<Vec<_>>());
+        o["fields"] = json!(
+            it["fields"]
+                .as_array()
+                .cloned()
+                .unwrap_or_default()
+                .iter()
+                .map(|f| py::merge(f, &ef[f["key"].as_str().unwrap_or("")]))
+                .collect::<Vec<_>>()
+        );
     }
     if let Some(ec) = en.get("check") {
         let mut m = Map::new();
@@ -594,13 +637,23 @@ pub fn public() -> Vec<Value> {
         .values()
         .map(en_of)
         .map(|it| {
-            let mut o: Map<String, Value> = it.as_object().cloned().unwrap_or_default().into_iter().filter(|(k, _)| !["connect", "check", "order", "en"].contains(&k.as_str())).collect();
+            let mut o: Map<String, Value> = it
+                .as_object()
+                .cloned()
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|(k, _)| !["connect", "check", "order", "en"].contains(&k.as_str()))
+                .collect();
             let fields: Vec<Value> = it["fields"]
                 .as_array()
                 .cloned()
                 .unwrap_or_default()
                 .into_iter()
-                .map(|f| Value::Object(f.as_object().cloned().unwrap_or_default().into_iter().filter(|(k, _)| k != "pattern" && k != "nospace").collect()))
+                .map(|f| {
+                    Value::Object(
+                        f.as_object().cloned().unwrap_or_default().into_iter().filter(|(k, _)| k != "pattern" && k != "nospace").collect(),
+                    )
+                })
                 .collect();
             o.insert("fields".into(), json!(fields));
             o.entry("example").or_insert(json!(""));
@@ -628,7 +681,9 @@ pub fn title(name: &str) -> String {
 
 pub fn fill(v: &Value, subst: &HashMap<String, String>) -> Value {
     match v {
-        Value::String(s) => json!(SLOT.replace_all(s, |c: &regex::Captures| subst.get(&c[1]).cloned().unwrap_or_else(|| c[0].to_string())).into_owned()),
+        Value::String(s) => {
+            json!(SLOT.replace_all(s, |c: &regex::Captures| subst.get(&c[1]).cloned().unwrap_or_else(|| c[0].to_string())).into_owned())
+        }
         Value::Array(a) => json!(a.iter().map(|x| fill(x, subst)).collect::<Vec<_>>()),
         Value::Object(o) => Value::Object(o.iter().map(|(k, x)| (k.clone(), fill(x, subst))).collect()),
         other => other.clone(),
@@ -641,7 +696,13 @@ fn values_of(it: &Value, values: &Value) -> Result<HashMap<String, String>, Stri
     for f in it["fields"].as_array().cloned().unwrap_or_default() {
         let key = f["key"].as_str().unwrap_or("").to_string();
         let label = py::str_of(&f["label"]);
-        let raw = if py::truthy(&values[key.as_str()]) { &values[key.as_str()] } else if py::truthy(&f["default"]) { &f["default"] } else { &Value::Null };
+        let raw = if py::truthy(&values[key.as_str()]) {
+            &values[key.as_str()]
+        } else if py::truthy(&f["default"]) {
+            &f["default"]
+        } else {
+            &Value::Null
+        };
         let mut v = if raw.is_null() { String::new() } else { py::str_of(raw) }.trim().to_string();
         if py::truthy(&f["nospace"]) {
             v = v.split_whitespace().collect();
@@ -649,13 +710,14 @@ fn values_of(it: &Value, values: &Value) -> Result<HashMap<String, String>, Stri
         if v.is_empty() && !py::truthy(&f["optional"]) {
             return Err(t!("请填写{label}", label = label));
         }
-        if let Some(p) = f["pattern"].as_str().filter(|p| !p.is_empty()) {
-            if !v.is_empty() && !fancy_regex::Regex::new(p).ok().and_then(|r| r.is_match(&v).ok()).unwrap_or(false) {
-                return Err(match f["invalid"].as_str().filter(|s| !s.is_empty()) {
-                    Some(inv) => inv.to_string(),
-                    None => t!("{label}的格式不对", label = label),
-                });
-            }
+        if let Some(p) = f["pattern"].as_str().filter(|p| !p.is_empty())
+            && !v.is_empty()
+            && !fancy_regex::Regex::new(p).ok().and_then(|r| r.is_match(&v).ok()).unwrap_or(false)
+        {
+            return Err(match f["invalid"].as_str().filter(|s| !s.is_empty()) {
+                Some(inv) => inv.to_string(),
+                None => t!("{label}的格式不对", label = label),
+            });
         }
         if REF.is_match(&v) {
             return Err(t!("{label}里不能写 env: 或 vault: 引用", label = label));

@@ -14,7 +14,12 @@ const MAX_FILE: i64 = 20 << 20;
 const COMMANDS: [(&str, &str); 3] = [("new", "开始新话题"), ("stop", "停下正在做的任务"), ("help", "怎么用")];
 
 fn api() -> String {
-    std::env::var("OSA_TELEGRAM_API").ok().filter(|s| !s.is_empty()).unwrap_or_else(|| "https://api.telegram.org".into()).trim_end_matches('/').to_string()
+    std::env::var("OSA_TELEGRAM_API")
+        .ok()
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "https://api.telegram.org".into())
+        .trim_end_matches('/')
+        .to_string()
 }
 
 #[derive(Debug)]
@@ -68,9 +73,15 @@ pub async fn check(fields: &Value) -> Result<Value, String> {
     let me = match call(&c, &token, "getMe", 30, json!({})).await {
         Ok(m) => m,
         Err(TgErr::Tg { code, desc, .. }) => {
-            return Err(if code == 401 || code == 404 { t!("token 不对，或者这个机器人已经被删除") } else { t!("Telegram 返回错误：{error}", error = desc) });
+            return Err(if code == 401 || code == 404 {
+                t!("token 不对，或者这个机器人已经被删除")
+            } else {
+                t!("Telegram 返回错误：{error}", error = desc)
+            });
         }
-        Err(TgErr::Http(n)) => return Err(t!("连不上 Telegram（{error}）。服务器在国内的话，要给 open-super-agent 设置 HTTPS_PROXY", error = n)),
+        Err(TgErr::Http(n)) => {
+            return Err(t!("连不上 Telegram（{error}）。服务器在国内的话，要给 open-super-agent 设置 HTTPS_PROXY", error = n));
+        }
     };
     let user = py::str_of(&me["username"]);
     Ok(json!({"name": format!("@{user}"), "config": {"username": user, "bot_id": me["id"]}, "secret": token}))
@@ -132,24 +143,38 @@ impl Telegram {
     }
 
     fn card(card: &Card) -> (String, Value) {
-        let mut text = format!("<b>{}</b>\n\n{}", fmt::escape(card["title"].as_str().unwrap_or(""), true), fmt::telegram_html(card["body"].as_str().unwrap_or("")));
+        let mut text = format!(
+            "<b>{}</b>\n\n{}",
+            fmt::escape(card["title"].as_str().unwrap_or(""), true),
+            fmt::telegram_html(card["body"].as_str().unwrap_or(""))
+        );
         if let Some(done) = card["done"].as_str().filter(|s| !s.is_empty()) {
             text += &format!("\n\n<b>{}</b>", fmt::escape(done, true));
         }
         let mut rows = vec![];
         let id = py::str_of(&card["id"]);
-        let btns: Vec<Value> = card["buttons"].as_array().cloned().unwrap_or_default().iter()
+        let btns: Vec<Value> = card["buttons"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default()
+            .iter()
             .map(|b| json!({"text": b[0], "callback_data": format!("ap:{id}:{}", py::str_of(&b[1]))}))
             .collect();
         if !btns.is_empty() {
             rows.push(json!(btns));
         }
-        if let Some(l) = card["link"].as_array() {
-            if l.get(1).and_then(|u| u.as_str()).is_some_and(|u| u.starts_with("https://")) {
-                rows.push(json!([{"text": l[0], "url": l[1]}]));
-            }
+        if let Some(l) = card["link"].as_array()
+            && l.get(1).and_then(|u| u.as_str()).is_some_and(|u| u.starts_with("https://"))
+        {
+            rows.push(json!([{"text": l[0], "url": l[1]}]));
         }
         (text, json!({"inline_keyboard": rows}))
+    }
+}
+
+impl Default for Telegram {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -172,7 +197,9 @@ impl Platform for Telegram {
                     ready = true;
                     ch.set_state("connected", None);
                 }
-                let ups = self.call(&ch, "getUpdates", 70, json!({"offset": offset, "timeout": 50, "allowed_updates": ["message", "callback_query"]})).await?;
+                let ups = self
+                    .call(&ch, "getUpdates", 70, json!({"offset": offset, "timeout": 50, "allowed_updates": ["message", "callback_query"]}))
+                    .await?;
                 ch.set_state("connected", None);
                 backoff = 3;
                 for u in ups.as_array().cloned().unwrap_or_default() {
@@ -196,7 +223,12 @@ impl Platform for Telegram {
                         return Ok(());
                     }
                     if code == 409 {
-                        ch.set_state("error", Some(Later::plain("这个机器人在别处也在收消息（比如另一台服务器上的 open-super-agent），同一个 token 只能一处用")));
+                        ch.set_state(
+                            "error",
+                            Some(Later::plain(
+                                "这个机器人在别处也在收消息（比如另一台服务器上的 open-super-agent），同一个 token 只能一处用",
+                            )),
+                        );
                         tokio::time::sleep(Duration::from_secs(30)).await;
                         continue;
                     }
@@ -218,7 +250,13 @@ impl Platform for Telegram {
         if f["file_size"].as_i64().unwrap_or(0) > MAX_FILE {
             anyhow::bail!(t!("Telegram 机器人只能接收 20 MB 以内的文件"));
         }
-        let r = self.http.get(format!("{}/file/bot{}/{}", api(), ch.secret, py::str_of(&f["file_path"]))).timeout(Duration::from_secs(120)).send().await?.error_for_status()?;
+        let r = self
+            .http
+            .get(format!("{}/file/bot{}/{}", api(), ch.secret, py::str_of(&f["file_path"])))
+            .timeout(Duration::from_secs(120))
+            .send()
+            .await?
+            .error_for_status()?;
         Ok((r.bytes().await?.to_vec(), String::new()))
     }
 
@@ -229,7 +267,13 @@ impl Platform for Telegram {
         match r {
             Ok(_) => Ok(()),
             Err(TgErr::Tg { code: 400, .. }) => {
-                self.call(ch, "sendMessage", 30, json!({"chat_id": peer, "text": py::head(&fmt::plain(md), 4096), "link_preview_options": {"is_disabled": true}})).await?;
+                self.call(
+                    ch,
+                    "sendMessage",
+                    30,
+                    json!({"chat_id": peer, "text": py::head(&fmt::plain(md), 4096), "link_preview_options": {"is_disabled": true}}),
+                )
+                .await?;
                 Ok(())
             }
             Err(e) => Err(e.into()),
@@ -238,7 +282,10 @@ impl Platform for Telegram {
 
     async fn send_card(&self, ch: &Arc<Chan>, peer: &str, card: &Card) -> anyhow::Result<String> {
         let (text, kb) = Self::card(card);
-        let r = match self.call(ch, "sendMessage", 30, json!({"chat_id": peer, "text": text, "parse_mode": "HTML", "reply_markup": kb})).await {
+        let r = match self
+            .call(ch, "sendMessage", 30, json!({"chat_id": peer, "text": text, "parse_mode": "HTML", "reply_markup": kb}))
+            .await
+        {
             Ok(r) => r,
             Err(TgErr::Tg { code: 400, .. }) => {
                 let first: Vec<Value> = kb["inline_keyboard"].as_array().cloned().unwrap_or_default().into_iter().take(1).collect();
@@ -253,12 +300,26 @@ impl Platform for Telegram {
     async fn edit_card(&self, ch: &Arc<Chan>, peer: &str, msg_id: &str, card: &Card) -> anyhow::Result<()> {
         let (text, kb) = Self::card(card);
         let mid: i64 = msg_id.parse().unwrap_or(0);
-        match self.call(ch, "editMessageText", 30, json!({"chat_id": peer, "message_id": mid, "text": text, "parse_mode": "HTML", "reply_markup": kb})).await {
+        match self
+            .call(
+                ch,
+                "editMessageText",
+                30,
+                json!({"chat_id": peer, "message_id": mid, "text": text, "parse_mode": "HTML", "reply_markup": kb}),
+            )
+            .await
+        {
             Ok(_) => Ok(()),
             Err(TgErr::Tg { desc, .. }) if desc.contains("not modified") => Ok(()),
             Err(TgErr::Tg { code: 400, .. }) => {
-                self.call(ch, "editMessageText", 30, json!({"chat_id": peer, "message_id": mid,
-                    "text": format!("{}\n\n{}", py::str_of(&card["title"]), py::str_of(&card["done"])), "reply_markup": kb})).await?;
+                self.call(
+                    ch,
+                    "editMessageText",
+                    30,
+                    json!({"chat_id": peer, "message_id": mid,
+                    "text": format!("{}\n\n{}", py::str_of(&card["title"]), py::str_of(&card["done"])), "reply_markup": kb}),
+                )
+                .await?;
                 Ok(())
             }
             Err(e) => Err(e.into()),

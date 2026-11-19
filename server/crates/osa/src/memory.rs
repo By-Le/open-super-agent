@@ -137,12 +137,11 @@ pub fn thread_of(chat_id: i64) -> Option<(i64, i64)> {
 
 pub fn recall(msg_id: i64, chat_id: i64) -> String {
     let mut row = db::row("select role, content from messages where id=? and chat_id=?", params![msg_id, chat_id]);
-    if row.is_none() {
-        if let Some((parent, root)) = thread_of(chat_id) {
-            if msg_id <= root {
-                row = db::row("select role, content from messages where id=? and chat_id=?", params![msg_id, parent]);
-            }
-        }
+    if row.is_none()
+        && let Some((parent, root)) = thread_of(chat_id)
+        && msg_id <= root
+    {
+        row = db::row("select role, content from messages where id=? and chat_id=?", params![msg_id, parent]);
     }
     match row {
         Some(r) => format!("[{}] {}", r.s(0), r.s(1)),
@@ -232,9 +231,7 @@ pub fn context(chat_id: i64, viewer: Option<i64>, me: Option<i64>, images: usize
     let (rows, split, root) = context_rows(chat_id);
     let names: HashMap<i64, String> = db::rows("select id, name from bots", []).into_iter().map(|r| (r.i(0), r.s(1))).collect();
     let me = if viewer.is_some() { viewer } else { me };
-    let name = |b: Option<i64>| -> String {
-        b.and_then(|b| names.get(&b).cloned()).unwrap_or_else(|| "已删除的 Bot".into())
-    };
+    let name = |b: Option<i64>| -> String { b.and_then(|b| names.get(&b).cloned()).unwrap_or_else(|| "已删除的 Bot".into()) };
     let cut = if rows.len() > n { (rows.len() - n) / n * n } else { 0 };
     let (old, recent) = rows.split_at(cut);
     let mut msgs = vec![];
@@ -243,11 +240,11 @@ pub fn context(chat_id: i64, viewer: Option<i64>, me: Option<i64>, images: usize
             if viewer.is_some() && r == "assistant" && b != viewer { name(b) } else { r.to_string() }
         };
         let start = old.len().saturating_sub(200);
-        let index: Vec<String> = old[start..]
-            .iter()
-            .map(|(i, r, c, _, b)| format!("#{i} [{}] {}", who(r, *b), py::head(c, 60).replace('\n', " ")))
-            .collect();
-        msgs.push(json!({"role": "system", "content": format!("更早的对话已移出上下文，需要时用 recall(id) 取回原文：\n{}", index.join("\n"))}));
+        let index: Vec<String> =
+            old[start..].iter().map(|(i, r, c, _, b)| format!("#{i} [{}] {}", who(r, *b), py::head(c, 60).replace('\n', " "))).collect();
+        msgs.push(
+            json!({"role": "system", "content": format!("更早的对话已移出上下文，需要时用 recall(id) 取回原文：\n{}", index.join("\n"))}),
+        );
     }
     let at: isize = match split {
         Some(s) => s.max(cut) as isize,
@@ -292,14 +289,20 @@ pub fn context(chat_id: i64, viewer: Option<i64>, me: Option<i64>, images: usize
             msgs.push(json!({"role": "user", "content": text}));
         } else if r == "task" && kind == "image" {
             let whose = if others && b.is_some() { name(*b) } else { "你".into() };
-            let refs: Vec<String> = meta["refs"].as_array().map(|a| a.iter().map(|x| x["name"].as_str().unwrap_or("").to_string()).collect()).unwrap_or_default();
+            let refs: Vec<String> = meta["refs"]
+                .as_array()
+                .map(|a| a.iter().map(|x| x["name"].as_str().unwrap_or("").to_string()).collect())
+                .unwrap_or_default();
             let refs = refs.join("、");
             msgs.push(json!({"role": "user", "content": format!(
                 "（系统通知：{whose}{}画好了一张图，已经显示给用户。描述：{}）{}",
                 if refs.is_empty() { String::new() } else { format!("照着 {refs} ") }, prompt_or(&c), image_ids(&meta, true))}));
         } else if r == "task" && kind == "video" {
             let whose = if others && b.is_some() { name(*b) } else { "你".into() };
-            let ids: String = meta["attachments"].as_array().map(|a| a.iter().filter_map(|x| x["media"].as_str().filter(|s| !s.is_empty()).map(|m| format!("\n[视频] {m}"))).collect()).unwrap_or_default();
+            let ids: String = meta["attachments"]
+                .as_array()
+                .map(|a| a.iter().filter_map(|x| x["media"].as_str().filter(|s| !s.is_empty()).map(|m| format!("\n[视频] {m}"))).collect())
+                .unwrap_or_default();
             msgs.push(json!({"role": "user", "content": format!("（系统通知：{whose}生成好了一段视频，已经显示给用户。描述：{}）{ids}", prompt_or(&c))}));
         } else if r == "task" && kind == "video_job" {
             if meta["status"] == "running" {
@@ -341,15 +344,15 @@ pub fn context(chat_id: i64, viewer: Option<i64>, me: Option<i64>, images: usize
             }
             c += &image_ids(&meta, false);
             let mut parts = vec![];
-            if !shown.is_empty() {
-                if let Some(atts) = meta["attachments"].as_array() {
-                    for a in atts {
-                        let media = a["media"].as_str().unwrap_or("");
-                        if shown.contains(&(*mid, media.to_string())) {
-                            if let Some(p) = crate::media::image_part(media) {
-                                parts.push(p);
-                            }
-                        }
+            if !shown.is_empty()
+                && let Some(atts) = meta["attachments"].as_array()
+            {
+                for a in atts {
+                    let media = a["media"].as_str().unwrap_or("");
+                    if shown.contains(&(*mid, media.to_string()))
+                        && let Some(p) = crate::media::image_part(media)
+                    {
+                        parts.push(p);
                     }
                 }
             }
@@ -469,20 +472,31 @@ pub fn add_usage(role: &str, model: &str, u: UsageRec) {
     let task_id = u.task_id.or(w.task_id);
     let mut bot_id = u.bot_id.or(w.bot_id);
     let mut chat_id = u.chat_id.or(w.chat_id);
-    if bot_id.is_none() {
-        if let Some(t) = task_id {
-            if let Some(r) = db::row("select bot_id, chat_id from messages where id=?", params![t]) {
-                bot_id = r.oi(0);
-                chat_id = chat_id.or(r.oi(1));
-            }
-        }
+    if bot_id.is_none()
+        && let Some(t) = task_id
+        && let Some(r) = db::row("select bot_id, chat_id from messages where id=?", params![t])
+    {
+        bot_id = r.oi(0);
+        chat_id = chat_id.or(r.oi(1));
     }
     db::exec(
         "insert into llm_calls(ts, role, model, task_id, cache_hit, cache_miss, output, cost,
         bot_id, chat_id, provider, ms, ttft, err) values(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         params![
-            py::now(), role, model, task_id, u.hit, u.miss, u.out, u.cost, bot_id, chat_id, u.provider,
-            u.ms.map(|x| x as i64), u.ttft.map(|x| x as i64), if u.err.is_empty() { None } else { Some(u.err) }
+            py::now(),
+            role,
+            model,
+            task_id,
+            u.hit,
+            u.miss,
+            u.out,
+            u.cost,
+            bot_id,
+            chat_id,
+            u.provider,
+            u.ms.map(|x| x as i64),
+            u.ttft.map(|x| x as i64),
+            if u.err.is_empty() { None } else { Some(u.err) }
         ],
     );
 }

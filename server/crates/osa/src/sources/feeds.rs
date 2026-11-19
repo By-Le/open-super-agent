@@ -91,13 +91,18 @@ static HTML: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)^\s*(?:<!--[\s\
 static DECL: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\s*<\?xml[^>]*\?>").unwrap());
 static DOCTYPE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)<!DOCTYPE[^>\[]*(?:\[[\s\S]*?\])?\s*>").unwrap());
 static CTRL: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"[\x00-\x08\x0b\x0c\x0e-\x1f]").unwrap());
-static AMP: LazyLock<fancy_regex::Regex> = LazyLock::new(|| fancy_regex::Regex::new(r"&(?!(?:amp|lt|gt|quot|apos|#\d+|#x[0-9a-fA-F]+);)(\w*;?)").unwrap());
+static AMP: LazyLock<fancy_regex::Regex> =
+    LazyLock::new(|| fancy_regex::Regex::new(r"&(?!(?:amp|lt|gt|quot|apos|#\d+|#x[0-9a-fA-F]+);)(\w*;?)").unwrap());
 static TAGS: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)</?(?:p|div|br|a|img|span|strong|em|ul|li)\b").unwrap());
 
 fn decode(raw: &[u8], ctype: &str) -> String {
     let raw = raw.strip_prefix(b"\xef\xbb\xbf").unwrap_or(raw);
     let head = String::from_utf8_lossy(&raw[..raw.len().min(200)]).into_owned();
-    let enc = ENC.captures(&head).map(|c| c[1].to_string()).or_else(|| CHARSET.captures(ctype).map(|c| c[1].to_string())).unwrap_or_else(|| "utf-8".into());
+    let enc = ENC
+        .captures(&head)
+        .map(|c| c[1].to_string())
+        .or_else(|| CHARSET.captures(ctype).map(|c| c[1].to_string()))
+        .unwrap_or_else(|| "utf-8".into());
     util::decode(raw, &enc)
 }
 
@@ -171,7 +176,9 @@ fn when(s: &str) -> (Option<f64>, String) {
     if s.is_empty() {
         return (None, String::new());
     }
-    let show = |dt: DateTime<Local>| (Some(dt.timestamp() as f64 + dt.timestamp_subsec_nanos() as f64 / 1e9), dt.format("%Y-%m-%d %H:%M").to_string());
+    let show = |dt: DateTime<Local>| {
+        (Some(dt.timestamp() as f64 + dt.timestamp_subsec_nanos() as f64 / 1e9), dt.format("%Y-%m-%d %H:%M").to_string())
+    };
     if let Ok(dt) = DateTime::parse_from_rfc2822(s) {
         return show(dt.with_timezone(&Local));
     }
@@ -183,17 +190,18 @@ fn when(s: &str) -> (Option<f64>, String) {
             return show(dt.with_timezone(&Local));
         }
     }
-    for f in ["%Y-%m-%dT%H:%M:%S%.f", "%Y-%m-%d %H:%M:%S%.f", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M", "%Y-%m-%d %H:%M"] {
-        if let Ok(n) = NaiveDateTime::parse_from_str(s, f) {
-            if let Some(dt) = Local.from_local_datetime(&n).earliest() {
-                return (Some(dt.timestamp() as f64), n.format("%Y-%m-%d %H:%M").to_string());
-            }
+    for f in ["%Y-%m-%dT%H:%M:%S%.f", "%Y-%m-%d %H:%M:%S%.f", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M", "%Y-%m-%d %H:%M"]
+    {
+        if let Ok(n) = NaiveDateTime::parse_from_str(s, f)
+            && let Some(dt) = Local.from_local_datetime(&n).earliest()
+        {
+            return (Some(dt.timestamp() as f64), n.format("%Y-%m-%d %H:%M").to_string());
         }
     }
-    if let Ok(d) = chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d") {
-        if let Some(dt) = d.and_hms_opt(0, 0, 0).and_then(|n| Local.from_local_datetime(&n).earliest()) {
-            return (Some(dt.timestamp() as f64), dt.format("%Y-%m-%d %H:%M").to_string());
-        }
+    if let Ok(d) = chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d")
+        && let Some(dt) = d.and_hms_opt(0, 0, 0).and_then(|n| Local.from_local_datetime(&n).earliest())
+    {
+        return (Some(dt.timestamp() as f64), dt.format("%Y-%m-%d %H:%M").to_string());
     }
     (None, oneline(s, 40))
 }
@@ -213,11 +221,28 @@ fn duration(v: &str) -> String {
 }
 
 #[allow(clippy::too_many_arguments)]
-fn item(id: &str, title: &str, url: &str, w: &str, author: &str, summary: &str, full: &str, media: &str, media_type: &str, dur: &str) -> Value {
+fn item(
+    id: &str,
+    title: &str,
+    url: &str,
+    w: &str,
+    author: &str,
+    summary: &str,
+    full: &str,
+    media: &str,
+    media_type: &str,
+    dur: &str,
+) -> Value {
     let (ts, shown) = when(w);
     let (s, f) = (plain(summary), plain(full));
     let body = if py::char_len(&s) >= 150 || py::char_len(&s) >= py::char_len(&f) { s } else { f };
-    let id = if !id.is_empty() { id.to_string() } else if !url.is_empty() { url.to_string() } else { format!("{title}|{w}") };
+    let id = if !id.is_empty() {
+        id.to_string()
+    } else if !url.is_empty() {
+        url.to_string()
+    } else {
+        format!("{title}|{w}")
+    };
     use sha1::Digest;
     let key: String = sha1::Sha1::digest(id.trim().as_bytes()).iter().map(|b| format!("{b:02x}")).collect::<String>()[..16].to_string();
     json!({"key": key, "title": oneline(&plain(title), 200), "url": url, "ts": ts, "when": shown, "author": oneline(author, 60),
@@ -241,12 +266,12 @@ fn link(el: Node, base: &str) -> String {
             }
         }
     }
-    if url.is_empty() {
-        if let Some(g) = child(el, "guid") {
-            let t = node_text(Some(g));
-            if g.attribute("isPermaLink").unwrap_or("true") != "false" && t.starts_with("http") {
-                url = t;
-            }
+    if url.is_empty()
+        && let Some(g) = child(el, "guid")
+    {
+        let t = node_text(Some(g));
+        if g.attribute("isPermaLink").unwrap_or("true") != "false" && t.starts_with("http") {
+            url = t;
         }
     }
     if url.is_empty() {
@@ -263,7 +288,12 @@ fn author(el: Node) -> String {
     for c in el.children().filter(|c| c.is_element()) {
         let n = ln(&c);
         if n == "author" || n == "creator" {
-            let name = c.children().filter(|x| x.is_element() && ln(x) == "name").map(|x| node_text(Some(x))).find(|t| !t.is_empty()).unwrap_or_else(|| node_text(Some(c)));
+            let name = c
+                .children()
+                .filter(|x| x.is_element() && ln(x) == "name")
+                .map(|x| node_text(Some(x)))
+                .find(|t| !t.is_empty())
+                .unwrap_or_else(|| node_text(Some(c)));
             return R.captures(&name).map(|m| m[1].to_string()).unwrap_or(name);
         }
     }
@@ -285,9 +315,18 @@ fn media(el: Node) -> (String, String) {
 
 fn xml_item(el: Node, base: &str) -> Value {
     let (m, mt) = media(el);
-    item(&first(el, &["guid", "id"]), &first(el, &["title"]), &link(el, base),
-         &first(el, &["pubDate", "published", "date", "issued", "updated", "modified"]), &author(el),
-         &first(el, &["description", "summary"]), &first(el, &["encoded", "content"]), &m, &mt, &first(el, &["duration"]))
+    item(
+        &first(el, &["guid", "id"]),
+        &first(el, &["title"]),
+        &link(el, base),
+        &first(el, &["pubDate", "published", "date", "issued", "updated", "modified"]),
+        &author(el),
+        &first(el, &["description", "summary"]),
+        &first(el, &["encoded", "content"]),
+        &m,
+        &mt,
+        &first(el, &["duration"]),
+    )
 }
 
 fn sv(v: &Value) -> String {
@@ -304,14 +343,33 @@ fn json_feed(text: &str, base: &str) -> Result<Value, String> {
         if !it.is_object() {
             continue;
         }
-        let authors: Vec<Value> = if it["authors"].is_array() { it["authors"].as_array().cloned().unwrap_or_default() } else { vec![it["author"].clone()] };
-        let author = authors.iter().filter(|a| a.is_object() && py::truthy(&a["name"])).map(|a| py::str_of(&a["name"])).collect::<Vec<_>>().join("、");
-        let att = it["attachments"].as_array().and_then(|a| a.iter().find(|x| x.is_object() && py::truthy(&x["url"])).cloned()).unwrap_or(json!({}));
+        let authors: Vec<Value> =
+            if it["authors"].is_array() { it["authors"].as_array().cloned().unwrap_or_default() } else { vec![it["author"].clone()] };
+        let author = authors
+            .iter()
+            .filter(|a| a.is_object() && py::truthy(&a["name"]))
+            .map(|a| py::str_of(&a["name"]))
+            .collect::<Vec<_>>()
+            .join("、");
+        let att = it["attachments"]
+            .as_array()
+            .and_then(|a| a.iter().find(|x| x.is_object() && py::truthy(&x["url"])).cloned())
+            .unwrap_or(json!({}));
         let url = if py::truthy(&it["url"]) { sv(&it["url"]) } else { sv(&it["external_url"]) };
         let date = if py::truthy(&it["date_published"]) { sv(&it["date_published"]) } else { sv(&it["date_modified"]) };
         let full = if py::truthy(&it["content_html"]) { sv(&it["content_html"]) } else { sv(&it["content_text"]) };
-        items.push(item(&sv(&it["id"]), &sv(&it["title"]), &if url.is_empty() { url.clone() } else { join(base, &url) }, &date, &author,
-                        &sv(&it["summary"]), &full, &sv(&att["url"]), &sv(&att["mime_type"]), &sv(&att["duration_in_seconds"])));
+        items.push(item(
+            &sv(&it["id"]),
+            &sv(&it["title"]),
+            &if url.is_empty() { url.clone() } else { join(base, &url) },
+            &date,
+            &author,
+            &sv(&it["summary"]),
+            &full,
+            &sv(&att["url"]),
+            &sv(&att["mime_type"]),
+            &sv(&att["duration_in_seconds"]),
+        ));
     }
     Ok(json!({"title": oneline(&sv(&d["title"]), 80), "items": items}))
 }
@@ -357,7 +415,12 @@ pub fn parse(raw: &[u8], ctype: &str, base: &str) -> Result<Option<Value>, Strin
     };
     let items: Vec<Value> = parents
         .iter()
-        .flat_map(|p| p.children().filter(|el| el.is_element() && (ln(el) == "item" || ln(el) == "entry")).map(|el| xml_item(el, base)).collect::<Vec<_>>())
+        .flat_map(|p| {
+            p.children()
+                .filter(|el| el.is_element() && (ln(el) == "item" || ln(el) == "entry"))
+                .map(|el| xml_item(el, base))
+                .collect::<Vec<_>>()
+        })
         .collect();
     if items.is_empty() && !["rss", "rdf", "feed"].contains(&kind.as_str()) {
         return Err("这个网址的内容不像订阅源（没有 RSS / Atom 的条目）".into());
@@ -379,10 +442,25 @@ fn event(it: &Value, feed_title: &str) -> Value {
     let mut lines = vec![meta.join("　"), short(&s("body"), MAX_TEXT)];
     if !s("media").is_empty() {
         let mt = s("media_type");
-        let kind = if mt.starts_with("audio") { "音频" } else if mt.starts_with("video") { "视频" } else { "附件" };
-        lines.push(format!("{kind}：{}{}", s("media"), if s("duration").is_empty() { String::new() } else { format!("（时长 {}）", s("duration")) }));
+        let kind = if mt.starts_with("audio") {
+            "音频"
+        } else if mt.starts_with("video") {
+            "视频"
+        } else {
+            "附件"
+        };
+        lines.push(format!(
+            "{kind}：{}{}",
+            s("media"),
+            if s("duration").is_empty() { String::new() } else { format!("（时长 {}）", s("duration")) }
+        ));
     }
-    let title = if !s("title").is_empty() { s("title") } else { let b = oneline(&s("body"), 80); if b.is_empty() { "（没有标题）".into() } else { b } };
+    let title = if !s("title").is_empty() {
+        s("title")
+    } else {
+        let b = oneline(&s("body"), 80);
+        if b.is_empty() { "（没有标题）".into() } else { b }
+    };
     json!({"id": it["key"], "title": title, "url": it["url"], "text": lines.into_iter().filter(|x| !x.is_empty()).collect::<Vec<_>>().join("\n")})
 }
 
@@ -391,11 +469,14 @@ async fn check(params: Value, state: Value) -> Result<(Vec<Value>, Value), Strin
     let feed = fetch(&url).await?;
     let mut items = feed["items"].as_array().cloned().unwrap_or_default();
     if !items.is_empty() && items.iter().all(|it| it["ts"].is_number()) {
-        items.sort_by(|a, b| b["ts"].as_f64().unwrap_or(0.0).partial_cmp(&a["ts"].as_f64().unwrap_or(0.0)).unwrap_or(std::cmp::Ordering::Equal));
+        items.sort_by(|a, b| {
+            b["ts"].as_f64().unwrap_or(0.0).partial_cmp(&a["ts"].as_f64().unwrap_or(0.0)).unwrap_or(std::cmp::Ordering::Equal)
+        });
     }
     let ftitle = feed["title"].as_str().unwrap_or("").to_string();
     let same = state.is_object() && state["url"].as_str() == Some(url.as_str());
-    let seen: Vec<String> = if same { state["seen"].as_array().map(|a| a.iter().map(py::str_of).collect()).unwrap_or_default() } else { vec![] };
+    let seen: Vec<String> =
+        if same { state["seen"].as_array().map(|a| a.iter().map(py::str_of).collect()).unwrap_or_default() } else { vec![] };
     let mut all: Vec<String> = vec![];
     for k in items.iter().map(|it| py::str_of(&it["key"])).chain(seen.iter().cloned()) {
         if !all.contains(&k) {

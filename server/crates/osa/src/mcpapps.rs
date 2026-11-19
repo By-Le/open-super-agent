@@ -49,16 +49,18 @@ pub fn view_record(app: &str, tool: &str, uri: &str, args: &Value, result: &Valu
     if py::char_len(&py::dumps_u(&rec)) <= MAX_RESULT { Some(rec) } else { None }
 }
 
-static SRC: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(https://|wss://)(\*\.)?[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*(:\d{1,5})?(/[A-Za-z0-9._~/%-]*)?$").unwrap());
+static SRC: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^(https://|wss://)(\*\.)?[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*(:\d{1,5})?(/[A-Za-z0-9._~/%-]*)?$").unwrap());
 static LOCAL: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(http|ws)://(localhost|127\.0\.0\.1)(:\d{1,5})?$").unwrap());
 
 fn domains(v: &Value) -> Vec<String> {
     let mut out: Vec<String> = vec![];
     for d in v.as_array().cloned().unwrap_or_default() {
-        if let Some(s) = d.as_str().map(|s| s.trim().to_string()) {
-            if (SRC.is_match(&s) || LOCAL.is_match(&s)) && !out.contains(&s) {
-                out.push(s);
-            }
+        if let Some(s) = d.as_str().map(|s| s.trim().to_string())
+            && (SRC.is_match(&s) || LOCAL.is_match(&s))
+            && !out.contains(&s)
+        {
+            out.push(s);
         }
     }
     out.truncate(MAX_DOMAINS);
@@ -83,7 +85,10 @@ fn session(app: &str) -> Result<Arc<crate::mcp_client::Session>, String> {
 }
 
 fn declared(app: &str) -> Vec<String> {
-    registry::by_group().get(app).map(|ts| ts.iter().filter_map(|t| t.meta["mcp"]["ui"].as_str().map(String::from)).collect()).unwrap_or_default()
+    registry::by_group()
+        .get(app)
+        .map(|ts| ts.iter().filter_map(|t| t.meta["mcp"]["ui"].as_str().map(String::from)).collect())
+        .unwrap_or_default()
 }
 
 pub async fn view(app: &str, uri: &str) -> Result<(String, String), String> {
@@ -95,7 +100,12 @@ pub async fn view(app: &str, uri: &str) -> Result<(String, String), String> {
     }
     let rr = session(app)?.read_resource(uri).await.map_err(|e| e.to_string())?;
     let contents = rr["contents"].as_array().cloned().unwrap_or_default();
-    let c = contents.iter().find(|c| c["uri"] == uri).or(contents.first()).cloned().ok_or_else(|| t!("应用 @{name} 没有界面 {uri}", name = app, uri = uri))?;
+    let c = contents
+        .iter()
+        .find(|c| c["uri"] == uri)
+        .or(contents.first())
+        .cloned()
+        .ok_or_else(|| t!("应用 @{name} 没有界面 {uri}", name = app, uri = uri))?;
     let mime_raw = c["mimeType"].as_str().unwrap_or("").to_string();
     let mime = mime_raw.to_lowercase().replace(' ', "");
     if !mime.is_empty() && !mime.starts_with("text/html") {

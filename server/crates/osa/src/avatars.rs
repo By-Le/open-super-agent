@@ -3,8 +3,8 @@
 //! 用哪个模型画、怎么画在 images 模块（Python 版也是 avatars 和 images 共用），这里的 choice / choose / generate 转给它。
 
 use crate::db::{self, RowExt};
-use crate::web::{Body, Res, ok};
 use crate::py;
+use crate::web::{Body, Res, ok};
 use axum::extract::Path;
 use axum::http::{HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
@@ -30,10 +30,13 @@ fn mime_of(b: &[u8]) -> Option<&'static str> {
 /// 存一张头像（data:image/...;base64,...），返回它的地址
 pub fn save(data_url: &str) -> Result<String, String> {
     static RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?s)^data:image/[\w.+-]+;base64,(.+)$").unwrap());
-    let b = RE.captures(data_url).and_then(|c| {
-        use base64::Engine;
-        base64::engine::general_purpose::STANDARD.decode(c[1].as_bytes()).ok()
-    }).unwrap_or_default();
+    let b = RE
+        .captures(data_url)
+        .and_then(|c| {
+            use base64::Engine;
+            base64::engine::general_purpose::STANDARD.decode(c[1].as_bytes()).ok()
+        })
+        .unwrap_or_default();
     if b.is_empty() {
         return Err(t!("没收到图片"));
     }
@@ -72,7 +75,11 @@ pub fn gc() {
             used.insert(m[1].to_string());
         }
     }
-    let old: Vec<String> = db::rows("select id from avatars where created < ?", params![py::now() - KEEP_S]).into_iter().map(|r| r.s(0)).filter(|x| !used.contains(x)).collect();
+    let old: Vec<String> = db::rows("select id from avatars where created < ?", params![py::now() - KEEP_S])
+        .into_iter()
+        .map(|r| r.s(0))
+        .filter(|x| !used.contains(x))
+        .collect();
     for x in old {
         db::exec("delete from avatars where id=?", params![x]);
     }

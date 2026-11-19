@@ -31,10 +31,10 @@ pub fn days_of(v: &Value) -> Option<i64> {
 /// 本机、内网、链路本地、100.64/10、保留和组播地址（Clash 之类 TUN 模式的 198.18/15 假地址不算）
 pub fn private_ip(ip: &str) -> bool {
     let Ok(mut a) = ip.split('%').next().unwrap_or("").parse::<IpAddr>() else { return false };
-    if let IpAddr::V6(v6) = a {
-        if let Some(v4) = v6.to_ipv4_mapped() {
-            a = IpAddr::V4(v4);
-        }
+    if let IpAddr::V6(v6) = a
+        && let Some(v4) = v6.to_ipv4_mapped()
+    {
+        a = IpAddr::V4(v4);
     }
     match a {
         IpAddr::V4(v) => {
@@ -128,7 +128,8 @@ pub async fn private_host(url: &str) -> bool {
 /// fetch_url 能不能抓这个地址：不能的话返回原因
 pub async fn blocked(url: &str) -> Option<String> {
     let u = reqwest::Url::parse(url).ok();
-    let ok_scheme = u.as_ref().is_some_and(|u| (u.scheme() == "http" || u.scheme() == "https") && u.host_str().is_some_and(|h| !h.is_empty()));
+    let ok_scheme =
+        u.as_ref().is_some_and(|u| (u.scheme() == "http" || u.scheme() == "https") && u.host_str().is_some_and(|h| !h.is_empty()));
     if !ok_scheme {
         return Some("只能抓取 http / https 网址".into());
     }
@@ -147,7 +148,11 @@ pub async fn web_search(query: &str, days: &Value) -> String {
 }
 
 pub async fn search_posts(platform: &str, query: &str, days: &Value, count: &Value, browser: bool) -> String {
-    let count = if count.is_null() || count.as_str() == Some("") { None } else { py::to_int(count).filter(|_| !count.is_array() && !count.is_object()) };
+    let count = if count.is_null() || count.as_str() == Some("") {
+        None
+    } else {
+        py::to_int(count).filter(|_| !count.is_array() && !count.is_object())
+    };
     websearch::search_posts(platform, query, days_of(days), count, None, browser).await
 }
 
@@ -164,7 +169,8 @@ pub async fn fetch_url(url: &str, browser: bool) -> String {
 
 /// 自己下载网页、去掉标签（配方里的 direct）。跳转自己跟：每一跳都要检查
 pub async fn direct_fetch(url: &str) -> String {
-    let c = reqwest::Client::builder().timeout(Duration::from_secs(20)).redirect(reqwest::redirect::Policy::none()).build().unwrap_or_default();
+    let c =
+        reqwest::Client::builder().timeout(Duration::from_secs(20)).redirect(reqwest::redirect::Policy::none()).build().unwrap_or_default();
     let mut url = url.to_string();
     let mut body = None;
     for _ in 0..=MAX_REDIRECTS {
@@ -202,7 +208,16 @@ pub async fn tool_web_search(c: Call) -> Out {
 
 pub async fn tool_search_posts(c: Call) -> Out {
     let a = &c.args;
-    Out::Text(search_posts(&crate::builtin::arg_s(a, "platform"), &crate::builtin::arg_s(a, "query"), &a["days"], &a["count"], py::truthy(&c.env["use_pc"])).await)
+    Out::Text(
+        search_posts(
+            &crate::builtin::arg_s(a, "platform"),
+            &crate::builtin::arg_s(a, "query"),
+            &a["days"],
+            &a["count"],
+            py::truthy(&c.env["use_pc"]),
+        )
+        .await,
+    )
 }
 
 pub async fn tool_fetch_url(c: Call) -> Out {

@@ -53,7 +53,8 @@ fn apns_host(env: &str) -> Option<&'static str> {
 
 static DB: LazyLock<Mutex<Connection>> = LazyLock::new(|| {
     let p = std::env::var_os("OSA_RELAY_DB").filter(|v| !v.is_empty()).map(std::path::PathBuf::from).unwrap_or_else(|| {
-        let root = std::env::var_os("OSA_ROOT").map(std::path::PathBuf::from).unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
+        let root =
+            std::env::var_os("OSA_ROOT").map(std::path::PathBuf::from).unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
         root.join("data").join("relay.db")
     });
     if let Some(d) = p.parent() {
@@ -127,10 +128,10 @@ impl Limiter {
 static LIMITS: LazyLock<Mutex<Limiter>> = LazyLock::new(Default::default);
 
 fn ip(h: &HeaderMap, peer: Option<SocketAddr>) -> String {
-    if let Some(f) = h.get("x-forwarded-for").and_then(|v| v.to_str().ok()) {
-        if let Some(first) = f.split(',').map(|s| s.trim()).find(|s| !s.is_empty()) {
-            return first.to_string();
-        }
+    if let Some(f) = h.get("x-forwarded-for").and_then(|v| v.to_str().ok())
+        && let Some(first) = f.split(',').map(|s| s.trim()).find(|s| !s.is_empty())
+    {
+        return first.to_string();
     }
     peer.map(|p| p.ip().to_string()).unwrap_or_else(|| "?".into())
 }
@@ -216,7 +217,11 @@ impl Apns {
         for attempt in 0..2 {
             let Some(tok) = self.token(attempt > 0) else { return (502, "apns key not configured".into()) };
             let Some(host) = apns_host(env) else { return (502, "bad env".into()) };
-            let mut rb = self.client.post(format!("{host}/3/device/{device}")).body(payload.to_vec()).header("authorization", format!("bearer {tok}"));
+            let mut rb = self
+                .client
+                .post(format!("{host}/3/device/{device}"))
+                .body(payload.to_vec())
+                .header("authorization", format!("bearer {tok}"));
             for (k, v) in headers {
                 rb = rb.header(k.as_str(), v.as_str());
             }
@@ -244,7 +249,11 @@ fn fields(data: &Value, need: &[&str]) -> Result<serde_json::Map<String, Value>,
     let Some(d) = data.as_object() else { return Err("expected a JSON object".into()) };
     let mut out = serde_json::Map::new();
     if d.contains_key("token") || need.contains(&"token") {
-        let t = d.get("token").map(|v| if v.is_string() { v.as_str().unwrap().to_string() } else { crate::py::str_of(v) }).unwrap_or_default().to_lowercase();
+        let t = d
+            .get("token")
+            .map(|v| if v.is_string() { v.as_str().unwrap().to_string() } else { crate::py::str_of(v) })
+            .unwrap_or_default()
+            .to_lowercase();
         if !TOKEN.is_match(&t) {
             return Err("bad device token".into());
         }
@@ -258,7 +267,8 @@ fn fields(data: &Value, need: &[&str]) -> Result<serde_json::Map<String, Value>,
         out.insert("env".into(), json!(e));
     }
     if d.contains_key("vapid") || need.contains(&"vapid") {
-        let v = d.get("vapid").map(|v| if v.is_string() { v.as_str().unwrap().to_string() } else { crate::py::str_of(v) }).unwrap_or_default();
+        let v =
+            d.get("vapid").map(|v| if v.is_string() { v.as_str().unwrap().to_string() } else { crate::py::str_of(v) }).unwrap_or_default();
         let raw = unb64u(&v).filter(|r| p256::PublicKey::from_sec1_bytes(r).is_ok()).ok_or_else(|| "bad vapid key".to_string())?;
         out.insert("vapid".into(), json!(b64u(&raw)));
     }
@@ -277,7 +287,8 @@ async fn register(h: HeaderMap, ConnectInfo(peer): ConnectInfo<SocketAddr>, body
         Ok(f) => f,
         Err(e) => return err(400, &e),
     };
-    let n: i64 = DB.lock().query_row("select count(*) from endpoints where token=?", params![f["token"].as_str()], |r| r.get(0)).unwrap_or(0);
+    let n: i64 =
+        DB.lock().query_row("select count(*) from endpoints where token=?", params![f["token"].as_str()], |r| r.get(0)).unwrap_or(0);
     if n >= MAX_PER_TOKEN {
         return err(429, "too many endpoints for this device");
     }
@@ -341,8 +352,10 @@ async fn remove(Path(eid): Path<String>, h: HeaderMap) -> Response {
 }
 
 async fn push(Path(eid): Path<String>, h: HeaderMap, ConnectInfo(peer): ConnectInfo<SocketAddr>, body: axum::body::Bytes) -> Response {
-    let row: Option<(String, String, String)> =
-        DB.lock().query_row("select token, env, vapid from endpoints where id=?", params![eid], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).ok();
+    let row: Option<(String, String, String)> = DB
+        .lock()
+        .query_row("select token, env, vapid from endpoints where id=?", params![eid], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+        .ok();
     let Some((device, env, vapid)) = row else { return err(404, "unknown endpoint") };
     let hv = |k: &str| h.get(k).and_then(|v| v.to_str().ok()).unwrap_or("").to_string();
     if let Some((s, why)) = verify_vapid(&hv("authorization"), &vapid) {
@@ -370,7 +383,10 @@ async fn push(Path(eid): Path<String>, h: HeaderMap, ConnectInfo(peer): ConnectI
             return r;
         }
     }
-    let urgency = { let u = hv("urgency").to_lowercase(); if u.is_empty() { "normal".to_string() } else { u } };
+    let urgency = {
+        let u = hv("urgency").to_lowercase();
+        if u.is_empty() { "normal".to_string() } else { u }
+    };
     let mut headers: Vec<(String, String)> = vec![
         ("apns-push-type".into(), "alert".into()),
         ("apns-topic".into(), TOPIC.clone()),
@@ -383,7 +399,8 @@ async fn push(Path(eid): Path<String>, h: HeaderMap, ConnectInfo(peer): ConnectI
         headers.push(("apns-collapse-id".into(), topic));
     }
     let payload = serde_json::to_vec(&json!({"aps": {"alert": {"loc-key": "PUSH_PLACEHOLDER"}, "mutable-content": 1, "sound": "default"},
-                                              "e": crate::util::b64(&body), "s": eid})).unwrap_or_default();
+                                              "e": crate::util::b64(&body), "s": eid}))
+    .unwrap_or_default();
     let (mut status, mut reason) = APNS.send(&device, &env, &payload, &headers).await;
     if status == 400 && reason == "BadDeviceToken" {
         let other = if env == "production" { "sandbox" } else { "production" };

@@ -60,7 +60,8 @@ fn clean(text: &str) -> Result<String, String> {
 pub fn add(bot_id: Option<i64>, text: &str, source: &str) -> Result<Value, String> {
     let text = clean(text)?;
     let now = py::now();
-    if let Some(old) = db::row("select id from memories where bot_id is ? and kind='note' and lower(text)=lower(?)", params![bot_id, text]) {
+    if let Some(old) = db::row("select id from memories where bot_id is ? and kind='note' and lower(text)=lower(?)", params![bot_id, text])
+    {
         db::exec("update memories set updated=? where id=?", params![now, old.i(0)]);
         return Ok(get(old.i(0)).unwrap_or(Value::Null));
     }
@@ -90,10 +91,10 @@ pub fn update(mid: i64, text: Option<&str>, bot_id: Option<Option<i64>>) -> Resu
     } else {
         db::exec("update memories set updated=? where id=?", params![now, mid]);
     }
-    if let Some(b) = bot_id {
-        if m["kind"] == "note" {
-            db::exec("update memories set bot_id=? where id=?", params![b, mid]);
-        }
+    if let Some(b) = bot_id
+        && m["kind"] == "note"
+    {
+        db::exec("update memories set bot_id=? where id=?", params![b, mid]);
     }
     Ok(get(mid).unwrap_or(Value::Null))
 }
@@ -122,7 +123,14 @@ pub fn log_work(bot_id: i64, task_id: i64, goal: &str) {
     let now = py::now();
     db::exec(
         "insert into memories(bot_id, kind, text, source, created, updated) values(?,?,?,?,?,?)",
-        params![bot_id, "work", t!("{date} 任务 #{id}：{goal}", date = py::strftime_at(now, "%m-%d"), id = task_id, goal = line), "task", now, now],
+        params![
+            bot_id,
+            "work",
+            t!("{date} 任务 #{id}：{goal}", date = py::strftime_at(now, "%m-%d"), id = task_id, goal = line),
+            "task",
+            now,
+            now
+        ],
     );
     db::exec(
         "delete from memories where bot_id=? and kind='work' and id not in
@@ -165,7 +173,8 @@ pub fn prompt_block(bot_id: i64) -> String {
         format!("你自己记得的：\n{}", if o.is_empty() { "（暂无）" } else { &o }),
     ];
     if !full {
-        parts.push("（记忆比较多，这里只放了最近的；和这次对话可能相关的更早记忆附在最新一条消息后面，其余的用 search_memory 查。）".into());
+        parts
+            .push("（记忆比较多，这里只放了最近的；和这次对话可能相关的更早记忆附在最新一条消息后面，其余的用 search_memory 查。）".into());
     }
     parts.join("\n")
 }
@@ -220,29 +229,29 @@ pub async fn parse_import(text: &str, existing: &[String]) -> Result<Vec<Value>,
     if text.is_empty() {
         return Err(t!("没有可导入的内容"));
     }
-    let have = if existing.is_empty() { "（无）".to_string() } else { existing.iter().map(|t| format!("- {t}")).collect::<Vec<_>>().join("\n") };
+    let have = if existing.is_empty() {
+        "（无）".to_string()
+    } else {
+        existing.iter().map(|t| format!("- {t}")).collect::<Vec<_>>().join("\n")
+    };
     let msgs = json!([
         {"role": "system", "content": import_prompt()},
         {"role": "user", "content": format!("已有的记忆：\n{have}\n\n导出的内容：\n{text}")}
     ]);
-    if let Ok(resp) = providers::complete_role("filter", &msgs, Some(json!({"type": "json_object"}))).await {
-        if let Ok(v) = serde_json::from_str::<Value>(&resp.content) {
-            let items = v["items"].as_array().cloned().unwrap_or_default();
-            let out: Vec<Value> = items
-                .iter()
-                .filter(|i| i.is_object() && !py::str_of(&i["text"]).trim().is_empty() && !i["text"].is_null())
-                .map(|i| json!({"text": py::str_of(&i["text"]).trim(), "shared": py::truthy(&i["shared"])}))
-                .collect();
-            if !out.is_empty() {
-                return Ok(out);
-            }
+    if let Ok(resp) = providers::complete_role("filter", &msgs, Some(json!({"type": "json_object"}))).await
+        && let Ok(v) = serde_json::from_str::<Value>(&resp.content)
+    {
+        let items = v["items"].as_array().cloned().unwrap_or_default();
+        let out: Vec<Value> = items
+            .iter()
+            .filter(|i| i.is_object() && !py::str_of(&i["text"]).trim().is_empty() && !i["text"].is_null())
+            .map(|i| json!({"text": py::str_of(&i["text"]).trim(), "shared": py::truthy(&i["shared"])}))
+            .collect();
+        if !out.is_empty() {
+            return Ok(out);
         }
     }
-    Ok(text
-        .lines()
-        .filter(|l| !strip_bullet(l).is_empty())
-        .map(|l| json!({"text": strip_bullet(l), "shared": false}))
-        .collect())
+    Ok(text.lines().filter(|l| !strip_bullet(l).is_empty()).map(|l| json!({"text": strip_bullet(l), "shared": false})).collect())
 }
 
 pub async fn import_text(bot_id: i64, text: &str) -> Result<Vec<Value>, String> {

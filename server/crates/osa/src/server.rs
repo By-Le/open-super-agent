@@ -14,8 +14,8 @@ use parking_lot::Mutex;
 use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::LazyLock;
+use std::sync::atomic::{AtomicU64, Ordering};
 use tokio::sync::mpsc;
 
 // ---------- 广播 ----------
@@ -30,12 +30,12 @@ static NEXT_CLIENT: AtomicU64 = AtomicU64::new(1);
 /// 发给所有打开着的网页（和聊天软件、手机推送）。不等：消息按顺序进每个网页的发送队列
 pub fn broadcast(event: Value) {
     let mut event = event;
-    if event["type"] == "message" {
-        if let Some(cid) = event["chat_id"].as_i64().filter(|c| *c != 0) {
-            match bots::thread_event(cid) {
-                Some(th) => event["thread"] = th,
-                None => event["unread"] = json!(bots::unread(cid)),
-            }
+    if event["type"] == "message"
+        && let Some(cid) = event["chat_id"].as_i64().filter(|c| *c != 0)
+    {
+        match bots::thread_event(cid) {
+            Some(th) => event["thread"] = th,
+            None => event["unread"] = json!(bots::unread(cid)),
         }
     }
     crate::channels::on_event(&event);
@@ -45,12 +45,13 @@ pub fn broadcast(event: Value) {
         c.retain(|_, cl| cl.tx.send(text.clone()).is_ok());
         !c.values().any(|cl| cl.watching)
     };
-    if nobody && crate::push::count() > 0 {
-        if let Some(msg) = crate::push::message_for(&event) {
-            let urgency = if event["type"] == "approval" { "high" } else { "normal" };
-            let badge = approvals::pending_count();
-            tokio::spawn(async move { crate::push::send(msg, urgency, badge).await });
-        }
+    if nobody
+        && crate::push::count() > 0
+        && let Some(msg) = crate::push::message_for(&event)
+    {
+        let urgency = if event["type"] == "approval" { "high" } else { "normal" };
+        let badge = approvals::pending_count();
+        tokio::spawn(async move { crate::push::send(msg, urgency, badge).await });
     }
 }
 
@@ -142,7 +143,8 @@ pub fn can_sign_out() -> bool {
 
 async fn bootstrap(h: HeaderMap) -> Res {
     if i18n::chosen().is_empty() {
-        let l = if settings::onboarding() { i18n::from_header(h.get("accept-language").and_then(|v| v.to_str().ok())) } else { "zh".into() };
+        let l =
+            if settings::onboarding() { i18n::from_header(h.get("accept-language").and_then(|v| v.to_str().ok())) } else { "zh".into() };
         let _ = i18n::set_lang(&l);
     }
     let tasks: Vec<Value> = router::tasks().iter().filter(|t| t.status() == "running").map(|t| t.public()).collect();
@@ -210,8 +212,11 @@ async fn chat_seen(Path(chat_id): Path<i64>, Body(d): Body) -> Res {
 }
 
 fn root_of(chat_id: i64, root: i64) -> Result<Value, ApiError> {
-    let r = crate::db::row("select id, ts, role, content, meta, bot_id from messages where id=? and chat_id=?", rusqlite::params![root, chat_id])
-        .ok_or_else(|| ApiError::not_found(t!("这个对话里没有这条消息")))?;
+    let r = crate::db::row(
+        "select id, ts, role, content, meta, bot_id from messages where id=? and chat_id=?",
+        rusqlite::params![root, chat_id],
+    )
+    .ok_or_else(|| ApiError::not_found(t!("这个对话里没有这条消息")))?;
     Ok(memory::message_out(&r))
 }
 
@@ -352,7 +357,11 @@ async fn update_memory(Path(mid): Path<i64>, Body(d): Body) -> Res {
     let m = memories::get(mid).ok_or_else(|| ApiError::not_found(t!("没有这条记忆")))?;
     let mut owner = m["bot_id"].as_i64();
     if d.get("shared").is_some() {
-        owner = if py::truthy(&d["shared"]) { None } else { m["bot_id"].as_i64().or_else(|| d["bot_id"].as_i64().filter(|_| d["bot_id"].is_i64())) };
+        owner = if py::truthy(&d["shared"]) {
+            None
+        } else {
+            m["bot_id"].as_i64().or_else(|| d["bot_id"].as_i64().filter(|_| d["bot_id"].is_i64()))
+        };
         if !py::truthy(&d["shared"]) && !owner.is_some_and(|o| bots::get(o).is_some()) {
             return Err(ApiError::bad(t!("改成只给某个 Bot 时要说明是哪个 Bot")));
         }
@@ -367,13 +376,6 @@ async fn delete_memory(Path(mid): Path<i64>) -> Res {
     broadcast(json!({"type": "memories_changed"}));
     ok(json!({"ok": true}))
 }
-
-
-
-
-
-
-
 
 // ---------- 前端 ----------
 pub fn dist() -> PathBuf {
@@ -394,7 +396,11 @@ pub fn web_build() -> String {
         (md.ino(), md.mtime() as i128 * 1_000_000_000 + md.mtime_nsec() as i128, md.size())
     };
     #[cfg(not(unix))]
-    let key = (0u64, md.modified().ok().and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map(|d| d.as_nanos() as i128).unwrap_or(0), md.len());
+    let key = (
+        0u64,
+        md.modified().ok().and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map(|d| d.as_nanos() as i128).unwrap_or(0),
+        md.len(),
+    );
     let mut b = BUILD.lock();
     if b.0 != Some(key) {
         let text = std::fs::read_to_string(&f).unwrap_or_default();
@@ -411,9 +417,14 @@ async fn current_build() -> Res {
 fn file_response(path: &std::path::Path, no_cache: bool, immutable: bool) -> Response {
     let Ok(bytes) = std::fs::read(path) else { return StatusCode::NOT_FOUND.into_response() };
     let mime = mime_guess::from_path(path).first_or_octet_stream();
-    let ct = if mime.type_() == "text" || mime.essence_str() == "application/javascript" { format!("{}; charset=utf-8", mime.essence_str()) } else { mime.essence_str().to_string() };
+    let ct = if mime.type_() == "text" || mime.essence_str() == "application/javascript" {
+        format!("{}; charset=utf-8", mime.essence_str())
+    } else {
+        mime.essence_str().to_string()
+    };
     let mut r = Response::new(axum::body::Body::from(bytes));
-    r.headers_mut().insert(header::CONTENT_TYPE, HeaderValue::from_str(&ct).unwrap_or(HeaderValue::from_static("application/octet-stream")));
+    r.headers_mut()
+        .insert(header::CONTENT_TYPE, HeaderValue::from_str(&ct).unwrap_or(HeaderValue::from_static("application/octet-stream")));
     if no_cache {
         r.headers_mut().insert(header::CACHE_CONTROL, HeaderValue::from_static("no-cache"));
     } else if immutable {
@@ -443,11 +454,12 @@ async fn fallback(req: Request) -> Response {
     let d = dist();
     if !rel.is_empty() {
         let f = d.join(rel);
-        if let (Ok(f), Ok(base)) = (std::fs::canonicalize(&f), std::fs::canonicalize(&d)) {
-            if f.starts_with(&base) && f.is_file() {
-                let name = f.file_name().and_then(|n| n.to_str()).unwrap_or("");
-                return file_response(&f, name == "index.html" || name == "sw.js", false);
-            }
+        if let (Ok(f), Ok(base)) = (std::fs::canonicalize(&f), std::fs::canonicalize(&d))
+            && f.starts_with(&base)
+            && f.is_file()
+        {
+            let name = f.file_name().and_then(|n| n.to_str()).unwrap_or("");
+            return file_response(&f, name == "index.html" || name == "sw.js", false);
         }
     }
     let index = d.join("index.html");
@@ -523,7 +535,7 @@ pub async fn startup() {
     bots::ensure_default();
     tasklog::startup();
     settings::apply();
-    crate::builtin::load();   // 内置的事件来源要先登记好，导入旧版触发器时要用
+    crate::builtin::load(); // 内置的事件来源要先登记好，导入旧版触发器时要用
     if let Some(p) = bots::primary() {
         routines::import_legacy(p["id"].as_i64().unwrap_or(0));
     }
@@ -552,11 +564,11 @@ async fn parent_watch(pid: i32) {
     }
 }
 
-pub static SHUTDOWN: LazyLock<(tokio::sync::watch::Sender<bool>, tokio::sync::watch::Receiver<bool>)> = LazyLock::new(|| tokio::sync::watch::channel(false));
+pub static SHUTDOWN: LazyLock<(tokio::sync::watch::Sender<bool>, tokio::sync::watch::Receiver<bool>)> =
+    LazyLock::new(|| tokio::sync::watch::channel(false));
 
 pub async fn shutdown() {
     crate::channels::stop().await;
     mcp_hub::stop().await;
     crate::computer::shutdown().await;
 }
-

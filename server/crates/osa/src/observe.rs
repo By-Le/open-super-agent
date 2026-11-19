@@ -103,7 +103,10 @@ fn rate(hit: i64, miss: i64) -> Value {
 
 fn usage_kpi(a: f64, b: f64, bot: Option<i64>) -> Value {
     let (w, ba) = bot_sql(bot, "bot_id");
-    let r = q(&format!("select {U} from llm_calls where ts>=? and ts<?{w}"), &args(&[json!(a), json!(b)], &ba)).into_iter().next().unwrap_or_default();
+    let r = q(&format!("select {U} from llm_calls where ts>=? and ts<?{w}"), &args(&[json!(a), json!(b)], &ba))
+        .into_iter()
+        .next()
+        .unwrap_or_default();
     let ttft = q(
         &format!("select avg(ttft) from llm_calls where ts>=? and ts<? and role='router' and err is null and ttft is not null{w}"),
         &args(&[json!(a), json!(b)], &ba),
@@ -119,10 +122,15 @@ fn usage_kpi(a: f64, b: f64, bot: Option<i64>) -> Value {
 }
 
 fn speed(wh: &str, a: &[Value]) -> Value {
-    let r = q(&format!("select sum(output), sum(ms-ttft) from llm_calls where {wh} and err is null and output>0 and ttft is not null and ms>ttft"), a)
-        .into_iter()
-        .next()
-        .unwrap_or_default();
+    let r = q(
+        &format!(
+            "select sum(output), sum(ms-ttft) from llm_calls where {wh} and err is null and output>0 and ttft is not null and ms>ttft"
+        ),
+        a,
+    )
+    .into_iter()
+    .next()
+    .unwrap_or_default();
     match (r.first().and_then(|v| v.as_f64()), r.get(1).and_then(|v| v.as_f64())) {
         (Some(o), Some(d)) if d != 0.0 => json!(py::round_n(o / (d / 1000.0), 1)),
         _ => Value::Null,
@@ -142,9 +150,20 @@ fn usage_groups(w: &Window, tz: i64, bot: Option<i64>) -> Groups {
     let (ws, ba) = bot_sql(bot, "bot_id");
     let base = format!("from llm_calls where ts>=? and ts<?{ws}");
     let ab = args(&[json!(a), json!(b)], &ba);
-    let series = q(&format!("select cast((ts-?)/? as integer), coalesce(bot_id,{UNKNOWN}), {U} {base} group by 1, 2"), &args(&[json!(a), json!(size)], &ab));
-    let by_bot = q(&format!("select coalesce(bot_id,{UNKNOWN}), {U}, avg(case when role='router' and err is null then ttft end) {base} group by 1"), &ab);
-    let models = q(&format!("select coalesce(provider,''), model, {U}, avg(case when err is null then ttft end), max(ts) {base} group by 1, 2 order by 1 desc"), &ab);
+    let series = q(
+        &format!("select cast((ts-?)/? as integer), coalesce(bot_id,{UNKNOWN}), {U} {base} group by 1, 2"),
+        &args(&[json!(a), json!(size)], &ab),
+    );
+    let by_bot = q(
+        &format!("select coalesce(bot_id,{UNKNOWN}), {U}, avg(case when role='router' and err is null then ttft end) {base} group by 1"),
+        &ab,
+    );
+    let models = q(
+        &format!(
+            "select coalesce(provider,''), model, {U}, avg(case when err is null then ttft end), max(ts) {base} group by 1, 2 order by 1 desc"
+        ),
+        &ab,
+    );
     let roles = q(&format!("select role, {U} {base} group by 1 order by 2 desc"), &ab);
     let off = (tz * 60) as f64;
     let hours = q(
@@ -157,7 +176,10 @@ fn usage_groups(w: &Window, tz: i64, bot: Option<i64>) -> Groups {
 fn tasks(a: f64, b: f64, bot: Option<i64>) -> Vec<Value> {
     let (ws, ba) = bot_sql(bot, "bot_id");
     q(
-        &format!("select id, ts, content, meta, chat_id, bot_id from messages where {} and ts>=? and ts<?{ws} order by ts desc", tasklog::DISPATCH),
+        &format!(
+            "select id, ts, content, meta, chat_id, bot_id from messages where {} and ts>=? and ts<?{ws} order by ts desc",
+            tasklog::DISPATCH
+        ),
         &args(&[json!(a), json!(b)], &ba),
     )
     .into_iter()
@@ -183,7 +205,8 @@ fn task_kpi(ts: &[Value]) -> Value {
         *n.get_mut(if keys.contains(&s) { s } else { "done" }).unwrap() += 1;
     }
     let ended = n["done"] + n["failed"] + n["interrupted"];
-    let took: Vec<f64> = ts.iter().filter(|t| t["status"] == "done" && py::truthy(&t["elapsed"])).filter_map(|t| t["elapsed"].as_f64()).collect();
+    let took: Vec<f64> =
+        ts.iter().filter(|t| t["status"] == "done" && py::truthy(&t["elapsed"])).filter_map(|t| t["elapsed"].as_f64()).collect();
     let routine = |t: &&Value| !t["routine"].is_null();
     let mut o = json!({"tasks": ts.len()});
     for k in keys {
@@ -256,7 +279,9 @@ fn problems(a: f64, b: f64, bot: Option<i64>, ts: &[Value]) -> Vec<Value> {
     }
     let (ws, ba) = bot_sql(bot, "bot_id");
     for r in q(
-        &format!("select ts, bot_id, role, provider, model, err, task_id, chat_id from llm_calls where err is not null and ts>=? and ts<?{ws} order by ts desc limit 500"),
+        &format!(
+            "select ts, bot_id, role, provider, model, err, task_id, chat_id from llm_calls where err is not null and ts>=? and ts<?{ws} order by ts desc limit 500"
+        ),
         &args(&[json!(a), json!(b)], &ba),
     ) {
         let provider = r.s(3);
@@ -274,7 +299,8 @@ fn problems(a: f64, b: f64, bot: Option<i64>, ts: &[Value]) -> Vec<Value> {
     ) {
         items.push(json!({"kind": "tool", "ts": r[0], "bot_id": r[4], "task_id": r[3], "chat_id": r[5], "title": r[1], "detail": py::head(&r.s(2), 300)}));
     }
-    items.sort_by(|x, y| y["ts"].as_f64().unwrap_or(0.0).partial_cmp(&x["ts"].as_f64().unwrap_or(0.0)).unwrap_or(std::cmp::Ordering::Equal));
+    items
+        .sort_by(|x, y| y["ts"].as_f64().unwrap_or(0.0).partial_cmp(&x["ts"].as_f64().unwrap_or(0.0)).unwrap_or(std::cmp::Ordering::Equal));
     let mut keys: Vec<String> = vec![];
     let mut merged: Vec<Value> = vec![];
     for it in items {
@@ -340,8 +366,10 @@ pub fn stats(rng: &str, tz: i64, bot: Option<i64>, now: Option<f64>) -> Value {
     let cs = costs(&ts.iter().filter_map(|t| t["id"].as_i64()).collect::<Vec<_>>());
 
     // 趋势
-    let mut series: Vec<Value> = (0..n).map(|i| json!({"t": a + i as f64 * size, "cost": 0.0, "tokens": 0, "calls": 0, "errors": 0, "tasks": 0, "bots": {}})).collect();
-    fn cell<'a>(series: &'a mut [Value], i: usize, bot_id: i64) -> &'a mut Value {
+    let mut series: Vec<Value> = (0..n)
+        .map(|i| json!({"t": a + i as f64 * size, "cost": 0.0, "tokens": 0, "calls": 0, "errors": 0, "tasks": 0, "bots": {}}))
+        .collect();
+    fn cell(series: &mut [Value], i: usize, bot_id: i64) -> &mut Value {
         let bots = series[i]["bots"].as_object_mut().unwrap();
         bots.entry(bot_id.to_string()).or_insert(json!({"cost": 0.0, "tokens": 0, "calls": 0, "tasks": 0}))
     }
@@ -390,7 +418,10 @@ pub fn stats(rng: &str, tz: i64, bot: Option<i64>, now: Option<f64>) -> Value {
     }
     for r in &g.by_bot {
         let row = bot_row(&mut bots, r.i(0));
-        merge(row, json!({"cost": py::round_n(r.f(1), 4), "tokens": r[2], "calls": or0(&r[6]), "errors": or0(&r[7]), "ttft": round_opt(&r[8])}));
+        merge(
+            row,
+            json!({"cost": py::round_n(r.f(1), 4), "tokens": r[2], "calls": or0(&r[6]), "errors": or0(&r[7]), "ttft": round_opt(&r[8])}),
+        );
     }
     let mut ids: Vec<Option<i64>> = vec![];
     for t in &ts {
@@ -404,8 +435,11 @@ pub fn stats(rng: &str, tz: i64, bot: Option<i64>, now: Option<f64>) -> Value {
         let mine: Vec<Value> = ts.iter().filter(|t| t["bot_id"].as_i64() == bid).cloned().collect();
         let k = task_kpi(&mine);
         let row = bot_row(&mut bots, bid.unwrap_or(UNKNOWN));
-        merge(row, json!({"tasks": k["tasks"], "done": k["done"], "failed": k["failed"].as_i64().unwrap_or(0) + k["interrupted"].as_i64().unwrap_or(0),
-                          "avg_s": k["avg_s"], "success": k["success"], "routine_runs": k["routine_runs"]}));
+        merge(
+            row,
+            json!({"tasks": k["tasks"], "done": k["done"], "failed": k["failed"].as_i64().unwrap_or(0) + k["interrupted"].as_i64().unwrap_or(0),
+                          "avg_s": k["avg_s"], "success": k["success"], "routine_runs": k["routine_runs"]}),
+        );
     }
     let mut bots: Vec<Value> = bots.into_values().collect();
     bots.sort_by(|x, y| {
@@ -457,7 +491,11 @@ pub fn stats(rng: &str, tz: i64, bot: Option<i64>, now: Option<f64>) -> Value {
             heat[d as usize][h as usize] = r.i(2);
         }
     }
-    let roles: Vec<Value> = g.roles.iter().map(|r| json!({"role": r[0], "cost": py::round_n(r.f(1), 4), "tokens": r[2], "calls": or0(&r[6]), "errors": or0(&r[7])})).collect();
+    let roles: Vec<Value> = g
+        .roles
+        .iter()
+        .map(|r| json!({"role": r[0], "cost": py::round_n(r.f(1), 4), "tokens": r[2], "calls": or0(&r[6]), "errors": or0(&r[7])}))
+        .collect();
     json!({
         "currency": config::get("pricing.currency"), "range": rng, "start": a, "end": b, "size": size,
         "kpi": kpi, "prev": prev, "series": series, "bots": bots, "models": models, "roles": roles,
@@ -465,7 +503,8 @@ pub fn stats(rng: &str, tz: i64, bot: Option<i64>, now: Option<f64>) -> Value {
     })
 }
 
-pub const CALL_COLS: [&str; 15] = ["id", "ts", "bot_id", "chat_id", "task_id", "role", "provider", "model", "input", "cache_hit", "output", "cost", "ms", "ttft", "err"];
+pub const CALL_COLS: [&str; 15] =
+    ["id", "ts", "bot_id", "chat_id", "task_id", "role", "provider", "model", "input", "cache_hit", "output", "cost", "ms", "ttft", "err"];
 
 pub fn calls(rng: &str, tz: i64, bot: Option<i64>, before: Option<i64>, limit: i64, failed: bool, now: Option<f64>) -> Value {
     let w = window(rng, tz, now);
@@ -476,7 +515,10 @@ pub fn calls(rng: &str, tz: i64, bot: Option<i64>, before: Option<i64>, limit: i
         cost, ms, ttft, err from llm_calls where {wh}"
     );
     let base = args(&[json!(w.start), json!(w.end)], &ba);
-    let rows = q(&format!("{sql} and id<? order by id desc limit ?"), &args(&base, &[json!(before.filter(|b| *b != 0).unwrap_or(crate::memory::BIG)), json!(limit + 1)]));
+    let rows = q(
+        &format!("{sql} and id<? order by id desc limit ?"),
+        &args(&base, &[json!(before.filter(|b| *b != 0).unwrap_or(crate::memory::BIG)), json!(limit + 1)]),
+    );
     let total = q(&format!("select count(*) from llm_calls where {wh}"), &base).into_iter().next().map(|r| r.i(0)).unwrap_or(0);
     let items: Vec<Value> = rows
         .iter()
@@ -491,11 +533,7 @@ fn csv_field(v: &Value) -> String {
         Value::Null => String::new(),
         v => py::str_of(v),
     };
-    if s.contains(',') || s.contains('"') || s.contains('\n') || s.contains('\r') {
-        format!("\"{}\"", s.replace('"', "\"\""))
-    } else {
-        s
-    }
+    if s.contains(',') || s.contains('"') || s.contains('\n') || s.contains('\r') { format!("\"{}\"", s.replace('"', "\"\"")) } else { s }
 }
 
 pub fn calls_csv(rng: &str, tz: i64, bot: Option<i64>, names: &std::collections::HashMap<i64, String>) -> String {
@@ -514,7 +552,8 @@ pub fn calls_csv(rng: &str, tz: i64, bot: Option<i64>, names: &std::collections:
     out.push_str("\r\n");
     for r in rows {
         let t = r.f(1) - (tz * 60) as f64;
-        let local = chrono::DateTime::from_timestamp(t.floor() as i64, 0).map(|d| d.format("%Y-%m-%d %H:%M:%S").to_string()).unwrap_or_default();
+        let local =
+            chrono::DateTime::from_timestamp(t.floor() as i64, 0).map(|d| d.format("%Y-%m-%d %H:%M:%S").to_string()).unwrap_or_default();
         let name = r.oi(2).and_then(|b| names.get(&b).cloned()).unwrap_or_default();
         let mut cols = vec![csv_field(&json!(local)), csv_field(&json!(name))];
         cols.extend(r[2..].iter().map(csv_field));
@@ -549,9 +588,11 @@ async fn usage() -> Res {
 }
 
 async fn status() -> Res {
-    ok(json!({"mcp": crate::mcp_hub::status_strings(), "mcp_tools": crate::mcp_hub::all_tool_names(), "mcp_confirm": crate::mcp_hub::confirm_list(),
+    ok(
+        json!({"mcp": crate::mcp_hub::status_strings(), "mcp_tools": crate::mcp_hub::all_tool_names(), "mcp_confirm": crate::mcp_hub::confirm_list(),
               "routines": crate::routines::list_for(None).iter().map(|r| json!({"id": r["id"], "bot_id": r["bot_id"], "name": r["name"],
-                   "enabled": r["enabled"], "trigger": crate::routines::describe(&r["trigger"], None)})).collect::<Vec<_>>()}))
+                   "enabled": r["enabled"], "trigger": crate::routines::describe(&r["trigger"], None)})).collect::<Vec<_>>()}),
+    )
 }
 
 async fn observe_stats(q: Q) -> Res {

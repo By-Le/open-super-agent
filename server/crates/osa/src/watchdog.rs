@@ -50,7 +50,11 @@ pub fn check(t: &Task, now: f64) -> Option<String> {
     }
     let quiet = s.long_calls.values().copied().fold(STALL_S, f64::max);
     if now - s.last_progress > quiet {
-        return Some(if quiet == STALL_S { t!("3 分钟没有进展") } else { t!("工具调用超过 {n} 秒还没结束", n = quiet as i64) });
+        return Some(if quiet == STALL_S {
+            t!("3 分钟没有进展")
+        } else {
+            t!("工具调用超过 {n} 秒还没结束", n = quiet as i64)
+        });
     }
     let n = s.recent_calls.len();
     if n >= 4 && s.recent_calls[n - 4..].iter().all(|c| *c == s.recent_calls[n - 1]) {

@@ -29,11 +29,7 @@ fn title_of(data: &Value, text: &str) -> String {
 }
 
 fn parse_generic(req: &HookReq, _: &Value) -> Result<Parsed, ParseErr> {
-    let text = if !req.json.is_null() {
-        py::dumps_indent(&req.json, 1, false)
-    } else {
-        String::from_utf8_lossy(&req.body).into_owned()
-    };
+    let text = if !req.json.is_null() { py::dumps_indent(&req.json, 1, false) } else { String::from_utf8_lossy(&req.body).into_owned() };
     if text.trim().is_empty() {
         return Ok(Parsed::Skip("请求是空的".into()));
     }
@@ -97,8 +93,10 @@ pub fn gh_event(kind: &str, d: &Value) -> Result<Value, String> {
             };
             let labels: Vec<String> = i["labels"].as_array().map(|a| a.iter().map(|x| g(x, "name", "")).collect()).unwrap_or_default();
             let labels = labels.join("、");
-            Ok(json!({"title": format!("{pre}{verb} #{}：{}（{who}）", py::str_of(&i["number"]), g(i, "title", "")), "url": g(i, "html_url", ""),
-                "text": format!("{}{}", if labels.is_empty() { String::new() } else { format!("标签：{labels}\n") }, short(&or(i, "body"), 3000))}))
+            Ok(
+                json!({"title": format!("{pre}{verb} #{}：{}（{who}）", py::str_of(&i["number"]), g(i, "title", "")), "url": g(i, "html_url", ""),
+                "text": format!("{}{}", if labels.is_empty() { String::new() } else { format!("标签：{labels}\n") }, short(&or(i, "body"), 3000))}),
+            )
         }
         "issue_comment" => {
             let (i, c) = (&d["issue"], &d["comment"]);
@@ -106,13 +104,21 @@ pub fn gh_event(kind: &str, d: &Value) -> Result<Value, String> {
                 return Err(format!("评论的 {action}，不处理"));
             }
             let w = if py::truthy(&i["pull_request"]) { "PR" } else { "issue" };
-            Ok(json!({"title": format!("{pre}{who} 评论了 {w} #{}：{}", py::str_of(&i["number"]), g(i, "title", "")), "url": g(c, "html_url", ""),
-                "text": short(&or(c, "body"), 3000)}))
+            Ok(
+                json!({"title": format!("{pre}{who} 评论了 {w} #{}：{}", py::str_of(&i["number"]), g(i, "title", "")), "url": g(c, "html_url", ""),
+                "text": short(&or(c, "body"), 3000)}),
+            )
         }
         "pull_request" => {
             let p = &d["pull_request"];
             let verb = match action.as_str() {
-                "closed" => if py::truthy(&p["merged"]) { "合并了 PR" } else { "关闭了 PR" },
+                "closed" => {
+                    if py::truthy(&p["merged"]) {
+                        "合并了 PR"
+                    } else {
+                        "关闭了 PR"
+                    }
+                }
                 "opened" => "新 PR",
                 "reopened" => "重开 PR",
                 "ready_for_review" => "PR 可以审了",
@@ -120,8 +126,10 @@ pub fn gh_event(kind: &str, d: &Value) -> Result<Value, String> {
                 _ => return Err(format!("PR 的 {action}，不处理")),
             };
             let stat = format!("改了 {} 个文件，+{} -{}", g(p, "changed_files", "?"), g(p, "additions", "?"), g(p, "deletions", "?"));
-            Ok(json!({"title": format!("{pre}{verb} #{}：{}（{who}）", py::str_of(&p["number"]), g(p, "title", "")), "url": g(p, "html_url", ""),
-                "text": format!("{} → {}，{stat}\n{}", g(&p["head"], "ref", ""), g(&p["base"], "ref", ""), short(&or(p, "body"), 3000))}))
+            Ok(
+                json!({"title": format!("{pre}{verb} #{}：{}（{who}）", py::str_of(&p["number"]), g(p, "title", "")), "url": g(p, "html_url", ""),
+                "text": format!("{} → {}，{stat}\n{}", g(&p["head"], "ref", ""), g(&p["base"], "ref", ""), short(&or(p, "body"), 3000))}),
+            )
         }
         "pull_request_review" => {
             let (rv, p) = (&d["review"], &d["pull_request"]);
@@ -135,8 +143,10 @@ pub fn gh_event(kind: &str, d: &Value) -> Result<Value, String> {
                 "commented" => "评论了".into(),
                 other => other.to_string(),
             };
-            Ok(json!({"title": format!("{pre}{who} {state} PR #{}：{}", py::str_of(&p["number"]), g(p, "title", "")), "url": g(rv, "html_url", ""),
-                "text": short(&or(rv, "body"), 3000)}))
+            Ok(
+                json!({"title": format!("{pre}{who} {state} PR #{}：{}", py::str_of(&p["number"]), g(p, "title", "")), "url": g(rv, "html_url", ""),
+                "text": short(&or(rv, "body"), 3000)}),
+            )
         }
         "push" => {
             let commits = d["commits"].as_array().cloned().unwrap_or_default();
@@ -145,17 +155,27 @@ pub fn gh_event(kind: &str, d: &Value) -> Result<Value, String> {
             }
             let r = or(d, "ref");
             let branch = r.strip_prefix("refs/heads/").unwrap_or(&r);
-            let lines: Vec<String> = commits.iter().take(20).map(|c| format!("- {} {}（{}）", py::head(&g(c, "id", ""), 7), oneline(&or(c, "message"), 120), g(&c["author"], "name", ""))).collect();
+            let lines: Vec<String> = commits
+                .iter()
+                .take(20)
+                .map(|c| {
+                    format!("- {} {}（{}）", py::head(&g(c, "id", ""), 7), oneline(&or(c, "message"), 120), g(&c["author"], "name", ""))
+                })
+                .collect();
             let more = if commits.len() > 20 { format!("\n……共 {} 个", commits.len()) } else { String::new() };
-            Ok(json!({"title": format!("{pre}{who} 推送了 {} 个提交到 {branch}", commits.len()), "url": g(d, "compare", ""), "text": lines.join("\n") + &more}))
+            Ok(
+                json!({"title": format!("{pre}{who} 推送了 {} 个提交到 {branch}", commits.len()), "url": g(d, "compare", ""), "text": lines.join("\n") + &more}),
+            )
         }
         "release" => {
             let rl = &d["release"];
             if !["published", "released", "prereleased"].contains(&action.as_str()) {
                 return Err(format!("发布的 {action}，不处理"));
             }
-            Ok(json!({"title": format!("{pre}发布了 {}：{}{}", g(rl, "tag_name", ""), or(rl, "name"), if py::truthy(&rl["prerelease"]) { "（预发布）" } else { "" }),
-                "url": g(rl, "html_url", ""), "text": short(&or(rl, "body"), 5000)}))
+            Ok(
+                json!({"title": format!("{pre}发布了 {}：{}{}", g(rl, "tag_name", ""), or(rl, "name"), if py::truthy(&rl["prerelease"]) { "（预发布）" } else { "" }),
+                "url": g(rl, "html_url", ""), "text": short(&or(rl, "body"), 5000)}),
+            )
         }
         "workflow_run" => {
             let w = &d["workflow_run"];
@@ -163,36 +183,47 @@ pub fn gh_event(kind: &str, d: &Value) -> Result<Value, String> {
                 return Err(format!("Actions 的 {action}，还没跑完，不处理"));
             }
             let concl = or(w, "conclusion");
-            let word = if ["failure", "timed_out", "startup_failure"].contains(&concl.as_str()) { "失败".to_string() } else { concl.clone() };
-            Ok(json!({"title": format!("{pre}Actions「{}」{word}：{} {}", g(w, "name", ""), g(w, "head_branch", ""), oneline(&or(w, "display_title"), 80)),
+            let word =
+                if ["failure", "timed_out", "startup_failure"].contains(&concl.as_str()) { "失败".to_string() } else { concl.clone() };
+            Ok(
+                json!({"title": format!("{pre}Actions「{}」{word}：{} {}", g(w, "name", ""), g(w, "head_branch", ""), oneline(&or(w, "display_title"), 80)),
                 "url": g(w, "html_url", ""), "text": format!("结论：{concl}\n触发：{}，提交 {}", g(w, "event", ""), py::head(&g(w, "head_sha", ""), 7)),
-                "conclusion": concl}))
+                "conclusion": concl}),
+            )
         }
         "discussion" => {
             let ds = &d["discussion"];
             if action != "created" {
                 return Err(format!("讨论的 {action}，不处理"));
             }
-            Ok(json!({"title": format!("{pre}新讨论 #{}：{}（{who}）", py::str_of(&ds["number"]), g(ds, "title", "")), "url": g(ds, "html_url", ""),
-                "text": short(&or(ds, "body"), 3000)}))
+            Ok(
+                json!({"title": format!("{pre}新讨论 #{}：{}（{who}）", py::str_of(&ds["number"]), g(ds, "title", "")), "url": g(ds, "html_url", ""),
+                "text": short(&or(ds, "body"), 3000)}),
+            )
         }
         "star" => {
             if action != "created" {
                 return Err("取消点星，不处理".into());
             }
             let n = &d["repository"]["stargazers_count"];
-            Ok(json!({"title": format!("{pre}{who} 点了星{}", if py::truthy(n) { format!("（现在 {} 颗）", py::str_of(n)) } else { String::new() }),
-                "url": g(&d["sender"], "html_url", ""), "text": ""}))
+            Ok(
+                json!({"title": format!("{pre}{who} 点了星{}", if py::truthy(n) { format!("（现在 {} 颗）", py::str_of(n)) } else { String::new() }),
+                "url": g(&d["sender"], "html_url", ""), "text": ""}),
+            )
         }
         "fork" => Ok(json!({"title": format!("{pre}{who} fork 了仓库"), "url": g(&d["forkee"], "html_url", ""), "text": ""})),
-        _ => Ok(json!({"title": format!("{pre}{kind} {action}").trim().to_string(), "text": short(&py::dumps_indent(d, 1, false), MAX_JSON)})),
+        _ => Ok(
+            json!({"title": format!("{pre}{kind} {action}").trim().to_string(), "text": short(&py::dumps_indent(d, 1, false), MAX_JSON)}),
+        ),
     }
 }
 
 fn parse_github(req: &HookReq, params: &Value) -> Result<Parsed, ParseErr> {
     let h = &req.headers;
     let kind = h.get("x-github-event").cloned().unwrap_or_default();
-    if py::truthy(&params["secret"]) && !sig_ok(&s(&params["secret"]), &req.body, h.get("x-hub-signature-256").map(|x| x.as_str()).unwrap_or("")) {
+    if py::truthy(&params["secret"])
+        && !sig_ok(&s(&params["secret"]), &req.body, h.get("x-hub-signature-256").map(|x| x.as_str()).unwrap_or(""))
+    {
         return Err(ParseErr::Denied("签名不对：GitHub 里填的 Secret 和这里的不一样".into()));
     }
     if kind.is_empty() {
@@ -207,10 +238,10 @@ fn parse_github(req: &HookReq, params: &Value) -> Result<Parsed, ParseErr> {
         let what = if full.is_empty() { g(d, "hook_id", "") } else { full };
         return Ok(Parsed::Skip(format!("收到 GitHub 的 ping，地址配好了（{what}）")));
     }
-    if let Some(evs) = params["events"].as_array().filter(|a| !a.is_empty()) {
-        if !evs.iter().any(|e| e == kind.as_str()) {
-            return Ok(Parsed::Skip(format!("没选这类事件：{kind}")));
-        }
+    if let Some(evs) = params["events"].as_array().filter(|a| !a.is_empty())
+        && !evs.iter().any(|e| e == kind.as_str())
+    {
+        return Ok(Parsed::Skip(format!("没选这类事件：{kind}")));
     }
     let skip_bots = params.get("skip_bots").map(py::truthy).unwrap_or(true);
     if skip_bots && is_bot(d) {

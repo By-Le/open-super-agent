@@ -22,7 +22,8 @@ pub fn migrate() {
     db::batch("create table if not exists apps(name text primary key, config text, enabled integer, created real)");
 }
 
-pub const KEYS: [&str; 12] = ["catalog", "type", "command", "args", "env", "url", "headers", "oauth", "oauth_redirect", "deny", "confirm", "owned"];
+pub const KEYS: [&str; 12] =
+    ["catalog", "type", "command", "args", "env", "url", "headers", "oauth", "oauth_redirect", "deny", "confirm", "owned"];
 
 static NAME: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[a-z][a-z0-9_-]{0,23}$").unwrap());
 
@@ -108,7 +109,10 @@ pub fn from_yaml(s: &Value) -> Value {
         return json!({"type": "http", "url": s["url"], "headers": s.get("headers").cloned().unwrap_or(json!({})), "oauth": py::truthy(&s["oauth"]),
                       "deny": s.get("deny").cloned().unwrap_or(json!([])), "confirm": s.get("confirm").cloned().unwrap_or(json!("auto"))});
     }
-    let env: serde_json::Map<String, Value> = s["env_from"].as_array().map(|a| a.iter().map(|k| (py::str_of(k), json!(format!("env:{}", py::str_of(k))))).collect()).unwrap_or_default();
+    let env: serde_json::Map<String, Value> = s["env_from"]
+        .as_array()
+        .map(|a| a.iter().map(|k| (py::str_of(k), json!(format!("env:{}", py::str_of(k))))).collect())
+        .unwrap_or_default();
     json!({"command": s.get("command").cloned().unwrap_or(json!("")), "args": s.get("args").cloned().unwrap_or(json!([])), "env": env,
            "deny": s.get("deny").cloned().unwrap_or(json!([])), "confirm": s.get("confirm").cloned().unwrap_or(json!("auto"))})
 }
@@ -120,7 +124,10 @@ fn seed() {
             if have.contains(name) {
                 continue;
             }
-            db::exec("insert into apps values(?,?,?,?)", params![name, py::dumps(&from_yaml(s), true), py::truthy(&s["enabled"]) as i64, py::now()]);
+            db::exec(
+                "insert into apps values(?,?,?,?)",
+                params![name, py::dumps(&from_yaml(s), true), py::truthy(&s["enabled"]) as i64, py::now()],
+            );
         }
     }
 }
@@ -293,7 +300,8 @@ pub fn resolve(v: &Value, missing: &mut Vec<String>) -> String {
 
 fn env_of(a: &Value) -> Result<HashMap<String, String>, String> {
     let mut missing = vec![];
-    let env: HashMap<String, String> = a["env"].as_object().map(|o| o.iter().map(|(k, v)| (k.clone(), resolve(v, &mut missing))).collect()).unwrap_or_default();
+    let env: HashMap<String, String> =
+        a["env"].as_object().map(|o| o.iter().map(|(k, v)| (k.clone(), resolve(v, &mut missing))).collect()).unwrap_or_default();
     if !missing.is_empty() {
         return Err(t!("缺少密钥：{names}", names = missing.join(", ")));
     }
@@ -301,7 +309,11 @@ fn env_of(a: &Value) -> Result<HashMap<String, String>, String> {
 }
 
 fn needs_confirm_tool(a: &Value, tool: &Value) -> bool {
-    approvals::default_confirm(&a.get("confirm").cloned().unwrap_or(json!("auto")), tool["name"].as_str().unwrap_or(""), tool["annotations"]["readOnlyHint"].as_bool())
+    approvals::default_confirm(
+        &a.get("confirm").cloned().unwrap_or(json!("auto")),
+        tool["name"].as_str().unwrap_or(""),
+        tool["annotations"]["readOnlyHint"].as_bool(),
+    )
 }
 
 fn parallel_of(name: &str, a: &Value, tool: &Value, ui: bool) -> usize {
@@ -321,7 +333,8 @@ fn transport(name: &str, a: &Value) -> Result<Transport, String> {
     if kind == "http" || kind == "sse" {
         let mut missing = vec![];
         let url = resolve(&a["url"], &mut missing);
-        let headers: HashMap<String, String> = a["headers"].as_object().map(|o| o.iter().map(|(k, v)| (k.clone(), resolve(v, &mut missing))).collect()).unwrap_or_default();
+        let headers: HashMap<String, String> =
+            a["headers"].as_object().map(|o| o.iter().map(|(k, v)| (k.clone(), resolve(v, &mut missing))).collect()).unwrap_or_default();
         if !missing.is_empty() {
             return Err(t!("缺少密钥：{names}", names = missing.join(", ")));
         }
@@ -331,10 +344,17 @@ fn transport(name: &str, a: &Value) -> Result<Transport, String> {
     let mut env: HashMap<String, String> = std::env::vars().filter(|(k, _)| k != "OSA_PASSWORD").collect();
     env.extend(env_of(a)?);
     let mut missing = vec![];
-    let args: Vec<String> = a["args"].as_array().map(|x| x.iter().map(|v| {
-        let s = py::str_of(v);
-        if s.contains("vault:") || s.contains("env:") { resolve(v, &mut missing) } else { s }
-    }).collect()).unwrap_or_default();
+    let args: Vec<String> = a["args"]
+        .as_array()
+        .map(|x| {
+            x.iter()
+                .map(|v| {
+                    let s = py::str_of(v);
+                    if s.contains("vault:") || s.contains("env:") { resolve(v, &mut missing) } else { s }
+                })
+                .collect()
+        })
+        .unwrap_or_default();
     if !missing.is_empty() {
         return Err(t!("缺少密钥：{names}", names = missing.join(", ")));
     }
@@ -353,7 +373,10 @@ fn drop_tools(name: &str) {
 }
 
 pub fn tools_of(name: &str) -> Vec<String> {
-    let mut v: Vec<String> = registry::by_group().get(name).map(|ts| ts.iter().map(|t| t.name.split_once("__").map(|x| x.1.to_string()).unwrap_or_default()).collect()).unwrap_or_default();
+    let mut v: Vec<String> = registry::by_group()
+        .get(name)
+        .map(|ts| ts.iter().map(|t| t.name.split_once("__").map(|x| x.1.to_string()).unwrap_or_default()).collect())
+        .unwrap_or_default();
     v.sort();
     v
 }
@@ -364,7 +387,14 @@ pub fn all_tool_names() -> Vec<String> {
     v
 }
 
-fn make_run(name: String, tool: String, full: String, ui: Option<String>, session: Arc<Session>, stop: watch::Receiver<bool>) -> registry::RunFn {
+fn make_run(
+    name: String,
+    tool: String,
+    full: String,
+    ui: Option<String>,
+    session: Arc<Session>,
+    stop: watch::Receiver<bool>,
+) -> registry::RunFn {
     Arc::new(move |c: Call| -> BoxFuture<'static, Out> {
         let (name, tool, full, ui, session, stop) = (name.clone(), tool.clone(), full.clone(), ui.clone(), session.clone(), stop.clone());
         Box::pin(async move {
@@ -386,20 +416,29 @@ fn make_run(name: String, tool: String, full: String, ui: Option<String>, sessio
                 }
             };
             let mut text = crate::mcp_client::text_of(&result);
-            if let Some(ui) = &ui {
-                if c.scope == WORKER && c.env.get("pages").is_none_or(py::truthy) && c.apps.lock().len() < mcpapps::MAX_VIEWS {
-                    if let Some(rec) = mcpapps::view_record(&name, &tool, ui, &c.args, &result) {
-                        c.apps.lock().push(rec);
-                        text += mcpapps::MODEL_HINT;
-                    }
-                }
+            if let Some(ui) = &ui
+                && c.scope == WORKER
+                && c.env.get("pages").is_none_or(py::truthy)
+                && c.apps.lock().len() < mcpapps::MAX_VIEWS
+                && let Some(rec) = mcpapps::view_record(&name, &tool, ui, &c.args, &result)
+            {
+                c.apps.lock().push(rec);
+                text += mcpapps::MODEL_HINT;
             }
             Out::Text(text)
         })
     })
 }
 
-async fn serve(name: String, a: Value, ready: tokio::sync::oneshot::Sender<Result<(), String>>, mut stop: watch::Receiver<bool>, wait_s: f64, done: watch::Sender<bool>, generation: u64) {
+async fn serve(
+    name: String,
+    a: Value,
+    ready: tokio::sync::oneshot::Sender<Result<(), String>>,
+    mut stop: watch::Receiver<bool>,
+    wait_s: f64,
+    done: watch::Sender<bool>,
+    generation: u64,
+) {
     let mut ready = Some(ready);
     let mut connected: Option<Later> = None;
     let r: Result<(), (Later, bool)> = async {
@@ -411,11 +450,17 @@ async fn serve(name: String, a: Value, ready: tokio::sync::oneshot::Sender<Resul
             e if e.to_string().contains("Token exchange failed") => {
                 let s = e.to_string();
                 let detail = s.split_once(": ").map(|x| x.1.to_string()).unwrap_or(s);
-                (Later::new("登录后没换到令牌，检查一下客户端 ID、密钥和回调地址：{error}", &[("error", json!(py::head(&detail, 200)))]), false)
+                (
+                    Later::new("登录后没换到令牌，检查一下客户端 ID、密钥和回调地址：{error}", &[("error", json!(py::head(&detail, 200)))]),
+                    false,
+                )
             }
             e => (Later::new("连接失败：{error}", &[("error", json!(py::head(&e.to_string(), 300)))]), false),
         })?;
-        let tools = session.list_tools().await.map_err(|e| (Later::new("连接失败：{error}", &[("error", json!(py::head(&e.to_string(), 300)))]), false))?;
+        let tools = session
+            .list_tools()
+            .await
+            .map_err(|e| (Later::new("连接失败：{error}", &[("error", json!(py::head(&e.to_string(), 300)))]), false))?;
         let deny: Vec<String> = a["deny"].as_array().map(|d| d.iter().map(|w| py::str_of(w).to_lowercase()).collect()).unwrap_or_default();
         drop_tools(&name);
         let ctx = Arc::new(Context::new(&format!("mcp:{name}")));
@@ -488,10 +533,10 @@ async fn serve(name: String, a: Value, ready: tokio::sync::oneshot::Sender<Resul
         if s.running.get(&name).is_some_and(|r| r.generation == generation) {
             s.running.remove(&name);
         }
-        if let Some(c) = &connected {
-            if s.status.get(&name) == Some(c) {
-                s.status.insert(name.clone(), Later::plain("已停用"));
-            }
+        if let Some(c) = &connected
+            && s.status.get(&name) == Some(c)
+        {
+            s.status.insert(name.clone(), Later::plain("已停用"));
         }
     }
     mcpapps::forget(&name);
@@ -519,12 +564,9 @@ pub fn connect(name: &str, timeout: f64) -> BoxFuture<'static, Result<String, St
         let generation = GEN.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         ST.lock().running.insert(name.clone(), Running { stop: stop_tx, done: done_rx, generation });
         tokio::spawn(serve(name.clone(), a, rtx, stop_rx, if interactive { timeout - 10.0 } else { 120.0 }, done_tx, generation));
-        match tokio::time::timeout(Duration::from_secs_f64(timeout), rrx).await {
-            Err(_) => {
-                set_status(&name, Later::plain("连接超时"));
-                disconnect(&name, false).await;
-            }
-            Ok(_) => {}
+        if let Err(_) = tokio::time::timeout(Duration::from_secs_f64(timeout), rrx).await {
+            set_status(&name, Later::plain("连接超时"));
+            disconnect(&name, false).await;
         }
         Ok(status_text(&name))
     })

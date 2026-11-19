@@ -152,7 +152,10 @@ pub fn describe(name: &str) -> Value {
     let k = api_key(name);
     let m = MODELS.lock().get(name).cloned().unwrap_or(json!({}));
     let pre = p["preset"].as_str().filter(|s| !s.is_empty()).unwrap_or(name);
-    let title = p["title"].as_str().filter(|s| !s.is_empty()).map(String::from)
+    let title = p["title"]
+        .as_str()
+        .filter(|s| !s.is_empty())
+        .map(String::from)
         .or_else(|| preset(pre).and_then(|x| x["title"].as_str().map(String::from)))
         .unwrap_or_else(|| name.to_string());
     json!({
@@ -382,7 +385,12 @@ impl ChunkStream {
                 Some(Ok(b)) => self.buf.extend_from_slice(&b),
                 Some(Err(e)) => {
                     self.done = true;
-                    return Some(Err(ApiError { status: None, message: e.to_string(), timeout: e.is_timeout(), origin: self.origin.clone() }));
+                    return Some(Err(ApiError {
+                        status: None,
+                        message: e.to_string(),
+                        timeout: e.is_timeout(),
+                        origin: self.origin.clone(),
+                    }));
                 }
                 None => {
                     self.done = true;
@@ -398,10 +406,10 @@ impl ChunkStream {
                             self.done = true;
                             let text = String::from_utf8_lossy(&ev);
                             let data: String = text.lines().filter_map(|l| l.strip_prefix("data:")).map(|d| d.trim_start()).collect();
-                            if data.trim() != "[DONE]" {
-                                if let Ok(v) = serde_json::from_str::<Value>(&data) {
-                                    return Some(Ok(v));
-                                }
+                            if data.trim() != "[DONE]"
+                                && let Ok(v) = serde_json::from_str::<Value>(&data)
+                            {
+                                return Some(Ok(v));
                             }
                         }
                     }
@@ -461,7 +469,12 @@ pub async fn complete_role(role: &str, msgs: &Value, response_format: Option<Val
             })
         }
         Err(e) => {
-            memory::record_error(role, &model, &explain(&e, &e.origin), memory::UsageRec { ms: Some(t0.elapsed().as_secs_f64() * 1000.0), ..Default::default() });
+            memory::record_error(
+                role,
+                &model,
+                &explain(&e, &e.origin),
+                memory::UsageRec { ms: Some(t0.elapsed().as_secs_f64() * 1000.0), ..Default::default() },
+            );
             Err(e.into())
         }
     }
@@ -469,9 +482,15 @@ pub async fn complete_role(role: &str, msgs: &Value, response_format: Option<Val
 
 // ---------- 模型列表 ----------
 async fn list_models(base_url: &str, key: &str) -> Result<Vec<String>, ApiError> {
-    let c = Client { base_url: base_url.into(), key: if key.is_empty() { "none".into() } else { key.into() }, timeout: Some(Duration::from_secs(15)), retries: 0 };
+    let c = Client {
+        base_url: base_url.into(),
+        key: if key.is_empty() { "none".into() } else { key.into() },
+        timeout: Some(Duration::from_secs(15)),
+        retries: 0,
+    };
     let v = c.get_json("models").await?;
-    let mut ids: Vec<String> = v["data"].as_array().map(|a| a.iter().filter_map(|m| m["id"].as_str().map(String::from)).collect()).unwrap_or_default();
+    let mut ids: Vec<String> =
+        v["data"].as_array().map(|a| a.iter().filter_map(|m| m["id"].as_str().map(String::from)).collect()).unwrap_or_default();
     ids.sort();
     ids.dedup();
     Ok(ids)
@@ -480,11 +499,16 @@ async fn list_models(base_url: &str, key: &str) -> Result<Vec<String>, ApiError>
 pub async fn check(base_url: &str, key: &str) -> Value {
     match list_models(base_url, key).await {
         Ok(models) => {
-            let note = if models.is_empty() { t!("连上了，但是没有列出模型，选模型时直接填名字") } else { String::new() };
+            let note =
+                if models.is_empty() { t!("连上了，但是没有列出模型，选模型时直接填名字") } else { String::new() };
             json!({"ok": true, "models": models, "error": "", "note": note})
         }
-        Err(e) if e.status == Some(404) => json!({"ok": true, "models": [], "error": "", "note": t!("这个服务不提供模型列表，选模型时直接填名字")}),
-        Err(e) if e.status == Some(401) => json!({"ok": false, "models": [], "error": if key.is_empty() { t!("要填 API Key 才能用") } else { explain(&e, "") }, "note": ""}),
+        Err(e) if e.status == Some(404) => {
+            json!({"ok": true, "models": [], "error": "", "note": t!("这个服务不提供模型列表，选模型时直接填名字")})
+        }
+        Err(e) if e.status == Some(401) => {
+            json!({"ok": false, "models": [], "error": if key.is_empty() { t!("要填 API Key 才能用") } else { explain(&e, "") }, "note": ""})
+        }
         Err(e) => json!({"ok": false, "models": [], "error": explain(&e, base_url), "note": ""}),
     }
 }
@@ -512,7 +536,8 @@ pub async fn models(name: &str, refresh: bool) -> Result<Value, String> {
             m
         }
     };
-    let list: Vec<String> = m["models"].as_array().map(|a| a.iter().filter_map(|x| x.as_str().map(String::from)).collect()).unwrap_or_default();
+    let list: Vec<String> =
+        m["models"].as_array().map(|a| a.iter().filter_map(|x| x.as_str().map(String::from)).collect()).unwrap_or_default();
     let mut out = m.clone();
     out["name"] = json!(name);
     out["items"] = json!(crate::prices::annotate(name, &list));
@@ -562,21 +587,32 @@ pub fn save(name: Option<&str>, data: &Value) -> Result<String, String> {
     let url = clean_url(data["base_url"].as_str().unwrap_or(""))?;
     let pre = data["preset"].as_str().filter(|p| preset(p).is_some()).map(String::from);
     let key = data["api_key"].as_str().unwrap_or("").trim().to_string();
-    if let Some(n) = name {
-        if let Some(p) = provider(n) {
-            if key.is_empty() && !api_key(n).is_empty() && !same_origin(&url, p["base_url"].as_str().unwrap_or("")) {
-                return Err(t!("换了接口地址要重新填 API Key（原来的密钥不会发给新地址）"));
-            }
-        }
+    if let Some(n) = name
+        && let Some(p) = provider(n)
+        && key.is_empty()
+        && !api_key(n).is_empty()
+        && !same_origin(&url, p["base_url"].as_str().unwrap_or(""))
+    {
+        return Err(t!("换了接口地址要重新填 API Key（原来的密钥不会发给新地址）"));
     }
     let name = match name {
         None => {
             let base = match &pre {
                 Some(p) if p != "custom" => p.clone(),
-                _ => if title.is_empty() { "custom".into() } else { title.clone() },
+                _ => {
+                    if title.is_empty() {
+                        "custom".into()
+                    } else {
+                        title.clone()
+                    }
+                }
             };
             let n = new_name(&base);
-            let t = if !title.is_empty() { title.clone() } else { pre.as_deref().and_then(preset).and_then(|p| p["title"].as_str().map(String::from)).unwrap_or_else(|| n.clone()) };
+            let t = if !title.is_empty() {
+                title.clone()
+            } else {
+                pre.as_deref().and_then(preset).and_then(|p| p["title"].as_str().map(String::from)).unwrap_or_else(|| n.clone())
+            };
             d.insert(n.clone(), json!({"title": t, "base_url": url, "preset": pre.clone().unwrap_or_else(|| "custom".into())}));
             n
         }
@@ -679,7 +715,12 @@ pub async fn test(provider_name: &str, model: &str, kind: &str, role: &str) -> R
     }
     let base = p["base_url"].as_str().unwrap_or("").to_string();
     let k = api_key(provider_name);
-    let c = Client { base_url: base.clone(), key: if k.is_empty() { "none".into() } else { k }, timeout: Some(Duration::from_secs(60)), retries: 0 };
+    let c = Client {
+        base_url: base.clone(),
+        key: if k.is_empty() { "none".into() } else { k },
+        timeout: Some(Duration::from_secs(60)),
+        retries: 0,
+    };
     let mut t0 = Instant::now();
     let ms = |t0: Instant| t0.elapsed().as_millis() as i64;
     if kind == "embedding" {
@@ -701,31 +742,39 @@ pub async fn test(provider_name: &str, model: &str, kind: &str, role: &str) -> R
                 body[k] = v;
             }
             let r = c.post_json("chat/completions", &body).await?;
-            memory::record_usage("test", &model, r.get("usage").filter(|u| !u.is_null()), memory::UsageRec { provider: Some(pn), ..Default::default() });
+            memory::record_usage(
+                "test",
+                &model,
+                r.get("usage").filter(|u| !u.is_null()),
+                memory::UsageRec { provider: Some(pn), ..Default::default() },
+            );
             let msg = &r["choices"][0]["message"];
             let s = msg["content"].as_str().filter(|s| !s.is_empty()).or(msg["reasoning_content"].as_str()).unwrap_or("");
             Ok::<String, ApiError>(s.trim().to_string())
         }
     };
     let red = format!("data:image/png;base64,{}", crate::util::b64(&png(64, 64, [220, 30, 30])));
-    let img_err = match ask(json!([{"type": "text", "text": "这张图片是什么颜色？只回答颜色。"}, {"type": "image_url", "image_url": {"url": red}}])).await {
-        Ok(reply) => {
-            let seen = if reply.contains('红') || reply.to_lowercase().contains("red") {
-                "yes".to_string()
-            } else {
-                match crate::prices::lookup(provider_name, model).get("vision") {
-                    Some(Value::Bool(false)) => "no".into(),
-                    _ => "unsure".into(),
-                }
-            };
-            crate::media::remember_test(provider_name, model, &seen);
-            return Ok(json!({"ok": true, "vision": seen, "reply": py::head(&reply, 80), "ms": ms(t0)}));
-        }
-        Err(e) if matches!(e.status, Some(401) | Some(403) | Some(429)) || (e.status.is_none() && !e.timeout) => {
-            return Ok(json!({"ok": false, "error": explain(&e, &base), "ms": ms(t0)}));
-        }
-        Err(e) => explain(&e, &base),
-    };
+    let img_err =
+        match ask(json!([{"type": "text", "text": "这张图片是什么颜色？只回答颜色。"}, {"type": "image_url", "image_url": {"url": red}}]))
+            .await
+        {
+            Ok(reply) => {
+                let seen = if reply.contains('红') || reply.to_lowercase().contains("red") {
+                    "yes".to_string()
+                } else {
+                    match crate::prices::lookup(provider_name, model).get("vision") {
+                        Some(Value::Bool(false)) => "no".into(),
+                        _ => "unsure".into(),
+                    }
+                };
+                crate::media::remember_test(provider_name, model, &seen);
+                return Ok(json!({"ok": true, "vision": seen, "reply": py::head(&reply, 80), "ms": ms(t0)}));
+            }
+            Err(e) if matches!(e.status, Some(401) | Some(403) | Some(429)) || (e.status.is_none() && !e.timeout) => {
+                return Ok(json!({"ok": false, "error": explain(&e, &base), "ms": ms(t0)}));
+            }
+            Err(e) => explain(&e, &base),
+        };
     t0 = Instant::now();
     Ok(match ask(json!("回复“好”这一个字。")).await {
         Ok(reply) => {

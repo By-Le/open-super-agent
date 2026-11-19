@@ -7,7 +7,11 @@ use serde_json::{Value, json};
 use std::net::IpAddr;
 
 fn services(v: u8) -> &'static [&'static str] {
-    if v == 4 { &["https://api.ipify.org", "https://ipv4.icanhazip.com", "https://ifconfig.me/ip"] } else { &["https://api6.ipify.org", "https://ipv6.icanhazip.com"] }
+    if v == 4 {
+        &["https://api.ipify.org", "https://ipv4.icanhazip.com", "https://ifconfig.me/ip"]
+    } else {
+        &["https://api6.ipify.org", "https://ipv6.icanhazip.com"]
+    }
 }
 
 pub fn parse(text: &str, version: u8) -> Option<String> {
@@ -74,14 +78,14 @@ async fn check(params: Value, state: Value) -> Result<(Vec<Value>, Value), Strin
             continue;
         };
         let key = format!("v{v}");
-        if let Some(o) = old[&key].as_str() {
-            if !same(o, &ip, v) {
-                let (confirm, _, _) = lookup(v, &by).await;
-                if confirm.as_deref().is_some_and(|c| same(c, o, v)) {
-                    continue;
-                }
-                events.push(event(v, o, &ip, &by, confirm.as_deref()));
+        if let Some(o) = old[&key].as_str()
+            && !same(o, &ip, v)
+        {
+            let (confirm, _, _) = lookup(v, &by).await;
+            if confirm.as_deref().is_some_and(|c| same(c, o, v)) {
+                continue;
             }
+            events.push(event(v, o, &ip, &by, confirm.as_deref()));
         }
         new[key] = json!(ip);
     }

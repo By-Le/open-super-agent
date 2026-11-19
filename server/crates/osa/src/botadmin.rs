@@ -30,9 +30,27 @@ pub fn tools_for(bot: &Value) -> Vec<Value> {
 /// 结果写进对话的样子：(kind, 做成了, 没同意, 没同意附了意见, 没做成)
 fn text_of(tool: &str) -> (&'static str, &'static str, &'static str, &'static str, &'static str) {
     match tool {
-        "create_bot" => ("bot_created", "[已新建 Bot「{name}」]", "[没新建 Bot「{name}」]", "[没新建 Bot「{name}」：{note}]", "[没建成 Bot「{name}」：{error}]"),
-        "update_bot" => ("bot_updated", "[已修改 Bot「{name}」：{what}]", "[没修改 Bot「{name}」]", "[没修改 Bot「{name}」：{note}]", "[没改成 Bot「{name}」：{error}]"),
-        _ => ("bot_deleted", "[已删除 Bot「{name}」]", "[没删除 Bot「{name}」]", "[没删除 Bot「{name}」：{note}]", "[没删成 Bot「{name}」：{error}]"),
+        "create_bot" => (
+            "bot_created",
+            "[已新建 Bot「{name}」]",
+            "[没新建 Bot「{name}」]",
+            "[没新建 Bot「{name}」：{note}]",
+            "[没建成 Bot「{name}」：{error}]",
+        ),
+        "update_bot" => (
+            "bot_updated",
+            "[已修改 Bot「{name}」：{what}]",
+            "[没修改 Bot「{name}」]",
+            "[没修改 Bot「{name}」：{note}]",
+            "[没改成 Bot「{name}」：{error}]",
+        ),
+        _ => (
+            "bot_deleted",
+            "[已删除 Bot「{name}」]",
+            "[没删除 Bot「{name}」]",
+            "[没删除 Bot「{name}」：{note}]",
+            "[没删成 Bot「{name}」：{error}]",
+        ),
     }
 }
 
@@ -57,10 +75,14 @@ fn check_name(name: &Value, exclude: Option<i64>) -> Result<String, String> {
     if py::char_len(&name) > 40 {
         return Err("名字最多 40 个字".into());
     }
-    if let Some(b) = bots::by_name(&name) {
-        if b["id"].as_i64() != exclude {
-            return Err(format!("已经有叫 {} 的 Bot 了，换个名字{}", py::str_of(&b["name"]), if exclude.is_none() { "，或者直接用 message_bot 找它" } else { "" }));
-        }
+    if let Some(b) = bots::by_name(&name)
+        && b["id"].as_i64() != exclude
+    {
+        return Err(format!(
+            "已经有叫 {} 的 Bot 了，换个名字{}",
+            py::str_of(&b["name"]),
+            if exclude.is_none() { "，或者直接用 message_bot 找它" } else { "" }
+        ));
     }
     Ok(name)
 }
@@ -109,7 +131,8 @@ fn check_skills(items: &Value) -> Result<Vec<Value>, String> {
     let mut seen: Vec<String> = vec![];
     for it in items {
         let it = if it.is_object() { it } else { json!({}) };
-        let n = skills::check(&s(&it["name"]), &s(&it["body"])).map_err(|e| format!("技能 {}：{e}", if py::truthy(&it["name"]) { py::str_of(&it["name"]) } else { "(没名字)".into() }))?;
+        let n = skills::check(&s(&it["name"]), &s(&it["body"]))
+            .map_err(|e| format!("技能 {}：{e}", if py::truthy(&it["name"]) { py::str_of(&it["name"]) } else { "(没名字)".into() }))?;
         if seen.contains(&n) {
             return Err(format!("技能 /{n} 写了两遍"));
         }
@@ -239,11 +262,12 @@ fn opcodes(a: &[String], b: &[String]) -> Vec<(&'static str, usize, usize, usize
     blocks.sort();
     let mut merged: Vec<(usize, usize, usize)> = vec![];
     for (i, j, k) in blocks {
-        if let Some(last) = merged.last_mut() {
-            if last.0 + last.2 == i && last.1 + last.2 == j {
-                last.2 += k;
-                continue;
-            }
+        if let Some(last) = merged.last_mut()
+            && last.0 + last.2 == i
+            && last.1 + last.2 == j
+        {
+            last.2 += k;
+            continue;
         }
         merged.push((i, j, k));
     }
@@ -251,7 +275,15 @@ fn opcodes(a: &[String], b: &[String]) -> Vec<(&'static str, usize, usize, usize
     let (mut i, mut j) = (0, 0);
     let mut out = vec![];
     for (ai, bj, size) in merged {
-        let tag = if i < ai && j < bj { "replace" } else if i < ai { "delete" } else if j < bj { "insert" } else { "" };
+        let tag = if i < ai && j < bj {
+            "replace"
+        } else if i < ai {
+            "delete"
+        } else if j < bj {
+            "insert"
+        } else {
+            ""
+        };
         if !tag.is_empty() {
             out.push((tag, i, ai, j, bj));
         }
@@ -335,7 +367,10 @@ fn plan_update(me: &Value, args: &Value) -> Result<Plan, String> {
     for n in &drop {
         if !own_names.contains(n) {
             let mine = own_names.iter().map(|x| format!("/{x}")).collect::<Vec<_>>().join("、");
-            return Err(format!("{tname} 没有自己的技能 /{n}（共用的技能不能在这里删）。它自己的技能：{}", if mine.is_empty() { "没有".into() } else { mine }));
+            return Err(format!(
+                "{tname} 没有自己的技能 /{n}（共用的技能不能在这里删）。它自己的技能：{}",
+                if mine.is_empty() { "没有".into() } else { mine }
+            ));
         }
         if add.iter().any(|s| s["name"] == n.as_str()) {
             return Err(format!("技能 /{n} 又要删又要改，只留一个"));
@@ -362,7 +397,8 @@ fn plan_update(me: &Value, args: &Value) -> Result<Plan, String> {
         if !removes.is_empty() {
             shown["删技能"] = json!(removes.iter().map(|n| format!("/{n}")).collect::<Vec<_>>());
         }
-        let names: Vec<String> = add.iter().map(|s| py::str_of(&s["name"])).chain(removes.iter().cloned()).map(|n| format!("/{n}")).collect();
+        let names: Vec<String> =
+            add.iter().map(|s| py::str_of(&s["name"])).chain(removes.iter().cloned()).map(|n| format!("/{n}")).collect();
         what.push(format!("{} {}", t!("技能"), names.join(" ")));
     }
     if plan.as_object().map(|o| o.len()).unwrap_or(0) == 1 {
@@ -450,7 +486,13 @@ async fn apply(tool: &str, p: &Plan, chat_id: i64, r: &Arc<Router>) -> Result<St
         let b = bots::create(d["name"].as_str().unwrap_or(""), &av, d["instructions"].as_str().unwrap_or(""), false)?;
         let bid = b["id"].as_i64().unwrap_or(0);
         for sk in d["skills"].as_array().cloned().unwrap_or_default() {
-            skills::save(bid, sk["name"].as_str().unwrap_or(""), sk["body"].as_str().unwrap_or(""), sk["description"].as_str().unwrap_or(""), "chat")?;
+            skills::save(
+                bid,
+                sk["name"].as_str().unwrap_or(""),
+                sk["body"].as_str().unwrap_or(""),
+                sk["description"].as_str().unwrap_or(""),
+                "chat",
+            )?;
         }
         (t!(done, name = b["name"].clone()), json!({"kind": kind, "new_bot": bid}))
     } else if tool == "update_bot" {
@@ -461,7 +503,13 @@ async fn apply(tool: &str, p: &Plan, chat_id: i64, r: &Arc<Router>) -> Result<St
             }
         }
         for sk in d["skills"].as_array().cloned().unwrap_or_default() {
-            skills::save(bid, sk["name"].as_str().unwrap_or(""), sk["body"].as_str().unwrap_or(""), sk["description"].as_str().unwrap_or(""), "chat")?;
+            skills::save(
+                bid,
+                sk["name"].as_str().unwrap_or(""),
+                sk["body"].as_str().unwrap_or(""),
+                sk["description"].as_str().unwrap_or(""),
+                "chat",
+            )?;
         }
         let fields = json!({"name": d.get("name").cloned().unwrap_or(Value::Null), "instructions": d.get("instructions").cloned().unwrap_or(Value::Null),
                             "avatar": d.get("avatar").cloned().unwrap_or(Value::Null)});
@@ -482,7 +530,16 @@ async fn apply(tool: &str, p: &Plan, chat_id: i64, r: &Arc<Router>) -> Result<St
 /// Router 调的入口。bot：谁在调；chat_id：结果记在哪个对话；private_chat_id：卡片发到哪（它的私聊）。
 /// owed、depth：这一轮欠谁回信、私信深度，有了结果叫醒它时带上
 #[allow(clippy::too_many_arguments)]
-pub async fn call(r: &Arc<Router>, tool: &str, bot: &Value, chat_id: i64, private_chat_id: i64, args: &Value, owed: Option<Reply>, depth: i64) -> String {
+pub async fn call(
+    r: &Arc<Router>,
+    tool: &str,
+    bot: &Value,
+    chat_id: i64,
+    private_chat_id: i64,
+    args: &Value,
+    owed: Option<Reply>,
+    depth: i64,
+) -> String {
     if tool == "get_bot" {
         return view(bot, args);
     }
@@ -522,7 +579,9 @@ pub async fn call(r: &Arc<Router>, tool: &str, bot: &Value, chat_id: i64, privat
     tokio::spawn(async move {
         let ed = editable(&tool);
         let keys: Vec<&str> = ed.iter().map(|(k, _)| *k).filter(|k| shown.get(*k).is_some()).collect();
-        let (ok, note, after_args) = approvals::request(&fake, &tool, &shown, approvals::Req { kind: "approval", once: true, limit: CARD_LIMIT, editable: &keys }).await;
+        let (ok, note, after_args) =
+            approvals::request(&fake, &tool, &shown, approvals::Req { kind: "approval", once: true, limit: CARD_LIMIT, editable: &keys })
+                .await;
         if bots::get(bot_id).is_none() {
             return;
         }
@@ -605,7 +664,10 @@ fn overview(me: &Value) -> String {
     let mut lines = vec![format!("共 {} 个 Bot（最多 {} 个）：", rows.len(), bots::MAX_BOTS)];
     for b in &rows {
         let bid = b["id"].as_i64().unwrap_or(0);
-        let tags: Vec<&str> = [if b["is_primary"] == true { "主 Bot" } else { "" }, if b["id"] == me["id"] { "就是你" } else { "" }].into_iter().filter(|x| !x.is_empty()).collect();
+        let tags: Vec<&str> = [if b["is_primary"] == true { "主 Bot" } else { "" }, if b["id"] == me["id"] { "就是你" } else { "" }]
+            .into_iter()
+            .filter(|x| !x.is_empty())
+            .collect();
         let (_, last) = chat_stats(b);
         let ins = b["instructions"].as_str().unwrap_or("");
         let role = (if ins.is_empty() { "职责没写明" } else { ins }).replace('\n', " ");
@@ -625,7 +687,13 @@ fn overview(me: &Value) -> String {
         }
         stats.push(format!("最近私聊：{}", when(&last)));
         let tag = if tags.is_empty() { String::new() } else { format!("（{}）", tags.join("，")) };
-        lines.push(format!("- {}{tag}：{}{}｜{}", py::str_of(&b["name"]), py::head(&role, 60), if py::char_len(&role) > 60 { "…" } else { "" }, stats.join("，")));
+        lines.push(format!(
+            "- {}{tag}：{}{}｜{}",
+            py::str_of(&b["name"]),
+            py::head(&role, 60),
+            if py::char_len(&role) > 60 { "…" } else { "" },
+            stats.join("，")
+        ));
     }
     lines.push("要看某个 Bot 的完整职责和技能，get_bot 填 name。".into());
     lines.join("\n")
@@ -637,16 +705,29 @@ fn detail(b: &Value, me: &Value) -> String {
     let av = &b["avatar"];
     let ins = b["instructions"].as_str().unwrap_or("");
     let head = [
-        format!("{}（{}{}）", py::str_of(&b["name"]), if b["is_primary"] == true { "主 Bot" } else { "普通 Bot" }, if b["id"] == me["id"] { "，就是你" } else { "" }),
-        format!("建于 {}；头像：{} {}{}", when(&b["created"]), py::str_of(&av["shape"]), py::str_of(&av["color"]), if py::truthy(&av["image"]) { "（用的是一张图片）" } else { "" }),
+        format!(
+            "{}（{}{}）",
+            py::str_of(&b["name"]),
+            if b["is_primary"] == true { "主 Bot" } else { "普通 Bot" },
+            if b["id"] == me["id"] { "，就是你" } else { "" }
+        ),
+        format!(
+            "建于 {}；头像：{} {}{}",
+            when(&b["created"]),
+            py::str_of(&av["shape"]),
+            py::str_of(&av["color"]),
+            if py::truthy(&av["image"]) { "（用的是一张图片）" } else { "" }
+        ),
         format!("私聊：{n} 条消息，最近一条 {}", when(&last)),
         "职责：".into(),
         if ins.is_empty() { "（没写）".into() } else { ins.to_string() },
     ];
     let own = own_skills(bid);
     let own_names: Vec<String> = own.iter().map(|x| py::str_of(&x["name"])).collect();
-    let shared: Vec<Value> = skills::list_for(bid).into_iter().filter(|s| s["bot_id"].is_null() && !own_names.contains(&py::str_of(&s["name"]))).collect();
-    let mut parts = vec![head.join("\n"), if own.is_empty() { "它自己的技能：无".to_string() } else { format!("它自己的技能（{} 个）：", own.len()) }];
+    let shared: Vec<Value> =
+        skills::list_for(bid).into_iter().filter(|s| s["bot_id"].is_null() && !own_names.contains(&py::str_of(&s["name"]))).collect();
+    let mut parts =
+        vec![head.join("\n"), if own.is_empty() { "它自己的技能：无".to_string() } else { format!("它自己的技能（{} 个）：", own.len()) }];
     let mut budget: i64 = 12000;
     for sk in &own {
         let body_full = sk["body"].as_str().unwrap_or("");
@@ -654,7 +735,11 @@ fn detail(b: &Value, me: &Value) -> String {
         let mut body = if blen <= MAX_SKILL_SHOWN {
             body_full.to_string()
         } else {
-            format!("{}\n……（后面还有 {} 个字，要全文用 get_bot 的 skill 参数）", py::head(body_full, MAX_SKILL_SHOWN), blen - MAX_SKILL_SHOWN)
+            format!(
+                "{}\n……（后面还有 {} 个字，要全文用 get_bot 的 skill 参数）",
+                py::head(body_full, MAX_SKILL_SHOWN),
+                blen - MAX_SKILL_SHOWN
+            )
         };
         if budget - (py::char_len(&body) as i64) < 0 {
             body = format!("（做法太长没列出来，要看用 get_bot 的 skill 参数：{}）", py::str_of(&sk["name"]));
@@ -664,7 +749,10 @@ fn detail(b: &Value, me: &Value) -> String {
         parts.push(format!("/{}：{}\n做法：\n{body}", py::str_of(&sk["name"]), if d.is_empty() { "（没写说明）" } else { d }));
     }
     if !shared.is_empty() {
-        parts.push(format!("所有 Bot 共用的技能：{}", shared.iter().map(|s| format!("/{}", py::str_of(&s["name"]))).collect::<Vec<_>>().join(" ")));
+        parts.push(format!(
+            "所有 Bot 共用的技能：{}",
+            shared.iter().map(|s| format!("/{}", py::str_of(&s["name"]))).collect::<Vec<_>>().join(" ")
+        ));
     }
     let rs = routines::list_for(Some(bid));
     for (label, ev) in [("定时任务", false), ("事件", true)] {
@@ -691,11 +779,25 @@ fn detail(b: &Value, me: &Value) -> String {
         parts.push(format!("{label}：{body}"));
     }
     let gs = groups_of(bid);
-    let gtext = gs.iter().map(|c| format!("「{}」{}", py::str_of(&c["title"]), if c["lead"].as_i64() == Some(bid) { "（协调者）" } else { "" })).collect::<Vec<_>>().join("、");
+    let gtext = gs
+        .iter()
+        .map(|c| format!("「{}」{}", py::str_of(&c["title"]), if c["lead"].as_i64() == Some(bid) { "（协调者）" } else { "" }))
+        .collect::<Vec<_>>()
+        .join("、");
     parts.push(format!("所在群聊：{}", if gtext.is_empty() { "无".into() } else { gtext }));
     let ts = running_tasks(bid);
-    parts.push(format!("正在做的任务：{}", if ts.is_empty() { "无".into() } else { "\n".to_string() + &ts.iter().map(|t| format!("- #{} {}", t.id, py::head(&t.goal, 80))).collect::<Vec<_>>().join("\n") }));
-    parts.push(format!("长期记忆：它自己记了 {} 条（内容只有它自己能看）", memories::list_for(bid)["own"].as_array().map(|a| a.len()).unwrap_or(0)));
+    parts.push(format!(
+        "正在做的任务：{}",
+        if ts.is_empty() {
+            "无".into()
+        } else {
+            "\n".to_string() + &ts.iter().map(|t| format!("- #{} {}", t.id, py::head(&t.goal, 80))).collect::<Vec<_>>().join("\n")
+        }
+    ));
+    parts.push(format!(
+        "长期记忆：它自己记了 {} 条（内容只有它自己能看）",
+        memories::list_for(bid)["own"].as_array().map(|a| a.len()).unwrap_or(0)
+    ));
     parts.join("\n\n")
 }
 
@@ -714,11 +816,21 @@ pub fn view(me: &Value, args: &Value) -> String {
     if !sk.is_empty() {
         let Some(x) = own_skill(bid, &sk).or_else(|| skills::find(bid, &sk)) else {
             let have = skills::list_for(bid).iter().map(|x| format!("/{}", py::str_of(&x["name"]))).collect::<Vec<_>>().join(" ");
-            return format!("{} 没有 /{sk} 这个技能。它能用的：{}", py::str_of(&b["name"]), if have.is_empty() { "无".into() } else { have });
+            return format!(
+                "{} 没有 /{sk} 这个技能。它能用的：{}",
+                py::str_of(&b["name"]),
+                if have.is_empty() { "无".into() } else { have }
+            );
         };
         let whose = if x["bot_id"].is_null() { "所有 Bot 共用的" } else { "它自己的" };
         let d = x["description"].as_str().unwrap_or("");
-        return format!("{} 的技能 /{}（{whose}）：{}\n做法：\n{}", py::str_of(&b["name"]), py::str_of(&x["name"]), if d.is_empty() { "（没写说明）" } else { d }, py::str_of(&x["body"]));
+        return format!(
+            "{} 的技能 /{}（{whose}）：{}\n做法：\n{}",
+            py::str_of(&b["name"]),
+            py::str_of(&x["name"]),
+            if d.is_empty() { "（没写说明）" } else { d },
+            py::str_of(&x["body"])
+        );
     }
     detail(&b, me)
 }

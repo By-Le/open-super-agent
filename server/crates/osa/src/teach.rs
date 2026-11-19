@@ -84,10 +84,10 @@ async fn auto_stop(started: f64) {
 async fn finish(from_timer: bool) -> Result<(State, Vec<Value>), String> {
     let s = STATE.lock().take().ok_or_else(|| t!("现在没有在录制"))?;
     let timer = TIMER.lock().take();
-    if let Some(t) = timer {
-        if !from_timer {
-            t.abort();
-        }
+    if let Some(t) = timer
+        && !from_timer
+    {
+        t.abort();
     }
     let events = pc_end(&s.file).await;
     changed(json!({}), Some(s.bot_id));
@@ -195,7 +195,8 @@ pub fn describe(events: &[Value], started: f64) -> Vec<String> {
             line = t!("在「{field}」选择「{value}」", field = or(e, "field", t!("下拉框")), value = v);
         } else if kind == "check" {
             let f = if e.get("field").is_some() { s(e, "field") } else { String::new() };
-            line = if py::truthy(&e["checked"]) { t!("勾选「{field}」", field = f) } else { t!("取消勾选「{field}」", field = f) };
+            line =
+                if py::truthy(&e["checked"]) { t!("勾选「{field}」", field = f) } else { t!("取消勾选「{field}」", field = f) };
         } else if kind == "key" {
             line = i18n::t("按 {key}", &[("key", e.get("key").cloned().unwrap_or(Value::Null))]);
         } else {
@@ -234,17 +235,21 @@ fn sort_keys(v: &Value) -> Value {
 fn parse(text: &str) -> Value {
     static RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\{[\s\S]*\}").unwrap());
     for s in [text.to_string(), RE.find(text).map(|m| m.as_str().to_string()).unwrap_or_default()] {
-        if let Ok(v) = serde_json::from_str::<Value>(&s) {
-            if v.is_object() {
-                return v;
-            }
+        if let Ok(v) = serde_json::from_str::<Value>(&s)
+            && v.is_object()
+        {
+            return v;
         }
     }
     json!({})
 }
 
 pub async fn draft_skill(steps: &[String], note: &str) -> Result<Value, String> {
-    let user = format!("{}录到的操作：\n{}", if note.is_empty() { String::new() } else { format!("用户说要演示的是：{note}\n\n") }, steps.join("\n"));
+    let user = format!(
+        "{}录到的操作：\n{}",
+        if note.is_empty() { String::new() } else { format!("用户说要演示的是：{note}\n\n") },
+        steps.join("\n")
+    );
     let msgs = json!([{"role": "system", "content": format!("{DRAFT_PROMPT}{}", i18n::model_hint())}, {"role": "user", "content": user}]);
     let mut d = json!({});
     for _ in 0..2 {

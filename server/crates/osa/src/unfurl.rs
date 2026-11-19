@@ -1,8 +1,8 @@
 //! 链接卡片：服务器去取网页的标题、摘要、配图、站点名和图标，前端画成书签卡片。对应 osa/unfurl.py（说明见那里）。
 
 use crate::db::{self, RowExt};
-use crate::web::{Q, Res, qs};
 use crate::py;
+use crate::web::{Q, Res, qs};
 use axum::routing::get as route_get;
 use futures::StreamExt;
 use parking_lot::Mutex;
@@ -85,7 +85,11 @@ fn attrs(s: &str) -> HashMap<String, String> {
         let k = c[1].to_lowercase();
         let v = c.get(2).map(|v| {
             let v = v.as_str();
-            let v = v.strip_prefix('"').and_then(|x| x.strip_suffix('"')).or_else(|| v.strip_prefix('\'').and_then(|x| x.strip_suffix('\''))).unwrap_or(v);
+            let v = v
+                .strip_prefix('"')
+                .and_then(|x| x.strip_suffix('"'))
+                .or_else(|| v.strip_prefix('\'').and_then(|x| x.strip_suffix('\'')))
+                .unwrap_or(v);
             unescape(v)
         });
         out.entry(k).or_insert(v.unwrap_or_default());
@@ -133,20 +137,22 @@ fn scan(text: &str) -> Head {
         match tag.as_str() {
             "meta" => {
                 let key = a.get("property").filter(|s| !s.is_empty()).or(a.get("name")).cloned().unwrap_or_default().to_lowercase();
-                if let Some(c) = a.get("content").filter(|c| !c.is_empty()) {
-                    if !key.is_empty() && !h.meta.contains_key(&key) {
-                        h.meta.insert(key.clone(), c.trim().to_string());
-                        h.meta_order.push(key);
-                    }
+                if let Some(c) = a.get("content").filter(|c| !c.is_empty())
+                    && !key.is_empty()
+                    && !h.meta.contains_key(&key)
+                {
+                    h.meta.insert(key.clone(), c.trim().to_string());
+                    h.meta_order.push(key);
                 }
             }
             "title" if h.title.is_empty() && !title_done => in_title = true,
             "link" => {
                 let rel = a.get("rel").cloned().unwrap_or_default().to_lowercase();
-                if rel.split_whitespace().any(|r| r == "icon") && h.icon.is_empty() {
-                    if let Some(href) = a.get("href").filter(|s| !s.is_empty()) {
-                        h.icon = href.clone();
-                    }
+                if rel.split_whitespace().any(|r| r == "icon")
+                    && h.icon.is_empty()
+                    && let Some(href) = a.get("href").filter(|s| !s.is_empty())
+                {
+                    h.icon = href.clone();
                 }
             }
             "script" | "style" => {
@@ -165,7 +171,8 @@ fn charset(head: &[u8], header: Option<&str>) -> String {
     if let Some(h) = header.filter(|h| !h.is_empty()) {
         return h.to_string();
     }
-    static RE: LazyLock<regex::bytes::Regex> = LazyLock::new(|| regex::bytes::Regex::new(r#"(?i)<meta[^>]+charset=["']?([\w-]+)"#).unwrap());
+    static RE: LazyLock<regex::bytes::Regex> =
+        LazyLock::new(|| regex::bytes::Regex::new(r#"(?i)<meta[^>]+charset=["']?([\w-]+)"#).unwrap());
     let h = &head[..head.len().min(4096)];
     RE.captures(h).map(|c| String::from_utf8_lossy(&c[1]).into_owned()).unwrap_or_else(|| "utf-8".into())
 }
@@ -203,7 +210,13 @@ pub fn parse(html: &[u8], url: &str, encoding: Option<&str>) -> Option<Value> {
     let icon = abs(url, Some(&p.icon));
     let site = clean(g("og:site_name").unwrap_or(""), 60);
     let site = if site.is_empty() { host.strip_prefix("www.").unwrap_or(&host).to_string() } else { site };
-    let icon = if !icon.is_empty() { icon } else if !host.is_empty() { format!("{scheme}://{host}/favicon.ico") } else { String::new() };
+    let icon = if !icon.is_empty() {
+        icon
+    } else if !host.is_empty() {
+        format!("{scheme}://{host}/favicon.ico")
+    } else {
+        String::new()
+    };
     let description = clean(g("og:description").or(g("twitter:description")).or(g("description")).unwrap_or(""), 300);
     let image = abs(url, g("og:image:secure_url").or(g("og:image")).or(g("twitter:image")).or(g("twitter:image:src")));
     Some(json!({"url": url, "title": title, "description": description, "image": image, "site": site, "icon": icon}))
@@ -222,7 +235,11 @@ fn landing(url: &str) -> Value {
     };
     static TWEET: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(^|\.)(x|twitter)\.com$").unwrap());
     let tweet = u.host_str().is_some_and(|h| TWEET.is_match(h));
-    let keep: Vec<(String, String)> = if tweet { vec![] } else { u.query_pairs().filter(|(k, _)| KEEP_QS.contains(&k.as_ref())).map(|(k, v)| (k.into_owned(), v.into_owned())).collect() };
+    let keep: Vec<(String, String)> = if tweet {
+        vec![]
+    } else {
+        u.query_pairs().filter(|(k, _)| KEEP_QS.contains(&k.as_ref())).map(|(k, v)| (k.into_owned(), v.into_owned())).collect()
+    };
     if keep.is_empty() {
         u.set_query(None);
     } else {
@@ -239,7 +256,12 @@ fn client() -> reqwest::Client {
         h.insert("user-agent", "Mozilla/5.0 (compatible; OpenSuperAgent/1.0; link preview)".parse().unwrap());
         h.insert("accept", "text/html,application/xhtml+xml".parse().unwrap());
         h.insert("accept-language", "zh-CN,zh;q=0.9,en;q=0.8".parse().unwrap());
-        reqwest::Client::builder().default_headers(h).redirect(reqwest::redirect::Policy::none()).timeout(Duration::from_secs(TIMEOUT)).build().unwrap()
+        reqwest::Client::builder()
+            .default_headers(h)
+            .redirect(reqwest::redirect::Policy::none())
+            .timeout(Duration::from_secs(TIMEOUT))
+            .build()
+            .unwrap()
     });
     C.clone()
 }
@@ -258,8 +280,10 @@ async fn oembed(url: &str) -> Option<Value> {
     if title.is_empty() {
         return None;
     }
-    Some(json!({"url": url, "title": title, "description": py::head(&if d["author_name"].is_null() { String::new() } else { py::str_of(&d["author_name"]) }, 300),
-                "image": abs(url, d["thumbnail_url"].as_str()), "site": "YouTube", "icon": "https://www.youtube.com/favicon.ico"}))
+    Some(
+        json!({"url": url, "title": title, "description": py::head(&if d["author_name"].is_null() { String::new() } else { py::str_of(&d["author_name"]) }, 300),
+                "image": abs(url, d["thumbnail_url"].as_str()), "site": "YouTube", "icon": "https://www.youtube.com/favicon.ico"}),
+    )
 }
 
 async fn fetch(url: &str) -> Option<Value> {
@@ -272,14 +296,14 @@ async fn fetch(url: &str) -> Option<Value> {
             return None;
         }
         let r = client().get(&url).send().await.ok()?;
-        if r.status().is_redirection() {
-            if let Some(loc) = r.headers().get("location").and_then(|v| v.to_str().ok()) {
-                url = reqwest::Url::parse(&url).ok()?.join(loc).ok()?.to_string();
-                if EMBED.is_match(&url) {
-                    return Some(landing(&url));
-                }
-                continue;
+        if r.status().is_redirection()
+            && let Some(loc) = r.headers().get("location").and_then(|v| v.to_str().ok())
+        {
+            url = reqwest::Url::parse(&url).ok()?.join(loc).ok()?.to_string();
+            if EMBED.is_match(&url) {
+                return Some(landing(&url));
             }
+            continue;
         }
         let ct = r.headers().get("content-type").and_then(|v| v.to_str().ok()).unwrap_or("html").to_lowercase();
         if r.status().as_u16() >= 400 || !ct.contains("html") {

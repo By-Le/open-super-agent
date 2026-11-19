@@ -22,7 +22,8 @@ static DEFAULTS: LazyLock<Value> = LazyLock::new(|| {
     let y: serde_yaml::Value = serde_yaml::from_str(include_str!("../../../../osa/websearch.yaml")).expect("websearch.yaml");
     config::yaml_to_json(y)
 });
-static DOMAIN: LazyLock<fancy_regex::Regex> = LazyLock::new(|| fancy_regex::Regex::new(r"^(?=.{1,253}$)([a-z0-9-]{1,63}\.)+[a-z0-9-]{2,63}$").unwrap());
+static DOMAIN: LazyLock<fancy_regex::Regex> =
+    LazyLock::new(|| fancy_regex::Regex::new(r"^(?=.{1,253}$)([a-z0-9-]{1,63}\.)+[a-z0-9-]{2,63}$").unwrap());
 
 /// 这一家这次不行（出错、限流、回包不对），换下一家
 #[derive(Debug)]
@@ -71,10 +72,10 @@ fn store(d: &Map<String, Value>) {
 }
 
 fn tr(r: &Value, k: &str) -> String {
-    if i18n::lang() == "en" {
-        if let Some(v) = r["en"][k].as_str().filter(|s| !s.is_empty()) {
-            return v.to_string();
-        }
+    if i18n::lang() == "en"
+        && let Some(v) = r["en"][k].as_str().filter(|s| !s.is_empty())
+    {
+        return v.to_string();
     }
     r[k].as_str().map(String::from).unwrap_or_else(|| if r[k].is_null() { String::new() } else { py::str_of(&r[k]) })
 }
@@ -242,14 +243,19 @@ fn vars(r: &Value, kw: &[(&str, Value)]) -> Map<String, Value> {
         v.insert("today".into(), json!(today.format("%Y-%m-%d").to_string()));
         let start = chrono::Utc::now() - chrono::Duration::days(days) + chrono::Duration::minutes(1);
         v.insert("since_time".into(), json!(start.format("%Y-%m-%dT%H:%M:%SZ").to_string()));
-        let bucket = [(1, "day"), (7, "week"), (31, "month"), (366, "year")].into_iter().find(|(n, _)| days <= *n).map(|x| x.1).unwrap_or("year");
+        let bucket =
+            [(1, "day"), (7, "week"), (31, "month"), (366, "year")].into_iter().find(|(n, _)| days <= *n).map(|x| x.1).unwrap_or("year");
         v.insert("range".into(), r["ranges"].get(bucket).cloned().unwrap_or(json!(bucket)));
     }
     v
 }
 
 fn client(timeout: f64) -> reqwest::Client {
-    reqwest::Client::builder().timeout(Duration::from_secs_f64(timeout)).redirect(reqwest::redirect::Policy::limited(20)).build().unwrap_or_default()
+    reqwest::Client::builder()
+        .timeout(Duration::from_secs_f64(timeout))
+        .redirect(reqwest::redirect::Policy::limited(20))
+        .build()
+        .unwrap_or_default()
 }
 
 fn merge_req(base: &Value, over: &Value) -> Value {
@@ -272,13 +278,15 @@ async fn send(c: &reqwest::Client, r: &Value, v: &Map<String, Value>) -> R<Strin
     let method = req["method"].as_str().filter(|s| !s.is_empty()).unwrap_or("POST").to_uppercase();
     let mut rb = c.request(reqwest::Method::from_bytes(method.as_bytes()).unwrap_or(reqwest::Method::POST), &url).header("User-Agent", UA);
     if req.get("params").is_some() {
-        let ps: Vec<(String, String)> = render(&req["params"], v).as_object().cloned().unwrap_or_default().into_iter().map(|(k, x)| (k, py::str_of(&x))).collect();
+        let ps: Vec<(String, String)> =
+            render(&req["params"], v).as_object().cloned().unwrap_or_default().into_iter().map(|(k, x)| (k, py::str_of(&x))).collect();
         rb = rb.query(&ps);
     }
     if req.get("json").is_some() {
         rb = rb.json(&render(&req["json"], v));
     } else if req.get("form").is_some() {
-        let fs: Vec<(String, String)> = render(&req["form"], v).as_object().cloned().unwrap_or_default().into_iter().map(|(k, x)| (k, py::str_of(&x))).collect();
+        let fs: Vec<(String, String)> =
+            render(&req["form"], v).as_object().cloned().unwrap_or_default().into_iter().map(|(k, x)| (k, py::str_of(&x))).collect();
         rb = rb.form(&fs);
     }
     for (k, x) in render(&req.get("headers").cloned().unwrap_or(json!({})), v).as_object().cloned().unwrap_or_default() {
@@ -357,12 +365,11 @@ fn ddg(text: &str) -> R<Vec<Value>> {
         if u.starts_with("//") {
             u = format!("https:{u}");
         }
-        if u.contains("uddg=") {
-            if let Ok(p) = reqwest::Url::parse(&u) {
-                if let Some((_, x)) = p.query_pairs().find(|(k, _)| k == "uddg") {
-                    u = x.into_owned();
-                }
-            }
+        if u.contains("uddg=")
+            && let Ok(p) = reqwest::Url::parse(&u)
+            && let Some((_, x)) = p.query_pairs().find(|(k, _)| k == "uddg")
+        {
+            u = x.into_owned();
         }
         if host_of(&u).ends_with("duckduckgo.com") {
             continue;
@@ -417,7 +424,13 @@ fn items(r: &Value, d: &Value) -> R<Vec<Value>> {
                     e => e.clone(),
                 };
                 let m = if e.is_object() {
-                    let x = if py::truthy(&e["message"]) { e["message"].clone() } else if py::truthy(&e["detail"]) { e["detail"].clone() } else { e.clone() };
+                    let x = if py::truthy(&e["message"]) {
+                        e["message"].clone()
+                    } else if py::truthy(&e["detail"]) {
+                        e["detail"].clone()
+                    } else {
+                        e.clone()
+                    };
                     py::str_of(&x)
                 } else {
                     py::str_of(&e)
@@ -451,11 +464,17 @@ fn items(r: &Value, d: &Value) -> R<Vec<Value>> {
 async fn mcp_call(url: &str, tool: &str, args: &Value, timeout: f64) -> R<String> {
     use crate::mcp_client::{Session, Transport};
     let t = Duration::from_secs_f64(timeout);
-    let s = Session::connect(Transport::Http { url: url.into(), headers: HashMap::new(), auth: None }, json!({}), t).await.map_err(|e| mcp_err(&e.to_string()))?;
-    let res = tokio::time::timeout(t, s.call_tool(tool, args)).await.map_err(|_| Failed(t!("连接超时")))?.map_err(|e| mcp_err(&e.to_string()));
+    let s = Session::connect(Transport::Http { url: url.into(), headers: HashMap::new(), auth: None }, json!({}), t)
+        .await
+        .map_err(|e| mcp_err(&e.to_string()))?;
+    let res =
+        tokio::time::timeout(t, s.call_tool(tool, args)).await.map_err(|_| Failed(t!("连接超时")))?.map_err(|e| mcp_err(&e.to_string()));
     s.shutdown().await;
     let res = res?;
-    let text: Vec<String> = res["content"].as_array().map(|a| a.iter().filter_map(|x| x["text"].as_str().filter(|t| !t.is_empty()).map(String::from)).collect()).unwrap_or_default();
+    let text: Vec<String> = res["content"]
+        .as_array()
+        .map(|a| a.iter().filter_map(|x| x["text"].as_str().filter(|t| !t.is_empty()).map(String::from)).collect())
+        .unwrap_or_default();
     let text = text.join("\n");
     if py::truthy(&res["isError"]) {
         return Err(Failed(if text.is_empty() { t!("服务出错了") } else { py::head(&text, 200) }));
@@ -475,7 +494,13 @@ async fn send_mcp(r: &Value, v: &Map<String, Value>) -> R<String> {
     if v.get("days").is_some_and(py::truthy) && py::truthy(&r["recent"]) {
         req = merge_req(&req, &r["recent"]);
     }
-    mcp_call(req["mcp"].as_str().unwrap_or(""), req["tool"].as_str().unwrap_or(""), &render(&req.get("args").cloned().unwrap_or(json!({})), v), 30.0).await
+    mcp_call(
+        req["mcp"].as_str().unwrap_or(""),
+        req["tool"].as_str().unwrap_or(""),
+        &render(&req.get("args").cloned().unwrap_or(json!({})), v),
+        30.0,
+    )
+    .await
 }
 
 fn exa_blocks(text: &str) -> Vec<Value> {
@@ -483,7 +508,10 @@ fn exa_blocks(text: &str) -> Vec<Value> {
     let mut out = vec![];
     for block in SPLIT.split(text) {
         let get = |k: &str| -> String {
-            Regex::new(&format!(r"(?m)^{k}:[ \t]*(.*)$")).ok().and_then(|r| r.captures(block).map(|c| c[1].trim().to_string())).unwrap_or_default()
+            Regex::new(&format!(r"(?m)^{k}:[ \t]*(.*)$"))
+                .ok()
+                .and_then(|r| r.captures(block).map(|c| c[1].trim().to_string()))
+                .unwrap_or_default()
         };
         let url = get("URL");
         if !(url.starts_with("http://") || url.starts_with("https://")) {
@@ -500,7 +528,9 @@ fn exa_blocks(text: &str) -> Vec<Value> {
 }
 
 static X_ID: LazyLock<Regex> = LazyLock::new(|| {
-    re(r"(?:(?:^|//|\.)(?:x|twitter|xcancel|fxtwitter|vxtwitter|fixupx|fixvx)\.com/[^/\s]+/status(?:es)?/|//(?:[\w-]+\.)?(?:nitter|xitter)\.[\w.]+/[^/\s]+/status/|unrollnow\.com/status/|threadreaderapp\.com/thread/)(\d{8,})")
+    re(
+        r"(?:(?:^|//|\.)(?:x|twitter|xcancel|fxtwitter|vxtwitter|fixupx|fixvx)\.com/[^/\s]+/status(?:es)?/|//(?:[\w-]+\.)?(?:nitter|xitter)\.[\w.]+/[^/\s]+/status/|unrollnow\.com/status/|threadreaderapp\.com/thread/)(\d{8,})",
+    )
 });
 static REDDIT_THREAD: LazyLock<Regex> = LazyLock::new(|| re(r"(?i)^https?://(?:www\.|old\.)?reddit\.com/r/([^/]+)/comments/\w+"));
 
@@ -521,7 +551,13 @@ fn tco_tail(text: &str) -> String {
 
 fn x_body(t: &Value) -> String {
     let nt = &t["note_tweet"]["text"];
-    let mut text = if py::truthy(nt) { py::str_of(nt) } else if py::truthy(&t["text"]) { py::str_of(&t["text"]) } else { String::new() };
+    let mut text = if py::truthy(nt) {
+        py::str_of(nt)
+    } else if py::truthy(&t["text"]) {
+        py::str_of(&t["text"])
+    } else {
+        String::new()
+    };
     for u in t["entities"]["urls"].as_array().cloned().unwrap_or_default() {
         if let (Some(a), Some(b)) = (u["url"].as_str().filter(|s| !s.is_empty()), u["expanded_url"].as_str().filter(|s| !s.is_empty())) {
             text = text.replace(a, b);
@@ -531,7 +567,12 @@ fn x_body(t: &Value) -> String {
 }
 
 async fn x_details(c: &reqwest::Client, tid: &str) -> Option<Value> {
-    let r = c.get(format!("https://cdn.syndication.twimg.com/tweet-result?id={tid}&token={}", x_token(tid))).header("User-Agent", UA).send().await.ok()?;
+    let r = c
+        .get(format!("https://cdn.syndication.twimg.com/tweet-result?id={tid}&token={}", x_token(tid)))
+        .header("User-Agent", UA)
+        .send()
+        .await
+        .ok()?;
     if r.status().as_u16() != 200 {
         return None;
     }
@@ -558,10 +599,10 @@ fn recent(items: Vec<Value>, days: Option<i64>) -> R<Vec<Value>> {
 async fn exa_x(c: &reqwest::Client, text: &str, days: Option<i64>, count: usize) -> R<Vec<Value>> {
     let mut ids: Vec<String> = vec![];
     for b in exa_blocks(text) {
-        if let Some(m) = X_ID.captures(b["url"].as_str().unwrap_or("")) {
-            if !ids.contains(&m[1].to_string()) {
-                ids.push(m[1].to_string());
-            }
+        if let Some(m) = X_ID.captures(b["url"].as_str().unwrap_or(""))
+            && !ids.contains(&m[1].to_string())
+        {
+            ids.push(m[1].to_string());
         }
     }
     ids.truncate(count.max(10));
@@ -688,7 +729,8 @@ fn x_post(d: &Value) -> R<(String, String)> {
             meta.push(format!("{label} {n}"));
         }
     }
-    let mut lines = vec![meta.into_iter().filter(|x| !x.is_empty()).collect::<Vec<_>>().join(" · "), String::new(), x_body(d).trim().to_string()];
+    let mut lines =
+        vec![meta.into_iter().filter(|x| !x.is_empty()).collect::<Vec<_>>().join(" · "), String::new(), x_body(d).trim().to_string()];
     if py::truthy(&d["quoted_tweet"]) {
         let q = &d["quoted_tweet"];
         let sn = q["user"]["screen_name"].as_str().unwrap_or("?");
@@ -703,7 +745,8 @@ fn getdaytrends(page: &str) -> R<(String, String)> {
     static ROW: LazyLock<Regex> = LazyLock::new(|| re(r#"class="pos">(\d+)</th>\s*<td class="main"><a[^>]*>([^<]+)</a>"#));
     static H1: LazyLock<Regex> = LazyLock::new(|| re(r"<h1[^>]*>([\s\S]*?)</h1>"));
     static TITLE: LazyLock<Regex> = LazyLock::new(|| re(r"<title>([^<]+)"));
-    let rows: Vec<(String, String)> = TABLE.find(page).map(|m| ROW.captures_iter(m.as_str()).map(|c| (c[1].to_string(), c[2].to_string())).collect()).unwrap_or_default();
+    let rows: Vec<(String, String)> =
+        TABLE.find(page).map(|m| ROW.captures_iter(m.as_str()).map(|c| (c[1].to_string(), c[2].to_string())).collect()).unwrap_or_default();
     if rows.is_empty() {
         return Err(Failed(t!("页面里没找到热门话题表")));
     }
@@ -717,7 +760,10 @@ fn getdaytrends(page: &str) -> R<(String, String)> {
             format!("{n}. {tp} — https://x.com/search?q={q}")
         })
         .collect();
-    Ok((clean(&json!(title)), format!("{}\n\n{}", t!("（只有话题名和排名，看不到在说什么：要知道的话用 web_search 查话题名）"), lines.join("\n"))))
+    Ok((
+        clean(&json!(title)),
+        format!("{}\n\n{}", t!("（只有话题名和排名，看不到在说什么：要知道的话用 web_search 查话题名）"), lines.join("\n")),
+    ))
 }
 
 async fn fetch_one(c: &reqwest::Client, r: &Value, url: &str) -> R<(String, String)> {
@@ -748,7 +794,10 @@ async fn fetch_one(c: &reqwest::Client, r: &Value, url: &str) -> R<(String, Stri
             let page = if r["page"].is_object() { r["page"].clone() } else { json!({}) };
             let title = first(&d, &or_spec(&page, "title"));
             let body = first(&d, &or_spec(&page, "text"));
-            Ok((if py::truthy(&title) { py::str_of(&title).trim().to_string() } else { String::new() }, if py::truthy(&body) { py::str_of(&body) } else { String::new() }))
+            Ok((
+                if py::truthy(&title) { py::str_of(&title).trim().to_string() } else { String::new() },
+                if py::truthy(&body) { py::str_of(&body) } else { String::new() },
+            ))
         }
     }
 }
@@ -777,7 +826,8 @@ fn format_items(items: &[Value]) -> String {
         .map(|e| {
             let title = e["title"].as_str().filter(|s| !s.is_empty()).unwrap_or(e["url"].as_str().unwrap_or(""));
             let d = date_of(&e["date"]);
-            let head = format!("- {title} | {}{}", e["url"].as_str().unwrap_or(""), if d.is_empty() { String::new() } else { format!(" | {d}") });
+            let head =
+                format!("- {title} | {}{}", e["url"].as_str().unwrap_or(""), if d.is_empty() { String::new() } else { format!(" | {d}") });
             let text = e["text"].as_str().unwrap_or("");
             head + &if text.is_empty() { String::new() } else { format!("\n  {}", py::head(text, TEXT)) }
         })
@@ -808,7 +858,11 @@ fn format_posts(items: &[Value]) -> String {
                     meta.push(format!("{label} {n}"));
                 }
             }
-            let head = format!("- {} | {}", meta.into_iter().filter(|x| !x.is_empty()).collect::<Vec<_>>().join(" · "), e["url"].as_str().unwrap_or(""));
+            let head = format!(
+                "- {} | {}",
+                meta.into_iter().filter(|x| !x.is_empty()).collect::<Vec<_>>().join(" · "),
+                e["url"].as_str().unwrap_or("")
+            );
             let body: Vec<String> = ["title", "text"].iter().filter(|k| py::truthy(&e[**k])).map(|k| py::str_of(&e[*k])).collect();
             let body = body.join(" ");
             head + &if body.is_empty() { String::new() } else { format!("\n  {}", py::head(&body, TEXT)) }
@@ -823,7 +877,11 @@ fn record(r: &Value, what: &str, ms: f64, n: usize) {
         return;
     }
     let prov = provider_of(r).filter(|p| !p.is_empty()).unwrap_or_else(|| py::str_of(&r["name"]));
-    memory::add_usage("web", what, memory::UsageRec { provider: Some(prov), cost: usd * crate::generation::usd_rate(), ms: Some(ms), ..Default::default() });
+    memory::add_usage(
+        "web",
+        what,
+        memory::UsageRec { provider: Some(prov), cost: usd * crate::generation::usd_rate(), ms: Some(ms), ..Default::default() },
+    );
 }
 
 fn tail(notes: &[String], used: &str) -> String {
@@ -831,7 +889,10 @@ fn tail(notes: &[String], used: &str) -> String {
         return String::new();
     }
     let s = notes.join("；");
-    format!("\n{}", if used.is_empty() { t!("（{notes}）", notes = s) } else { t!("（{notes}；这次用的是 {name}）", notes = s, name = used) })
+    format!(
+        "\n{}",
+        if used.is_empty() { t!("（{notes}）", notes = s) } else { t!("（{notes}；这次用的是 {name}）", notes = s, name = used) }
+    )
 }
 
 // ---------- 工具 ----------
@@ -879,7 +940,14 @@ pub async fn fetch(url: &str, private: bool, only: Option<&Value>, browser: bool
         direct()
     } else {
         let host = host_of(url);
-        let mine = |r: &Value| r["hosts"].as_array().is_some_and(|hs| hs.iter().any(|h| { let h = py::str_of(h); host == h || host.ends_with(&format!(".{h}")) }));
+        let mine = |r: &Value| {
+            r["hosts"].as_array().is_some_and(|hs| {
+                hs.iter().any(|h| {
+                    let h = py::str_of(h);
+                    host == h || host.ends_with(&format!(".{h}"))
+                })
+            })
+        };
         let all = order("fetch");
         let mut rs: Vec<Value> = all.iter().filter(|r| mine(r)).cloned().collect();
         rs.extend(all.iter().filter(|r| !py::truthy(&r["hosts"])).cloned());
@@ -890,7 +958,11 @@ pub async fn fetch(url: &str, private: bool, only: Option<&Value>, browser: bool
     for r in &rs {
         if r["via"] == "browser" {
             if browser {
-                return t!("{name}：这个网站不登录读不了，用电脑上的浏览器读：browser_open 打开 {url}，用 browser_read 读正文和评论。页面要登录或出现验证码时调用 ask_human，请用户在右栏的电脑画面里登录（只要登一次）。", name = tr(r, "title"), url = url);
+                return t!(
+                    "{name}：这个网站不登录读不了，用电脑上的浏览器读：browser_open 打开 {url}，用 browser_read 读正文和评论。页面要登录或出现验证码时调用 ask_human，请用户在右栏的电脑画面里登录（只要登一次）。",
+                    name = tr(r, "title"),
+                    url = url
+                );
             }
             notes.push(t!("{name}：要用电脑上的浏览器读，这里没有电脑可用", name = tr(r, "title")));
             continue;
@@ -932,7 +1004,11 @@ static SPENT: LazyLock<Mutex<HashMap<String, f64>>> = LazyLock::new(Default::def
 
 pub fn budget() -> f64 {
     let s = saved();
-    let v = if s.contains_key("posts_budget_usd") { s["posts_budget_usd"].clone() } else { cfg().get("posts_budget_usd").cloned().unwrap_or(json!(BUDGET)) };
+    let v = if s.contains_key("posts_budget_usd") {
+        s["posts_budget_usd"].clone()
+    } else {
+        cfg().get("posts_budget_usd").cloned().unwrap_or(json!(BUDGET))
+    };
     match &v {
         Value::Number(n) => n.as_f64().unwrap_or(BUDGET).max(0.0),
         Value::String(s) => s.trim().parse::<f64>().map(|x| x.max(0.0)).unwrap_or(BUDGET),
@@ -955,10 +1031,10 @@ fn task_key() -> String {
 pub fn platforms() -> Vec<String> {
     let mut out: Vec<String> = vec![];
     for r in recipes(Some("posts")) {
-        if let Some(p) = r["platform"].as_str().filter(|s| !s.is_empty()) {
-            if !out.iter().any(|x| x == p) {
-                out.push(p.to_string());
-            }
+        if let Some(p) = r["platform"].as_str().filter(|s| !s.is_empty())
+            && !out.iter().any(|x| x == p)
+        {
+            out.push(p.to_string());
         }
     }
     out
@@ -973,7 +1049,14 @@ fn platform(p: &str) -> String {
     }
 }
 
-pub async fn search_posts(plat_in: &str, query: &str, days: Option<i64>, count: Option<i64>, only: Option<&Value>, browser: bool) -> String {
+pub async fn search_posts(
+    plat_in: &str,
+    query: &str,
+    days: Option<i64>,
+    count: Option<i64>,
+    only: Option<&Value>,
+    browser: bool,
+) -> String {
     let query = query.trim();
     if query.is_empty() {
         return t!("没有给搜索词");
@@ -1002,11 +1085,11 @@ pub async fn search_posts(plat_in: &str, query: &str, days: Option<i64>, count: 
     let c = client(20.0);
     for r in &rs {
         let max_days = py::to_int(&r["max_days"]).filter(|_| py::truthy(&r["max_days"]));
-        if let (Some(d), Some(m)) = (days.filter(|d| *d != 0), max_days) {
-            if d > m {
-                notes.push(t!("{name}：只能搜最近 {n} 天", name = tr(r, "title"), n = r["max_days"].clone()));
-                continue;
-            }
+        if let (Some(d), Some(m)) = (days.filter(|d| *d != 0), max_days)
+            && d > m
+        {
+            notes.push(t!("{name}：只能搜最近 {n} 天", name = tr(r, "title"), n = r["max_days"].clone()));
+            continue;
         }
         if r["via"] == "browser" {
             if !browser {
@@ -1016,7 +1099,11 @@ pub async fn search_posts(plat_in: &str, query: &str, days: Option<i64>, count: 
             let mut v = Map::new();
             v.insert("query".into(), json!(url::form_urlencoded::byte_serialize(query.as_bytes()).collect::<String>().replace('+', "%20")));
             let u = render_str(r["url"].as_str().unwrap_or(""), &v);
-            return t!("{name} 没有接口，用电脑上的浏览器搜：browser_open 打开 {url}，用 browser_read 读结果，点开笔记看正文和评论。页面要登录或出现验证码时调用 ask_human，请用户在右栏的电脑画面里登录（只要登一次）。别连续快速翻很多页：请求太多会被风控。", name = tr(r, "title"), url = u);
+            return t!(
+                "{name} 没有接口，用电脑上的浏览器搜：browser_open 打开 {url}，用 browser_read 读结果，点开笔记看正文和评论。页面要登录或出现验证码时调用 ask_human，请用户在右栏的电脑画面里登录（只要登一次）。别连续快速翻很多页：请求太多会被风控。",
+                name = tr(r, "title"),
+                url = u
+            );
         }
         let min_count = py::to_int(&r["min_count"]).filter(|_| py::truthy(&r["min_count"])).unwrap_or(1).max(0) as usize;
         let mut want = count.max(min_count.max(1));
@@ -1049,7 +1136,8 @@ pub async fn search_posts(plat_in: &str, query: &str, days: Option<i64>, count: 
                 *s.entry(key).or_insert(0.0) += per * items.len() as f64;
             }
         }
-        let items: Vec<Value> = items.into_iter().filter(|e| blocked_domain(e["url"].as_str().unwrap_or("")).is_none()).take(count).collect();
+        let items: Vec<Value> =
+            items.into_iter().filter(|e| blocked_domain(e["url"].as_str().unwrap_or("")).is_none()).take(count).collect();
         if !items.is_empty() {
             return format_posts(&items) + &tail(&notes, &tr(r, "title"));
         }
@@ -1071,7 +1159,11 @@ fn price_of(r: &Value) -> Value {
     if let Some(u) = usd.filter(|u| *u != 0.0) {
         return json!(py::round_n(u * 1000.0 * crate::generation::usd_rate(), 2));
     }
-    if r["fields"].as_array().is_some_and(|fs| fs.iter().any(|f| py::truthy(&f["secret"]) && !py::truthy(&f["optional"]))) { Value::Null } else { json!(0) }
+    if r["fields"].as_array().is_some_and(|fs| fs.iter().any(|f| py::truthy(&f["secret"]) && !py::truthy(&f["optional"]))) {
+        Value::Null
+    } else {
+        json!(0)
+    }
 }
 
 pub fn public() -> Value {
@@ -1178,7 +1270,12 @@ pub fn save(data: &Value) -> Result<Value, String> {
             }
             let all = recipes(None);
             let r = all.iter().find(|x| x["name"] == name.as_str());
-            let fs: HashMap<String, Value> = all.iter().filter(|x| x["name"] == name.as_str()).flat_map(|x| x["fields"].as_array().cloned().unwrap_or_default()).map(|f| (py::str_of(&f["key"]), f)).collect();
+            let fs: HashMap<String, Value> = all
+                .iter()
+                .filter(|x| x["name"] == name.as_str())
+                .flat_map(|x| x["fields"].as_array().cloned().unwrap_or_default())
+                .map(|f| (py::str_of(&f["key"]), f))
+                .collect();
             let (Some(_), Some(vals)) = (r, vals.as_object()) else {
                 return Err(t!("没有这个服务：{name}", name = name.clone()));
             };
@@ -1235,5 +1332,7 @@ pub async fn test(kind: &str, name: &str) -> Result<Value, String> {
         (out.contains("Example Domain"), out)
     };
     let ms = t0.elapsed().as_millis() as i64;
-    Ok(json!({"ok": ok, "ms": ms, "error": if ok { String::new() } else { py::head(out.trim(), 300) }, "sample": if ok { py::head(&out, 300) } else { String::new() }}))
+    Ok(
+        json!({"ok": ok, "ms": ms, "error": if ok { String::new() } else { py::head(out.trim(), 300) }, "sample": if ok { py::head(&out, 300) } else { String::new() }}),
+    )
 }

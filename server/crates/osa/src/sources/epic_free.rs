@@ -33,7 +33,13 @@ fn free_offers(groups: &Value) -> Vec<(DateTime<Utc>, DateTime<Utc>)> {
 
 pub fn link(el: &Value) -> String {
     let mut slug = String::new();
-    let maps: Vec<Value> = el["catalogNs"]["mappings"].as_array().cloned().unwrap_or_default().into_iter().chain(el["offerMappings"].as_array().cloned().unwrap_or_default()).collect();
+    let maps: Vec<Value> = el["catalogNs"]["mappings"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default()
+        .into_iter()
+        .chain(el["offerMappings"].as_array().cloned().unwrap_or_default())
+        .collect();
     for m in maps {
         if py::truthy(&m["pageSlug"]) && m["pageType"] == "productHome" {
             slug = py::str_of(&m["pageSlug"]);
@@ -99,7 +105,8 @@ fn parse_dt(v: &Value) -> DateTime<Utc> {
 }
 
 fn event(g: &Value, upcoming: &[Value]) -> Value {
-    let mut lines = vec![format!("免费领取：{} 到 {}（过了时间就恢复原价，领到的永久归你）", day(&parse_dt(&g["start"])), day(&parse_dt(&g["end"])))];
+    let mut lines =
+        vec![format!("免费领取：{} 到 {}（过了时间就恢复原价，领到的永久归你）", day(&parse_dt(&g["start"])), day(&parse_dt(&g["end"])))];
     let price = g["price"].as_str().unwrap_or("");
     if !price.is_empty() && price != "0" {
         lines.push(format!("原价：{price}"));
@@ -109,14 +116,24 @@ fn event(g: &Value, upcoming: &[Value]) -> Value {
         lines.push(format!("简介：{desc}"));
     }
     if !upcoming.is_empty() {
-        lines.push(format!("下一批预告：{}", upcoming.iter().take(5).map(|u| format!("{}（{} 起）", u["title"].as_str().unwrap_or(""), day(&parse_dt(&u["start"])))).collect::<Vec<_>>().join("；")));
+        lines.push(format!(
+            "下一批预告：{}",
+            upcoming
+                .iter()
+                .take(5)
+                .map(|u| format!("{}（{} 起）", u["title"].as_str().unwrap_or(""), day(&parse_dt(&u["start"]))))
+                .collect::<Vec<_>>()
+                .join("；")
+        ));
     }
     json!({"id": format!("epic-{}", py::str_of(&g["key"])), "title": format!("Epic 免费送：{}", g["title"].as_str().unwrap_or("")), "text": lines.join("\n"), "url": g["url"]})
 }
 
 async fn check(params: Value, state: Value) -> Result<(Vec<Value>, Value), String> {
     let country = if py::truthy(&params["country"]) { py::str_of(&params["country"]) } else { "CN".into() };
-    let r = util::get(API, 20.0, 3_000_000, &[], &[("locale", "zh-CN".into()), ("country", country.clone()), ("allowCountries", country)]).await.map_err(|e| e.text())?;
+    let r = util::get(API, 20.0, 3_000_000, &[], &[("locale", "zh-CN".into()), ("country", country.clone()), ("allowCountries", country)])
+        .await
+        .map_err(|e| e.text())?;
     let (current, upcoming) = games(&r.json(), Utc::now());
     let seen: Vec<String> = state["seen"].as_array().map(|a| a.iter().map(py::str_of).collect()).unwrap_or_default();
     let new: Vec<Value> = current.into_iter().filter(|g| !seen.contains(&py::str_of(&g["key"]))).collect();
@@ -130,7 +147,11 @@ pub fn sources() -> Vec<Source> {
     s.check = Some(|p, st| Box::pin(check(p, st)));
     s.summary = Some(|p| {
         let c = if py::truthy(&p["country"]) { py::str_of(&p["country"]) } else { "CN".into() };
-        if c == "CN" { String::new() } else { format!("{}商店", COUNTRIES.iter().find(|x| x.0 == c).map(|x| x.1.to_string()).unwrap_or(c)) }
+        if c == "CN" {
+            String::new()
+        } else {
+            format!("{}商店", COUNTRIES.iter().find(|x| x.0 == c).map(|x| x.1.to_string()).unwrap_or(c))
+        }
     });
     vec![s]
 }

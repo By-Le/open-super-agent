@@ -37,8 +37,8 @@ static GRANTS: LazyLock<Mutex<Vec<Grant>>> = LazyLock::new(Default::default);
 pub static LAST_DONE: Mutex<f64> = Mutex::new(0.0);
 
 pub const DEFAULT_WORDS: [&str; 25] = [
-    "create", "update", "delete", "remove", "archive", "append", "patch", "post", "write", "edit", "move", "send", "insert",
-    "upload", "publish", "comment", "set_", "add_", "forward", "reply", "trash", "share", "cancel", "rename", "transfer",
+    "create", "update", "delete", "remove", "archive", "append", "patch", "post", "write", "edit", "move", "send", "insert", "upload",
+    "publish", "comment", "set_", "add_", "forward", "reply", "trash", "share", "cancel", "rename", "transfer",
 ];
 
 /// 应用的默认策略（confirm: auto / all / none / 词列表）。read_only_hint：服务端在工具上标的 readOnlyHint
@@ -133,9 +133,7 @@ fn params_of(tool: &str) -> Vec<String> {
             None
         }
     });
-    schema
-        .and_then(|s| s["function"]["parameters"]["properties"].as_object().map(|o| o.keys().cloned().collect()))
-        .unwrap_or_default()
+    schema.and_then(|s| s["function"]["parameters"]["properties"].as_object().map(|o| o.keys().cloned().collect())).unwrap_or_default()
 }
 
 /// 规则冒号后面比的值
@@ -246,7 +244,10 @@ fn scope_of(item: &Value, ok: bool, scope: &str) -> (String, i64) {
         minutes = c[1].parse::<i64>().unwrap_or(0).min(MAX_MINUTES);
         s = "minutes".into();
     }
-    let allowed: Vec<String> = item["scopes"].as_array().map(|a| a.iter().filter_map(|x| x.as_str().map(String::from)).collect()).unwrap_or_else(|| vec!["once".into()]);
+    let allowed: Vec<String> = item["scopes"]
+        .as_array()
+        .map(|a| a.iter().filter_map(|x| x.as_str().map(String::from)).collect())
+        .unwrap_or_else(|| vec!["once".into()]);
     if s == "minutes" {
         s = if minutes > 0 && allowed.iter().any(|x| x == "always") { "minutes".into() } else { "once".into() };
     } else if !allowed.contains(&s) {
@@ -384,13 +385,15 @@ pub fn resolve(aid: i64, ok: bool, note: &str, always: bool, edits: &Value, scop
     let item = p.item.clone();
     let sc = scope.map(String::from).unwrap_or_else(|| if always { "always".into() } else { "once".into() });
     let (mut scope, minutes) = scope_of(&item, ok, &sc);
-    let (pattern, shown) = if scope == "always" || scope == "minutes" { allow_pattern(&item, prefix) } else { (String::new(), String::new()) };
+    let (pattern, shown) =
+        if scope == "always" || scope == "minutes" { allow_pattern(&item, prefix) } else { (String::new(), String::new()) };
     if (scope == "always" || scope == "minutes") && pattern.is_empty() {
         scope = "once".into();
     }
     let tool = item["tool"].as_str().unwrap_or("").to_string();
     if scope == "always" {
-        let note = if tool == SHELL { "在确认卡片上点了总是允许这个命令前缀" } else { "在确认卡片上点了总是允许" };
+        let note =
+            if tool == SHELL { "在确认卡片上点了总是允许这个命令前缀" } else { "在确认卡片上点了总是允许" };
         let _ = add_rule(&pattern, "allow", note);
     } else if scope == "minutes" {
         GRANTS.lock().push(Grant { pattern: pattern.clone(), task_id: None, until: Some(py::now() + minutes as f64 * 60.0) });
@@ -398,15 +401,14 @@ pub fn resolve(aid: i64, ok: bool, note: &str, always: bool, edits: &Value, scop
         GRANTS.lock().push(Grant { pattern: tool.clone(), task_id: Some(item["task_id"].clone()), until: None });
     }
     let mut edited: Vec<String> = vec![];
-    if ok {
-        if let Some(e) = edits.as_object() {
-            let allowed: Vec<String> = item["editable"].as_array().map(|a| a.iter().filter_map(|x| x.as_str().map(String::from)).collect()).unwrap_or_default();
-            for (k, v) in e {
-                let Some(v) = v.as_str().map(|s| s.trim().to_string()) else { continue };
-                if allowed.contains(k) && !v.is_empty() && p.args[k].as_str().map(|s| s.trim()) != Some(v.as_str()) {
-                    p.args[k] = json!(v);
-                    edited.push(k.clone());
-                }
+    if ok && let Some(e) = edits.as_object() {
+        let allowed: Vec<String> =
+            item["editable"].as_array().map(|a| a.iter().filter_map(|x| x.as_str().map(String::from)).collect()).unwrap_or_default();
+        for (k, v) in e {
+            let Some(v) = v.as_str().map(|s| s.trim().to_string()) else { continue };
+            if allowed.contains(k) && !v.is_empty() && p.args[k].as_str().map(|s| s.trim()) != Some(v.as_str()) {
+                p.args[k] = json!(v);
+                edited.push(k.clone());
             }
         }
     }
@@ -423,7 +425,11 @@ pub fn resolve(aid: i64, ok: bool, note: &str, always: bool, edits: &Value, scop
     tokio::spawn(async move { server::broadcast(ev) });
     let mut out = if ok { t!("已允许请求 #{id}", id = aid) } else { t!("已拒绝请求 #{id}", id = aid) };
     if scope == "always" {
-        out += &if !shown.is_empty() { t!("，以后「{prefix}」开头的命令自动允许", prefix = shown) } else { t!("，以后同类操作自动允许") };
+        out += &if !shown.is_empty() {
+            t!("，以后「{prefix}」开头的命令自动允许", prefix = shown)
+        } else {
+            t!("，以后同类操作自动允许")
+        };
     } else if scope == "minutes" {
         out += &t!("，{n} 分钟内同类操作不再问", n = minutes);
     } else if scope == "task" {
@@ -437,11 +443,11 @@ fn cancel_where(pred: impl Fn(&Value) -> bool, why: &str) {
     {
         let mut pend = PENDING.lock();
         for (aid, p) in pend.iter_mut() {
-            if pred(&p.item) {
-                if let Some(tx) = p.tx.take() {
-                    let _ = tx.send((false, why.to_string()));
-                    evs.push(json!({"type": "approval", "id": aid, "status": "cancelled", "chat_id": p.item["chat_id"]}));
-                }
+            if pred(&p.item)
+                && let Some(tx) = p.tx.take()
+            {
+                let _ = tx.send((false, why.to_string()));
+                evs.push(json!({"type": "approval", "id": aid, "status": "cancelled", "chat_id": p.item["chat_id"]}));
             }
         }
     }
@@ -482,7 +488,13 @@ pub fn summary(bot_id: Option<i64>) -> String {
         .filter(|p| bot_id.is_none() || p.item["bot_id"].as_i64() == bot_id)
         .map(|p| {
             let a = &p.item;
-            format!("#{}（任务 #{}）{} 参数：{}", py::str_of(&a["id"]), py::str_of(&a["task_id"]), py::str_of(&a["tool"]), py::head(a["args"].as_str().unwrap_or(""), 200))
+            format!(
+                "#{}（任务 #{}）{} 参数：{}",
+                py::str_of(&a["id"]),
+                py::str_of(&a["task_id"]),
+                py::str_of(&a["tool"]),
+                py::head(a["args"].as_str().unwrap_or(""), 200)
+            )
         })
         .collect();
     if s.is_empty() { "无".into() } else { s.join("\n") }

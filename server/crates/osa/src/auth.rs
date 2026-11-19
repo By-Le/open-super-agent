@@ -28,7 +28,11 @@ const LOCAL_SUFFIXES: [&str; 3] = [".localhost", ".local", ".ts.net"];
 
 pub static COOKIE: LazyLock<String> = LazyLock::new(|| {
     let c = std::env::var("OSA_COOKIE").unwrap_or_default();
-    if !c.is_empty() && c.len() <= 64 && c.chars().all(|x| x.is_ascii_alphanumeric() || x == '_' || x == '-') { c } else { "osa_session".into() }
+    if !c.is_empty() && c.len() <= 64 && c.chars().all(|x| x.is_ascii_alphanumeric() || x == '_' || x == '-') {
+        c
+    } else {
+        "osa_session".into()
+    }
 });
 
 static FAILS: LazyLock<Mutex<HashMap<String, Vec<f64>>>> = LazyLock::new(Default::default);
@@ -120,7 +124,8 @@ fn same_origin(h: &HeaderMap) -> bool {
 }
 
 fn allowed_hosts() -> Vec<String> {
-    let mut names: Vec<String> = config::get("server.allowed_hosts").as_array().map(|a| a.iter().map(py::str_of).collect()).unwrap_or_default();
+    let mut names: Vec<String> =
+        config::get("server.allowed_hosts").as_array().map(|a| a.iter().map(py::str_of).collect()).unwrap_or_default();
     names.extend(std::env::var("OSA_ALLOWED_HOSTS").unwrap_or_default().split(',').map(String::from));
     names.into_iter().map(|h| h.trim().to_lowercase()).filter(|h| !h.is_empty()).collect()
 }
@@ -130,7 +135,10 @@ pub fn host_name(host: Option<&str>) -> String {
     let name = if let Some(rest) = h.strip_prefix('[') {
         rest.split(']').next().unwrap_or("").to_string()
     } else {
-        h.rsplit_once(':').filter(|(_, p)| p.chars().all(|c| c.is_ascii_digit())).map(|(n, _)| n.to_string()).unwrap_or_else(|| h.to_string())
+        h.rsplit_once(':')
+            .filter(|(_, p)| p.chars().all(|c| c.is_ascii_digit()))
+            .map(|(n, _)| n.to_string())
+            .unwrap_or_else(|| h.to_string())
     };
     name.to_lowercase().trim_end_matches('.').to_string()
 }
@@ -154,7 +162,9 @@ fn is_public(path: &str) -> bool {
     if path.contains("..") {
         return false;
     }
-    PUBLIC_FILES.contains(&path) || ["/login", "/logout", "/login/ticket", "/api/computer/link"].contains(&path) || PUBLIC_PREFIXES.iter().any(|p| path.starts_with(p))
+    PUBLIC_FILES.contains(&path)
+        || ["/login", "/logout", "/login/ticket", "/api/computer/link"].contains(&path)
+        || PUBLIC_PREFIXES.iter().any(|p| path.starts_with(p))
 }
 
 fn safe_next(n: Option<&str>) -> String {
@@ -204,11 +214,15 @@ pub async fn middleware(req: Request, next: Next) -> Response {
         return deny(StatusCode::FORBIDDEN, t!("跨站请求被拒绝"), false);
     }
     if !enabled() {
-        let hook = path.starts_with("/hooks/") && (std::env::var("OSA_WEBHOOK_TOKEN").is_ok_and(|t| !t.is_empty()) || path.len() - "/hooks/".len() >= 16);
+        let hook = path.starts_with("/hooks/")
+            && (std::env::var("OSA_WEBHOOK_TOKEN").is_ok_and(|t| !t.is_empty()) || path.len() - "/hooks/".len() >= 16);
         if !hook && !host_ok(hdr(&h, "host")) {
             return deny(
                 StatusCode::FORBIDDEN,
-                t!("没有放行这个地址（{host}）：没设登录密码时，只接受本机、IP 地址和 Tailscale 的地址。要用这个地址访问，请设置 OSA_PASSWORD 打开登录，或者把它加进 config.yaml 的 server.allowed_hosts", host = host_name(hdr(&h, "host"))),
+                t!(
+                    "没有放行这个地址（{host}）：没设登录密码时，只接受本机、IP 地址和 Tailscale 的地址。要用这个地址访问，请设置 OSA_PASSWORD 打开登录，或者把它加进 config.yaml 的 server.allowed_hosts",
+                    host = host_name(hdr(&h, "host"))
+                ),
                 !path.starts_with("/api/"),
             );
         }

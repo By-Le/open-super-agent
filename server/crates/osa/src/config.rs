@@ -55,7 +55,13 @@ pub fn yaml_to_json(y: serde_yaml::Value) -> Value {
                 let key = match k {
                     Y::String(s) => s,
                     Y::Number(n) => n.to_string(),
-                    Y::Bool(b) => if b { "True".into() } else { "False".into() },
+                    Y::Bool(b) => {
+                        if b {
+                            "True".into()
+                        } else {
+                            "False".into()
+                        }
+                    }
                     other => serde_yaml::to_string(&other).unwrap_or_default().trim().to_string(),
                 };
                 o.insert(key, yaml_to_json(v));
@@ -90,10 +96,10 @@ pub static DB_PATH: LazyLock<PathBuf> = LazyLock::new(|| {
 });
 
 pub fn expand_user(p: &Path) -> PathBuf {
-    if let Ok(rest) = p.strip_prefix("~") {
-        if let Some(h) = std::env::var_os("HOME") {
-            return PathBuf::from(h).join(rest);
-        }
+    if let Ok(rest) = p.strip_prefix("~")
+        && let Some(h) = std::env::var_os("HOME")
+    {
+        return PathBuf::from(h).join(rest);
     }
     p.to_path_buf()
 }

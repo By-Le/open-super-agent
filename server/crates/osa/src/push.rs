@@ -80,9 +80,24 @@ pub fn jwt(key: &SecretKey, head: &Value, claims: &Value) -> String {
 
 pub fn vapid_header(endpoint: &str) -> String {
     let aud = reqwest::Url::parse(endpoint)
-        .map(|u| format!("{}://{}", u.scheme(), u.host_str().map(|h| match u.port() { Some(p) => format!("{h}:{p}"), None => h.to_string() }).unwrap_or_default()))
+        .map(|u| {
+            format!(
+                "{}://{}",
+                u.scheme(),
+                u.host_str()
+                    .map(|h| match u.port() {
+                        Some(p) => format!("{h}:{p}"),
+                        None => h.to_string(),
+                    })
+                    .unwrap_or_default()
+            )
+        })
         .unwrap_or_default();
-    let t = jwt(&vapid_key(), &json!({"typ": "JWT", "alg": "ES256"}), &json!({"aud": aud, "exp": py::now() as i64 + 12 * 3600, "sub": subject()}));
+    let t = jwt(
+        &vapid_key(),
+        &json!({"typ": "JWT", "alg": "ES256"}),
+        &json!({"aud": aud, "exp": py::now() as i64 + 12 * 3600, "sub": subject()}),
+    );
     format!("vapid t={t}, k={}", public_key())
 }
 
@@ -147,13 +162,12 @@ pub fn topic(tag: &str) -> String {
 
 static HTTP: LazyLock<reqwest::Client> = LazyLock::new(|| {
     let mut b = reqwest::Client::builder().timeout(Duration::from_secs(15));
-    if let Some(f) = std::env::var_os("SSL_CERT_FILE") {
-        if let Ok(pem) = std::fs::read(f) {
-            if let Ok(certs) = reqwest::Certificate::from_pem_bundle(&pem) {
-                for c in certs {
-                    b = b.add_root_certificate(c);
-                }
-            }
+    if let Some(f) = std::env::var_os("SSL_CERT_FILE")
+        && let Ok(pem) = std::fs::read(f)
+        && let Ok(certs) = reqwest::Certificate::from_pem_bundle(&pem)
+    {
+        for c in certs {
+            b = b.add_root_certificate(c);
         }
     }
     b.build().expect("push client")
@@ -221,7 +235,9 @@ pub async fn send(msg: Value, urgency: &str, badge: usize) {
 // ---------- 什么时候推 ----------
 fn bot_name(bot_id: &Value) -> String {
     match bot_id.as_i64() {
-        Some(id) if id != 0 => db::scalar("select name from bots where id=?", params![id]).as_str().map(String::from).unwrap_or_else(|| "Bot".into()),
+        Some(id) if id != 0 => {
+            db::scalar("select name from bots where id=?", params![id]).as_str().map(String::from).unwrap_or_else(|| "Bot".into())
+        }
         _ => "Bot".into(),
     }
 }
@@ -285,11 +301,21 @@ pub fn message_for(ev: &Value) -> Option<Value> {
         if m["role"] == "task" && kind == "result" {
             let ok = m["meta"]["status"] == "done";
             let w = who();
-            return out(if ok { t!("{who} 做完了任务", who = w) } else { t!("{who} 的任务失败了", who = w) }, py::head(&plain(content), 120), url, tag);
+            return out(
+                if ok { t!("{who} 做完了任务", who = w) } else { t!("{who} 的任务失败了", who = w) },
+                py::head(&plain(content), 120),
+                url,
+                tag,
+            );
         }
     }
     if t == "teach" && py::truthy(&ev["draft"]) {
-        return out(t!("演示录制已结束"), t!("技能草稿「{name}」等你审核", name = py::str_of(&ev["draft"]["name"])), "/".into(), "teach".into());
+        return out(
+            t!("演示录制已结束"),
+            t!("技能草稿「{name}」等你审核", name = py::str_of(&ev["draft"]["name"])),
+            "/".into(),
+            "teach".into(),
+        );
     }
     None
 }

@@ -4,10 +4,10 @@
 //! 这里只写逻辑：check / parse / match / summary / validate。还没迁过来的来源照样登记（网页上看得到），
 //! 但 available 说明 Rust 版还没有，不能新建。
 
+pub mod epic_free;
 pub mod feeds;
 pub mod github_repo;
 pub mod ip_change;
-pub mod epic_free;
 pub mod system;
 pub mod util;
 pub mod web;
@@ -17,7 +17,8 @@ use crate::registry::{Context, Source};
 use serde_json::Value;
 use std::sync::LazyLock;
 
-static META: LazyLock<Vec<Value>> = LazyLock::new(|| serde_json::from_str(include_str!("../../assets/sources.json")).expect("sources.json"));
+static META: LazyLock<Vec<Value>> =
+    LazyLock::new(|| serde_json::from_str(include_str!("../../assets/sources.json")).expect("sources.json"));
 
 /// 一个来源的骨架：写死的信息填好，逻辑留空
 pub fn base(id: &str) -> Source {
@@ -27,7 +28,18 @@ pub fn base(id: &str) -> Source {
         Some("poll") => crate::registry::POLL,
         _ => crate::registry::INTERNAL,
     };
-    Source { id: id.into(), mode, meta, check: None, parse: None, matcher: None, validate: None, summary: None, available: None, owner: String::new() }
+    Source {
+        id: id.into(),
+        mode,
+        meta,
+        check: None,
+        parse: None,
+        matcher: None,
+        validate: None,
+        summary: None,
+        available: None,
+        owner: String::new(),
+    }
 }
 
 fn not_ported() -> String {

@@ -229,7 +229,13 @@ pub fn str_of(v: &Value) -> String {
     match v {
         Value::String(s) => s.clone(),
         Value::Null => "None".into(),
-        Value::Bool(b) => if *b { "True".into() } else { "False".into() },
+        Value::Bool(b) => {
+            if *b {
+                "True".into()
+            } else {
+                "False".into()
+            }
+        }
         Value::Number(n) => num(n),
         other => repr(other),
     }
@@ -258,7 +264,10 @@ pub fn repr(v: &Value) -> String {
             out
         }
         Value::Array(a) => format!("[{}]", a.iter().map(repr).collect::<Vec<_>>().join(", ")),
-        Value::Object(o) => format!("{{{}}}", o.iter().map(|(k, x)| format!("{}: {}", repr(&Value::String(k.clone())), repr(x))).collect::<Vec<_>>().join(", ")),
+        Value::Object(o) => format!(
+            "{{{}}}",
+            o.iter().map(|(k, x)| format!("{}: {}", repr(&Value::String(k.clone())), repr(x))).collect::<Vec<_>>().join(", ")
+        ),
         other => str_of(other),
     }
 }

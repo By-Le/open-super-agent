@@ -66,10 +66,14 @@ fn field_public(f: &Value) -> Value {
     if let Some(opts) = f["options"].as_array().filter(|o| !o.is_empty()) {
         out.insert(
             "options".into(),
-            json!(opts.iter().map(|o| {
-                let lb = o["label"].as_str().filter(|s| !s.is_empty()).or(o["value"].as_str()).unwrap_or("");
-                json!({"value": o["value"], "label": t!(lb)})
-            }).collect::<Vec<_>>()),
+            json!(
+                opts.iter()
+                    .map(|o| {
+                        let lb = o["label"].as_str().filter(|s| !s.is_empty()).or(o["value"].as_str()).unwrap_or("");
+                        json!({"value": o["value"], "label": t!(lb)})
+                    })
+                    .collect::<Vec<_>>()
+            ),
         );
     }
     Value::Object(out)
@@ -119,12 +123,27 @@ pub fn brief_sources() -> String {
             .fields()
             .iter()
             .map(|f| {
-                let opts = f["options"].as_array().filter(|o| !o.is_empty()).map(|o| format!("，可选：{}", o.iter().map(|x| py::str_of(&x["value"])).collect::<Vec<_>>().join("/"))).unwrap_or_default();
-                format!("{}（{}{}{opts}）", py::str_of(&f["key"]), f["label"].as_str().unwrap_or(""), if py::truthy(&f["required"]) { "，必填" } else { "" })
+                let opts = f["options"]
+                    .as_array()
+                    .filter(|o| !o.is_empty())
+                    .map(|o| format!("，可选：{}", o.iter().map(|x| py::str_of(&x["value"])).collect::<Vec<_>>().join("/")))
+                    .unwrap_or_default();
+                format!(
+                    "{}（{}{}{opts}）",
+                    py::str_of(&f["key"]),
+                    f["label"].as_str().unwrap_or(""),
+                    if py::truthy(&f["required"]) { "，必填" } else { "" }
+                )
             })
             .collect();
         let fs = fs.join("、");
-        lines.push(format!("- {}：{}。{}{}", src.id, src.title(), src.meta["description"].as_str().unwrap_or(""), if fs.is_empty() { String::new() } else { format!(" 参数：{fs}") }));
+        lines.push(format!(
+            "- {}：{}。{}{}",
+            src.id,
+            src.title(),
+            src.meta["description"].as_str().unwrap_or(""),
+            if fs.is_empty() { String::new() } else { format!(" 参数：{fs}") }
+        ));
     }
     lines.join("\n")
 }
@@ -168,7 +187,13 @@ pub fn clean_params(src: &Source, raw: &Value, old: Option<&Value>) -> Result<Va
         let k = f["key"].as_str().unwrap_or("").to_string();
         let typ = f["type"].as_str().unwrap_or("text");
         let label = t!(f["label"].as_str().filter(|s| !s.is_empty()).unwrap_or(&k));
-        let mut v = if raw.get(&k).is_some() { raw[&k].clone() } else if old.get(&k).is_some() { old[&k].clone() } else { f.get("default").cloned().unwrap_or(Value::Null) };
+        let mut v = if raw.get(&k).is_some() {
+            raw[&k].clone()
+        } else if old.get(&k).is_some() {
+            old[&k].clone()
+        } else {
+            f.get("default").cloned().unwrap_or(Value::Null)
+        };
         match typ {
             "secret" => v = secret(&v, &old[&k])?,
             "text" | "textarea" | "url" => {
@@ -191,32 +216,41 @@ pub fn clean_params(src: &Source, raw: &Value, old: Option<&Value>) -> Result<Va
                         _ => None,
                     }
                     .ok_or_else(|| t!("{label}要填数字", label = label))?;
-                    if let Some(mn) = f["min"].as_f64() {
-                        if n < mn {
-                            return Err(t!("{label}至少是 {n}", label = label, n = f["min"].clone()));
-                        }
+                    if let Some(mn) = f["min"].as_f64()
+                        && n < mn
+                    {
+                        return Err(t!("{label}至少是 {n}", label = label, n = f["min"].clone()));
                     }
-                    if let Some(mx) = f["max"].as_f64() {
-                        if n > mx {
-                            return Err(t!("{label}最多是 {n}", label = label, n = f["max"].clone()));
-                        }
+                    if let Some(mx) = f["max"].as_f64()
+                        && n > mx
+                    {
+                        return Err(t!("{label}最多是 {n}", label = label, n = f["max"].clone()));
                     }
                     v = num_str(n);
                 }
             }
             "bool" => {
-                v = json!(!matches!(&v, Value::Bool(false) | Value::Null) && v != json!(0) && v != json!("0") && v != json!("false") && v != json!("False") && v != json!(""));
+                v = json!(
+                    !matches!(&v, Value::Bool(false) | Value::Null)
+                        && v != json!(0)
+                        && v != json!("0")
+                        && v != json!("false")
+                        && v != json!("False")
+                        && v != json!("")
+                );
             }
             "select" => {
                 let s = if py::truthy(&v) { py::str_of(&v) } else { String::new() };
-                let opts: Vec<String> = f["options"].as_array().map(|o| o.iter().map(|x| py::str_of(&x["value"])).collect()).unwrap_or_default();
+                let opts: Vec<String> =
+                    f["options"].as_array().map(|o| o.iter().map(|x| py::str_of(&x["value"])).collect()).unwrap_or_default();
                 if !s.is_empty() && !opts.contains(&s) {
                     return Err(t!("{label}只能选：{options}", label = label, options = opts.join(" / ")));
                 }
                 v = json!(s);
             }
             "multi" => {
-                let allowed: Vec<String> = f["options"].as_array().map(|o| o.iter().map(|x| py::str_of(&x["value"])).collect()).unwrap_or_default();
+                let allowed: Vec<String> =
+                    f["options"].as_array().map(|o| o.iter().map(|x| py::str_of(&x["value"])).collect()).unwrap_or_default();
                 v = json!(split_words(&v).into_iter().filter(|x| allowed.contains(x)).collect::<Vec<_>>());
             }
             "list" => {
@@ -256,8 +290,15 @@ pub fn resolve(src: &Source, params: &Value) -> Value {
 pub fn clean(t: &Value, old: &Value) -> Result<Value, String> {
     let empty = json!({});
     let old = if old.is_object() && old["kind"] == "event" { old } else { &empty };
-    let sid = if py::truthy(&t["source"]) { py::str_of(&t["source"]) } else if py::truthy(&old["source"]) { py::str_of(&old["source"]) } else { String::new() };
-    let src = get_source(&sid).ok_or_else(|| t!("没有这种事件来源：{source}", source = if sid.is_empty() { "—".to_string() } else { sid.clone() }))?;
+    let sid = if py::truthy(&t["source"]) {
+        py::str_of(&t["source"])
+    } else if py::truthy(&old["source"]) {
+        py::str_of(&old["source"])
+    } else {
+        String::new()
+    };
+    let src = get_source(&sid)
+        .ok_or_else(|| t!("没有这种事件来源：{source}", source = if sid.is_empty() { "—".to_string() } else { sid.clone() }))?;
     let why = unavailable(&src);
     if !why.is_empty() {
         return Err(why);
@@ -276,7 +317,13 @@ pub fn clean(t: &Value, old: &Value) -> Result<Value, String> {
     let mut out = json!({"kind": "event", "source": sid, "params": params, "include": words("include"), "exclude": words("exclude"),
                          "llm_filter": py::head(lf.trim(), 1000)});
     if src.mode == POLL {
-        let pick = if py::truthy(&t["every"]) { t["every"].clone() } else if same && py::truthy(&old["every"]) { old["every"].clone() } else { json!(src.every()) };
+        let pick = if py::truthy(&t["every"]) {
+            t["every"].clone()
+        } else if same && py::truthy(&old["every"]) {
+            old["every"].clone()
+        } else {
+            json!(src.every())
+        };
         let every = py::to_int(&pick).unwrap_or(src.every());
         if every < src.min_every() {
             return Err(t!("这种事件最快 {n} 分钟看一次", n = src.min_every()));
@@ -301,14 +348,17 @@ pub fn portable(t: &Value) -> Value {
     if t["kind"] != "event" {
         return t.clone();
     }
-    let secret: Vec<String> = get_source(t["source"].as_str().unwrap_or("")).map(|s| s.fields().iter().filter(|f| f["type"] == "secret").map(|f| py::str_of(&f["key"])).collect()).unwrap_or_default();
+    let secret: Vec<String> = get_source(t["source"].as_str().unwrap_or(""))
+        .map(|s| s.fields().iter().filter(|f| f["type"] == "secret").map(|f| py::str_of(&f["key"])).collect())
+        .unwrap_or_default();
     let mut out = Map::new();
     for (k, v) in t.as_object().cloned().unwrap_or_default() {
         if k != "key" && k != "path" {
             out.insert(k, v);
         }
     }
-    let params: Map<String, Value> = t["params"].as_object().cloned().unwrap_or_default().into_iter().filter(|(k, _)| !secret.contains(k)).collect();
+    let params: Map<String, Value> =
+        t["params"].as_object().cloned().unwrap_or_default().into_iter().filter(|(k, _)| !secret.contains(k)).collect();
     out.insert("params".into(), Value::Object(params));
     Value::Object(out)
 }
@@ -396,12 +446,15 @@ fn load_state(rid: i64) -> Value {
 fn save_state(rid: i64, state: Option<&Value>, error: &str, sample: Option<&Value>, keep_state: bool) {
     let now = py::now();
     let old = db::row("select state, fails, sample from event_state where routine_id=?", params![rid]);
-    let st: Option<String> = if keep_state && old.is_some() {
-        old.as_ref().and_then(|o| o[0].as_str().map(String::from))
+    let st: Option<String> =
+        if keep_state && old.is_some() { old.as_ref().and_then(|o| o[0].as_str().map(String::from)) } else { state.map(py::dumps_u) };
+    let fails = if !error.is_empty() && old.is_some() {
+        old.as_ref().map(|o| o.i(1)).unwrap_or(0) + 1
+    } else if !error.is_empty() {
+        1
     } else {
-        state.map(py::dumps_u)
+        0
     };
-    let fails = if !error.is_empty() && old.is_some() { old.as_ref().map(|o| o.i(1)).unwrap_or(0) + 1 } else if !error.is_empty() { 1 } else { 0 };
     let smp = match sample.filter(|s| py::truthy(s)) {
         Some(s) => py::dumps_u(s),
         None => old.as_ref().map(|o| o.s(2)).unwrap_or_default(),
@@ -429,7 +482,11 @@ fn ev(e: &Value) -> Option<Value> {
 }
 
 fn plain(e: &Value) -> String {
-    ["title", "text", "url"].iter().map(|k| if py::truthy(&e[*k]) { py::str_of(&e[*k]) } else { String::new() }).collect::<Vec<_>>().join("\n")
+    ["title", "text", "url"]
+        .iter()
+        .map(|k| if py::truthy(&e[*k]) { py::str_of(&e[*k]) } else { String::new() })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 pub fn render(src: Option<&Source>, params: &Value, events: &[Value]) -> String {
@@ -524,10 +581,10 @@ pub fn deliver(r: Value, events: Vec<Value>, source: &'static str) -> futures::f
 pub async fn after_run(r: &Value) {
     let rid = r["id"].as_i64().unwrap_or(0);
     let q = PENDING.lock().remove(&rid);
-    if let Some(q) = q.filter(|q| !q.is_empty()) {
-        if let Some(fresh) = routines::get(rid).filter(|f| f["enabled"] == true) {
-            deliver(fresh, q, "event").await;
-        }
+    if let Some(q) = q.filter(|q| !q.is_empty())
+        && let Some(fresh) = routines::get(rid).filter(|f| f["enabled"] == true)
+    {
+        deliver(fresh, q, "event").await;
     }
 }
 
@@ -669,10 +726,10 @@ pub fn internal(source_id: &str, kw: &Value) {
         if r["enabled"] != true || t["kind"] != "event" || t["source"].as_str() != Some(source_id) {
             continue;
         }
-        if let Some(tid) = task_id {
-            if TASK_ROUTINE.lock().get(&tid).copied() == r["id"].as_i64() {
-                continue;
-            }
+        if let Some(tid) = task_id
+            && TASK_ROUTINE.lock().get(&tid).copied() == r["id"].as_i64()
+        {
+            continue;
         }
         let evs = matcher(&resolve(&src, &t["params"]), &r, kw);
         if !evs.is_empty() {

@@ -95,12 +95,11 @@ impl<S: Send + Sync> FromRequestParts<S> for Peer {
 /// 来源 IP：经本机的反向代理（Caddy）转发的按 X-Forwarded-For（和 uvicorn --proxy-headers 一样）
 pub fn client_ip(h: &HeaderMap, peer: Option<SocketAddr>) -> String {
     let trusted = peer.is_some_and(|p| p.ip().is_loopback()) || std::env::var("FORWARDED_ALLOW_IPS").is_ok_and(|v| v.trim() == "*");
-    if trusted {
-        if let Some(f) = h.get("x-forwarded-for").and_then(|v| v.to_str().ok()) {
-            if let Some(last) = f.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()).next_back() {
-                return last.to_string();
-            }
-        }
+    if trusted
+        && let Some(f) = h.get("x-forwarded-for").and_then(|v| v.to_str().ok())
+        && let Some(last) = f.split(',').map(|s| s.trim()).rfind(|s| !s.is_empty())
+    {
+        return last.to_string();
     }
     peer.map(|p| p.ip().to_string()).unwrap_or_else(|| "?".into())
 }

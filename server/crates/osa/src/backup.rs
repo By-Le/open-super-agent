@@ -29,8 +29,15 @@ pub const MAX_UNZIPPED: u64 = 8 << 30;
 pub const MAX_BACKUP: u64 = 4 << 30;
 const NEED_TABLES: [&str; 3] = ["bots", "chats", "messages"];
 const COUNTS: [(&str, &str); 9] = [
-    ("bots", "个 Bot"), ("chats", "个对话"), ("messages", "条消息"), ("memories", "条记忆"), ("skills", "个技能"),
-    ("routines", "个定时任务"), ("pages", "个页面"), ("apps", "个应用"), ("channels", "个聊天软件连接"),
+    ("bots", "个 Bot"),
+    ("chats", "个对话"),
+    ("messages", "条消息"),
+    ("memories", "条记忆"),
+    ("skills", "个技能"),
+    ("routines", "个定时任务"),
+    ("pages", "个页面"),
+    ("apps", "个应用"),
+    ("channels", "个聊天软件连接"),
 ];
 
 /// 网页上确认恢复后置位：服务关闭时重新启动自己
@@ -63,7 +70,8 @@ fn key(passphrase: &str, head: &Value) -> R<Aes256Gcm> {
     if n == 0 || 1u64 << log_n != n {
         return Err(t!("备份文件的开头坏了"));
     }
-    let p = scrypt::Params::new(log_n, head["r"].as_u64().unwrap_or(8) as u32, head["p"].as_u64().unwrap_or(1) as u32, 32).map_err(|_| t!("备份文件的开头坏了"))?;
+    let p = scrypt::Params::new(log_n, head["r"].as_u64().unwrap_or(8) as u32, head["p"].as_u64().unwrap_or(1) as u32, 32)
+        .map_err(|_| t!("备份文件的开头坏了"))?;
     let mut out = [0u8; 32];
     scrypt::scrypt(passphrase.as_bytes(), &salt, &p, &mut out).map_err(io)?;
     Aes256Gcm::new_from_slice(&out).map_err(io)
@@ -137,7 +145,11 @@ pub fn decrypt(src: &Path, dst: &Path, passphrase: &str) -> R<()> {
     let head: Value = serde_json::from_slice(&hline).unwrap_or(Value::Null);
     let n = head["n"].as_u64().unwrap_or(0);
     let chunk = head["chunk"].as_u64().unwrap_or(0);
-    let good = head["kdf"] == "scrypt" && (1 << 10..=1 << 20).contains(&n) && head["r"].as_u64().is_some_and(|r| r <= 16) && head["p"].as_u64().is_some_and(|p| p <= 4) && (1 << 12..=1 << 24).contains(&chunk);
+    let good = head["kdf"] == "scrypt"
+        && (1 << 10..=1 << 20).contains(&n)
+        && head["r"].as_u64().is_some_and(|r| r <= 16)
+        && head["p"].as_u64().is_some_and(|p| p <= 4)
+        && (1 << 12..=1 << 24).contains(&chunk);
     let prefix = head["nonce"].as_str().and_then(crate::util::b64_decode).unwrap_or_default();
     if !good || prefix.len() != 7 {
         return Err(t!("备份文件的开头坏了"));
@@ -154,7 +166,9 @@ pub fn decrypt(src: &Path, dst: &Path, passphrase: &str) -> R<()> {
         let n = nonce(&prefix, i, nxt.is_empty());
         match aes.decrypt(Nonce::from_slice(&n), Payload { msg: &buf, aad: &ad }) {
             Ok(pt) => out.write_all(&pt).map_err(io)?,
-            Err(_) => return Err(if i == 0 { t!("口令不对（或者文件坏了）") } else { t!("备份文件不完整，或者被改过") }),
+            Err(_) => {
+                return Err(if i == 0 { t!("口令不对（或者文件坏了）") } else { t!("备份文件不完整，或者被改过") });
+            }
         }
         if nxt.is_empty() {
             return out.flush().map_err(io);
@@ -219,7 +233,10 @@ pub fn export(passphrase: &str, snap: PathBuf) -> R<(PathBuf, Value)> {
         let mut unreadable = vec![];
         let rows: Vec<(String, Vec<u8>)> = db
             .prepare("select name, ciphertext from vault")
-            .and_then(|mut s| s.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, Vec<u8>>(1).unwrap_or_default()))).map(|m| m.filter_map(|x| x.ok()).collect()))
+            .and_then(|mut s| {
+                s.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, Vec<u8>>(1).unwrap_or_default())))
+                    .map(|m| m.filter_map(|x| x.ok()).collect())
+            })
             .unwrap_or_default();
         for (name, ct) in rows {
             match vault::decrypt_raw(&ct) {
@@ -322,14 +339,19 @@ pub fn stage(upload: &Path, passphrase: &str) -> R<Value> {
         } else {
             json!({})
         };
-        db.execute_batch("create table if not exists vault(name text primary key, ciphertext blob, created real); delete from vault;").map_err(io)?;
+        db.execute_batch("create table if not exists vault(name text primary key, ciphertext blob, created real); delete from vault;")
+            .map_err(io)?;
         for (name, value) in secrets.as_object().cloned().unwrap_or_default() {
             db.execute("insert into vault values(?,?,?)", params![name, vault::encrypt_raw(&py::str_of(&value)), py::now()]).map_err(io)?;
         }
         if have.iter().any(|h| h == "computers") {
             let _ = db.execute("delete from computers", []);
         }
-        let off = if have.iter().any(|h| h == "channels") { db.execute("update channels set enabled=0 where enabled=1", []).unwrap_or(0) } else { 0 };
+        let off = if have.iter().any(|h| h == "channels") {
+            db.execute("update channels set enabled=0 where enabled=1", []).unwrap_or(0)
+        } else {
+            0
+        };
         let mut info = meta.clone();
         info["counts"] = counts(&db);
         info["channels_off"] = json!(off);
@@ -538,4 +560,3 @@ pub fn routes() -> axum::Router {
         .route("/api/backup/restore", put(backup_upload).delete(backup_cancel).layer(DefaultBodyLimit::disable()))
         .route("/api/backup/restore/confirm", post(backup_confirm))
 }
-

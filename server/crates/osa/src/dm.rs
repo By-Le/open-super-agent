@@ -85,7 +85,12 @@ pub async fn answer(sender: i64, reply: &Reply, text: &str, from_chat: i64, extr
         Some(c) if c["kind"] != "group" || bots::ids_of(&c).contains(&to_id) => reply.chat,
         _ => to["chat_id"].as_i64().unwrap_or(0),
     };
-    message(from_chat, &t!("[已回复 {name}]", name = py::str_of(&to["name"])), sender, json!({"kind": "dm_reply", "to": to_id, "sent": true, "chat": cid}));
+    message(
+        from_chat,
+        &t!("[已回复 {name}]", name = py::str_of(&to["name"])),
+        sender,
+        json!({"kind": "dm_reply", "to": to_id, "sent": true, "chat": cid}),
+    );
     let mut meta = json!({"kind": "dm_reply", "to": to_id});
     if let Some(e) = extra.as_object() {
         for (k, v) in e {
@@ -162,7 +167,9 @@ pub async fn wake(bot_id: i64, chat_id: i64, mut turn: Turn) {
     };
     if let Err(e) = r {
         tracing::error!("对话 {chat_id} 里 Bot {bot_id} 处理私信时出错：{e:#}");
-        server::broadcast(json!({"type": "error", "chat_id": chat_id, "message": t!("{name} 出错了：{e}", name = name_of(Some(bot_id)), e = providers::brief(&e))}));
+        server::broadcast(
+            json!({"type": "error", "chat_id": chat_id, "message": t!("{name} 出错了：{e}", name = name_of(Some(bot_id)), e = providers::brief(&e))}),
+        );
     }
     let mut q = QUEUED.lock();
     if q.get(&key).is_some_and(|t| Arc::ptr_eq(&t.depth, &turn.depth)) {

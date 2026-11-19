@@ -35,7 +35,8 @@ fn page_hint() -> String {
     format!("任务要求做成页面或报告时，用 save_page 保存，最终答案里附上返回的链接。\n{APPLET_GUIDE}")
 }
 
-pub const FILE_HINT: &str = "要把电脑里的文件（截图、画好的图、做好的表格和文档）交给用户时用 send_file，它们会显示在任务结果下面；不要自己拼下载链接。";
+pub const FILE_HINT: &str =
+    "要把电脑里的文件（截图、画好的图、做好的表格和文档）交给用户时用 send_file，它们会显示在任务结果下面；不要自己拼下载链接。";
 
 pub async fn run_worker(task: Arc<Task>, goal: String, label: String) -> anyhow::Result<String> {
     let claim = format!("{}:{label}", task.id);
@@ -50,7 +51,15 @@ pub async fn run_worker(task: Arc<Task>, goal: String, label: String) -> anyhow:
 }
 
 /// 流式调用一次模型，思考和正文边收边写进任务过程。返回这一轮的 assistant 消息
-pub async fn reply(task: &Arc<Task>, log: &Log, role: &str, client: &providers::Client, model: &str, msgs: &[Value], tools: Option<&[Value]>) -> anyhow::Result<Value> {
+pub async fn reply(
+    task: &Arc<Task>,
+    log: &Log,
+    role: &str,
+    client: &providers::Client,
+    model: &str,
+    msgs: &[Value],
+    tools: Option<&[Value]>,
+) -> anyhow::Result<Value> {
     let t0 = Instant::now();
     let mut body = json!({"model": model, "messages": msgs, "stream": true, "stream_options": {"include_usage": true}});
     if let Some(ts) = tools.filter(|t| !t.is_empty()) {
@@ -59,7 +68,13 @@ pub async fn reply(task: &Arc<Task>, log: &Log, role: &str, client: &providers::
     for (k, v) in config::call_kwargs(role) {
         body[k] = v;
     }
-    let rec = || memory::UsageRec { task_id: Some(task.id), bot_id: Some(task.bot_id), chat_id: Some(task.chat_id), ms: Some(t0.elapsed().as_secs_f64() * 1000.0), ..Default::default() };
+    let rec = || memory::UsageRec {
+        task_id: Some(task.id),
+        bot_id: Some(task.bot_id),
+        chat_id: Some(task.chat_id),
+        ms: Some(t0.elapsed().as_secs_f64() * 1000.0),
+        ..Default::default()
+    };
     let mut stream = match client.stream(body).await {
         Ok(s) => s,
         Err(e) => {
@@ -131,10 +146,19 @@ pub async fn reply(task: &Arc<Task>, log: &Log, role: &str, client: &providers::
             }
         }
     }
-    memory::record_usage(role, model, usage.as_ref(), memory::UsageRec {
-        task_id: Some(task.id), bot_id: Some(task.bot_id), chat_id: Some(task.chat_id),
-        ms: Some(t0.elapsed().as_secs_f64() * 1000.0), ttft: first.map(|f| (f - t0).as_secs_f64() * 1000.0), ..Default::default()
-    });
+    memory::record_usage(
+        role,
+        model,
+        usage.as_ref(),
+        memory::UsageRec {
+            task_id: Some(task.id),
+            bot_id: Some(task.bot_id),
+            chat_id: Some(task.chat_id),
+            ms: Some(t0.elapsed().as_secs_f64() * 1000.0),
+            ttft: first.map(|f| (f - t0).as_secs_f64() * 1000.0),
+            ..Default::default()
+        },
+    );
     let (content, leaked) = dsml::split(&content);
     if content.len() > sent {
         let piece = content[sent..].to_string();
@@ -160,9 +184,14 @@ pub async fn reply(task: &Arc<Task>, log: &Log, role: &str, client: &providers::
         msg["reasoning_content"] = json!(reasoning);
     }
     if !calls.is_empty() {
-        msg["tool_calls"] = json!(calls.iter().map(|(k, (id, name, args))| json!({
+        msg["tool_calls"] = json!(
+            calls
+                .iter()
+                .map(|(k, (id, name, args))| json!({
             "id": if id.is_empty() { format!("call_{k}") } else { id.clone() }, "type": "function",
-            "function": {"name": name, "arguments": if args.is_empty() { "{}" } else { args }}})).collect::<Vec<_>>());
+            "function": {"name": name, "arguments": if args.is_empty() { "{}" } else { args }}}))
+                .collect::<Vec<_>>()
+        );
     }
     Ok(msg)
 }
@@ -179,7 +208,15 @@ fn progress_text(tool: &registry::Tool, name: &str, args: &Value) -> String {
 }
 
 /// 执行一个工具调用，返回 (给模型的结果, 这一步的状态)
-async fn call_tool(task: &Arc<Task>, log: &Log, step: &StepRef, name: &str, raw: &str, env: &Value, shots: &mut Vec<Vec<u8>>) -> (String, String) {
+async fn call_tool(
+    task: &Arc<Task>,
+    log: &Log,
+    step: &StepRef,
+    name: &str,
+    raw: &str,
+    env: &Value,
+    shots: &mut Vec<Vec<u8>>,
+) -> (String, String) {
     let args: Value = match serde_json::from_str(if raw.is_empty() { "{}" } else { raw }) {
         Ok(v) => v,
         Err(e) => return (format!("工具出错：{e}"), "error".into()),

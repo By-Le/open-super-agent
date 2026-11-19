@@ -67,7 +67,8 @@ fn row_out(r: &[Value]) -> Value {
 
 /// 这个 Bot 能用的技能（自己的 + 共用的），同名时自己的覆盖共用的
 pub fn list_for(bot_id: i64) -> Vec<Value> {
-    let rows = db::rows(&format!("select {COLS} from skills where bot_id=? or bot_id is null order by bot_id is null, name"), params![bot_id]);
+    let rows =
+        db::rows(&format!("select {COLS} from skills where bot_id=? or bot_id is null order by bot_id is null, name"), params![bot_id]);
     let mut seen = std::collections::HashSet::new();
     let mut out = vec![];
     for r in rows {
@@ -184,7 +185,16 @@ pub enum Apps {
 
 /// 新建或修改。同一个 Bot 下同名的技能会被覆盖。files 不给、apps=Keep 时：修改的保持原样，新建的没有
 #[allow(clippy::too_many_arguments)]
-pub fn save_full(bot_id: Option<i64>, name: &str, body: &str, description: &str, source: &str, sid: Option<i64>, files: Option<&Value>, apps: Apps) -> Result<Value, String> {
+pub fn save_full(
+    bot_id: Option<i64>,
+    name: &str,
+    body: &str,
+    description: &str,
+    source: &str,
+    sid: Option<i64>,
+    files: Option<&Value>,
+    apps: Apps,
+) -> Result<Value, String> {
     let name = check(name, body)?;
     let mut cols: Vec<(&str, Option<String>)> = vec![];
     if let Some(f) = files {
@@ -216,7 +226,10 @@ pub fn save_full(bot_id: Option<i64>, name: &str, body: &str, description: &str,
             if db::exists("select id from skills where name=? and bot_id is ? and id != ?", params![name, bot_id, sid]) {
                 return Err(t!("已经有叫 /{name} 的技能了", name = name));
             }
-            db::exec("update skills set bot_id=?, name=?, description=?, body=?, updated=? where id=?", params![bot_id, name, desc, body, now, sid]);
+            db::exec(
+                "update skills set bot_id=?, name=?, description=?, body=?, updated=? where id=?",
+                params![bot_id, name, desc, body, now, sid],
+            );
             for (k, v) in &cols {
                 db::exec(&format!("update skills set {k}=? where id=?"), params![v, sid]);
             }
@@ -275,7 +288,11 @@ pub fn summary(bot_id: i64) -> String {
         .iter()
         .map(|s| {
             let d = s["description"].as_str().unwrap_or("");
-            format!("- /{}：{}", py::str_of(&s["name"]), if d.is_empty() { py::head(s["body"].as_str().unwrap_or(""), 40) } else { d.to_string() })
+            format!(
+                "- /{}：{}",
+                py::str_of(&s["name"]),
+                if d.is_empty() { py::head(s["body"].as_str().unwrap_or(""), 40) } else { d.to_string() }
+            )
         })
         .collect();
     if lines.is_empty() { "暂无技能".into() } else { lines.join("\n") }
@@ -338,11 +355,22 @@ pub fn tool_use(bot_id: i64, scope: &str, args: &Value) -> String {
             let fs = file_names(&s).join("、");
             return format!("/{name} 没有 {raw} 这个文件。它带的文件：{}", if fs.is_empty() { "无" } else { &fs });
         };
-        return piece(text.as_str().unwrap_or(""), &args["offset"], &path, &format!("use_skill(name=\"{name}\", file=\"{path}\", offset={{offset}})")).0;
+        return piece(
+            text.as_str().unwrap_or(""),
+            &args["offset"],
+            &path,
+            &format!("use_skill(name=\"{name}\", file=\"{path}\", offset={{offset}})"),
+        )
+        .0;
     }
     let out = expand_by(&s, "", false);
     if py::char_len(&out) > CHUNK || py::truthy(&args["offset"]) {
-        let (out, more) = piece(s["body"].as_str().unwrap_or(""), &args["offset"], &format!("技能 /{name} 的做法"), &format!("use_skill(name=\"{name}\", offset={{offset}})"));
+        let (out, more) = piece(
+            s["body"].as_str().unwrap_or(""),
+            &args["offset"],
+            &format!("技能 /{name} 的做法"),
+            &format!("use_skill(name=\"{name}\", offset={{offset}})"),
+        );
         return if more { out } else { out + &files_block(&s, scope) };
     }
     out + &files_block(&s, scope)
@@ -444,7 +472,9 @@ fn load_yaml(text: &str) -> Result<Value, String> {
     if text.trim().is_empty() {
         return Ok(Value::Null);
     }
-    serde_yaml::from_str::<serde_yaml::Value>(text).map(crate::config::yaml_to_json).map_err(|e| e.to_string().lines().next().unwrap_or("").to_string())
+    serde_yaml::from_str::<serde_yaml::Value>(text)
+        .map(crate::config::yaml_to_json)
+        .map_err(|e| e.to_string().lines().next().unwrap_or("").to_string())
 }
 
 /// 解析一个技能文件，返回 {name, description, body, apps, files}
@@ -474,10 +504,10 @@ pub fn from_file(text: &str, filename: &str) -> Result<Value, String> {
         let n = EXT.replace(last, "").into_owned();
         name = if n.to_uppercase() == "SKILL" { String::new() } else { n };
     }
-    if name.is_empty() {
-        if let Some(h) = H1.captures(&body) {
-            name = h[1].to_string();
-        }
+    if name.is_empty()
+        && let Some(h) = H1.captures(&body)
+    {
+        name = h[1].to_string();
     }
     let name = clean_name(&name);
     if name.is_empty() {
@@ -486,7 +516,9 @@ pub fn from_file(text: &str, filename: &str) -> Result<Value, String> {
     let desc = if py::truthy(&head["description"]) { py::str_of(&head["description"]) } else { String::new() };
     check(&name, &body)?;
     let apps = if head.get("apps").is_some_and(|a| !a.is_null()) { json!(clean_apps(&head["apps"])) } else { Value::Null };
-    Ok(json!({"name": name, "description": py::head(&desc.split_whitespace().collect::<Vec<_>>().join(" "), 200), "body": body, "apps": apps, "files": {}}))
+    Ok(
+        json!({"name": name, "description": py::head(&desc.split_whitespace().collect::<Vec<_>>().join(" "), 200), "body": body, "apps": apps, "files": {}}),
+    )
 }
 
 fn junk(path: &str) -> bool {
@@ -612,7 +644,9 @@ fn url_parts(url: &str) -> Option<(String, String, Vec<String>)> {
 pub fn raw_url(url: &str) -> Result<(String, String), String> {
     static MDX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)\.(md|markdown|txt)$").unwrap());
     let url = url.trim();
-    let (scheme, netloc, parts) = url_parts(url).filter(|(s, n, _)| (s == "http" || s == "https") && !n.is_empty()).ok_or_else(|| t!("链接要以 http:// 或 https:// 开头"))?;
+    let (scheme, netloc, parts) = url_parts(url)
+        .filter(|(s, n, _)| (s == "http" || s == "https") && !n.is_empty())
+        .ok_or_else(|| t!("链接要以 http:// 或 https:// 开头"))?;
     if parts.len() == 2 && parts[0] == "skill" {
         return Ok((format!("{scheme}://{netloc}/api/shared/skills/{}/raw", parts[1]), String::new()));
     }
@@ -623,7 +657,11 @@ pub fn raw_url(url: &str) -> Result<(String, String), String> {
             folder = parts[parts.len() - 1].clone();
             path += "/SKILL.md";
         } else {
-            folder = if parts[parts.len() - 1].to_uppercase() == "SKILL.MD" && parts.len() > 5 { parts[parts.len() - 2].clone() } else { String::new() };
+            folder = if parts[parts.len() - 1].to_uppercase() == "SKILL.MD" && parts.len() > 5 {
+                parts[parts.len() - 2].clone()
+            } else {
+                String::new()
+            };
         }
         let name = if folder.is_empty() { parts[parts.len() - 1].clone() } else { folder };
         return Ok((format!("https://raw.githubusercontent.com/{}/{}/{}/{path}", parts[0], parts[1], parts[3]), name));
@@ -663,7 +701,13 @@ fn client() -> reqwest::Client {
 }
 
 fn http_err(e: &reqwest::Error) -> String {
-    let kind = if e.is_timeout() { "ReadTimeout" } else if e.is_connect() { "ConnectError" } else { "HTTPError" };
+    let kind = if e.is_timeout() {
+        "ReadTimeout"
+    } else if e.is_connect() {
+        "ConnectError"
+    } else {
+        "HTTPError"
+    };
     t!("取不到这个链接（{e}）", e = kind)
 }
 
@@ -707,7 +751,16 @@ async fn github_files(c: &reqwest::Client, owner: &str, repo: &str, r#ref: &str,
     let mut found: Vec<(String, Value)> = vec![];
     let mut stack: Vec<(String, String, usize)> = vec![(folder.to_string(), String::new(), 0)];
     // 和 Python 版一样深度优先、按列表顺序
-    async fn walk(c: &reqwest::Client, owner: &str, repo: &str, r#ref: &str, path: &str, rel: &str, depth: usize, found: &mut Vec<(String, Value)>) -> Result<(), String> {
+    async fn walk(
+        c: &reqwest::Client,
+        owner: &str,
+        repo: &str,
+        r#ref: &str,
+        path: &str,
+        rel: &str,
+        depth: usize,
+        found: &mut Vec<(String, Value)>,
+    ) -> Result<(), String> {
         let r = c
             .get(format!("https://api.github.com/repos/{owner}/{repo}/contents/{}", url_quote(path)))
             .query(&[("ref", r#ref)])
@@ -798,7 +851,18 @@ pub mod bundled {
     static MARKET: LazyLock<BTreeMap<String, BTreeMap<String, String>>> = LazyLock::new(|| {
         DATA["market"]
             .as_object()
-            .map(|o| o.iter().map(|(k, v)| (k.clone(), v.as_object().map(|f| f.iter().map(|(p, t)| (p.clone(), t.as_str().unwrap_or("").to_string())).collect()).unwrap_or_default())).collect())
+            .map(|o| {
+                o.iter()
+                    .map(|(k, v)| {
+                        (
+                            k.clone(),
+                            v.as_object()
+                                .map(|f| f.iter().map(|(p, t)| (p.clone(), t.as_str().unwrap_or("").to_string())).collect())
+                                .unwrap_or_default(),
+                        )
+                    })
+                    .collect()
+            })
             .unwrap_or_default()
     });
 
@@ -807,7 +871,10 @@ pub mod bundled {
     }
 
     pub fn templates() -> BTreeMap<String, String> {
-        DATA["templates"].as_object().map(|o| o.iter().map(|(k, v)| (k.clone(), v.as_str().unwrap_or("").to_string())).collect()).unwrap_or_default()
+        DATA["templates"]
+            .as_object()
+            .map(|o| o.iter().map(|(k, v)| (k.clone(), v.as_str().unwrap_or("").to_string())).collect())
+            .unwrap_or_default()
     }
 }
 
@@ -839,7 +906,16 @@ pub fn market(bot_id: Option<i64>) -> Vec<Value> {
 
 pub fn install(bot_id: Option<i64>, mid: &str) -> Result<Value, String> {
     let s = market_skill(mid)?;
-    save_full(bot_id, s["name"].as_str().unwrap_or(""), s["body"].as_str().unwrap_or(""), s["description"].as_str().unwrap_or(""), "market", None, Some(&s["files"]), Apps::Set(s["apps"].clone()))
+    save_full(
+        bot_id,
+        s["name"].as_str().unwrap_or(""),
+        s["body"].as_str().unwrap_or(""),
+        s["description"].as_str().unwrap_or(""),
+        "market",
+        None,
+        Some(&s["files"]),
+        Apps::Set(s["apps"].clone()),
+    )
 }
 
 // ---------- 接口 ----------
@@ -855,12 +931,18 @@ async fn list_skills(Path(bot_id): Path<i64>) -> Res {
 async fn create_skill(Path(bot_id): Path<i64>, Body(d): Body) -> Res {
     bot_or_404(bot_id)?;
     let owner = if py::truthy(&d["shared"]) { None } else { Some(bot_id) };
-    let source = match d["source"].as_str() {
-        Some(s @ ("teach" | "import")) => s,
-        _ => "manual",
-    };
+    let source = d["source"].as_str().unwrap_or("manual");
     let files = if py::truthy(&d["files"]) { d["files"].clone() } else { json!({}) };
-    let s = save_full(owner, d["name"].as_str().unwrap_or(""), d["body"].as_str().unwrap_or(""), d["description"].as_str().unwrap_or(""), source, None, Some(&files), Apps::Set(d["apps"].clone()))?;
+    let s = save_full(
+        owner,
+        d["name"].as_str().unwrap_or(""),
+        d["body"].as_str().unwrap_or(""),
+        d["description"].as_str().unwrap_or(""),
+        source,
+        None,
+        Some(&files),
+        Apps::Set(d["apps"].clone()),
+    )?;
     broadcast(json!({"type": "skills_changed"}));
     ok(s)
 }
@@ -889,13 +971,24 @@ async fn update_skill(Path(sid): Path<i64>, Body(d): Body) -> Res {
             None => old["bot_id"].as_i64(),
         }
     };
-    let pick = |k: &str| -> String { d.get(k).and_then(|v| v.as_str()).map(String::from).unwrap_or_else(|| old[k].as_str().unwrap_or("").to_string()) };
+    let pick = |k: &str| -> String {
+        d.get(k).and_then(|v| v.as_str()).map(String::from).unwrap_or_else(|| old[k].as_str().unwrap_or("").to_string())
+    };
     let files = d.get("files").map(|f| if py::truthy(f) { f.clone() } else { json!({}) });
     let apps = match d.get("apps") {
         Some(a) => Apps::Set(a.clone()),
         None => Apps::Keep,
     };
-    let s = save_full(owner, &pick("name"), &pick("body"), &pick("description"), old["source"].as_str().unwrap_or("manual"), Some(sid), files.as_ref(), apps)?;
+    let s = save_full(
+        owner,
+        &pick("name"),
+        &pick("body"),
+        &pick("description"),
+        old["source"].as_str().unwrap_or("manual"),
+        Some(sid),
+        files.as_ref(),
+        apps,
+    )?;
     broadcast(json!({"type": "skills_changed"}));
     ok(s)
 }
@@ -913,7 +1006,10 @@ pub fn quote_name(s: &str) -> String {
 fn skill_file(s: &Value) -> Response {
     let (data, name, kind) = export(s);
     (
-        [(header::CONTENT_TYPE, kind.to_string()), (header::CONTENT_DISPOSITION, format!("attachment; filename*=UTF-8''{}", url_quote(&name)))],
+        [
+            (header::CONTENT_TYPE, kind.to_string()),
+            (header::CONTENT_DISPOSITION, format!("attachment; filename*=UTF-8''{}", url_quote(&name))),
+        ],
         data,
     )
         .into_response()
@@ -952,7 +1048,8 @@ async fn parse_skill(Path(bot_id): Path<i64>, Body(data): Body) -> Res {
     let mut d = if !data["url"].as_str().unwrap_or("").trim().is_empty() {
         fetch(data["url"].as_str().unwrap_or("")).await?
     } else if py::truthy(&data["zip"]) {
-        let raw = util::b64_decode(data["zip"].as_str().unwrap_or("")).ok_or_else(|| ApiError::bad(t!("不是能打开的 zip 文件（{e}）", e = "base64")))?;
+        let raw = util::b64_decode(data["zip"].as_str().unwrap_or(""))
+            .ok_or_else(|| ApiError::bad(t!("不是能打开的 zip 文件（{e}）", e = "base64")))?;
         from_zip(&raw, filename)?
     } else {
         let mut d = from_file(data["text"].as_str().unwrap_or(""), filename)?;

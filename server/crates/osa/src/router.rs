@@ -26,14 +26,26 @@ pub const PRIMARY_RULE: &str = include_str!("prompts/primary_rule.txt");
 pub const OTHER_RULE: &str = "- 管理 Bot 的事归主 Bot「{primary}」：用户要新建、删除 Bot，或者要改别的 Bot，或者你觉得该有个专门的 Bot 时，用 message_bot 私信它（它就在这个群里的话用 handoff），把要做什么写完整，由它请用户确认后去做。改你自己（名字、职责、头像、技能）用 update_bot，同样会弹卡片请用户确认。不要让用户自己去设置里做。定时任务和事件你只能管自己的，要动别的 Bot 的也找主 Bot（它直接改，不用确认）。\n";
 pub const REPLY_TURN: &str = "\n\n这一轮是因为 {name} 回了你的私信（见最近的消息）。";
 pub const REPLY_SHOWN: &str = "回信已经显示在对话里了，不用整段复述：说清结论、要用户做什么，或者接下来怎么办。回信说任务被取消或失败了，照实告诉用户就行，不要自己重派、拆开重做或换个 Bot 再做，等用户决定。";
-pub const REPLY_OWED: &str = "你这一轮的回复会自动作为回信发给 {owed}，它看不到 {name} 的回信，把它要的内容写全；还需要别人帮忙可以继续派任务或私信。";
+pub const REPLY_OWED: &str =
+    "你这一轮的回复会自动作为回信发给 {owed}，它看不到 {name} 的回信，把它要的内容写全；还需要别人帮忙可以继续派任务或私信。";
 pub const BOTADMIN_TURN: &str = include_str!("prompts/botadmin_turn.txt");
 pub const BOTADMIN_OWED: &str = "\n这是 {owed} 私信请你做的：你这一轮的回复会自动作为回信发给它，把结果写清楚，它看不到这里的系统通知。";
 pub const BOTADMIN_EDITED: &str = "\n用户在卡片上改过{fields}才同意的，以改过的为准：要知道现在是怎么写的，用 get_bot 看。";
 
 pub const DIRECT_PC: [&str; 13] = [
-    "computer_screenshot", "computer_click", "computer_type", "computer_key", "computer_scroll", "browser_open", "browser_snapshot",
-    "browser_click", "browser_type", "browser_key", "browser_scroll", "browser_back", "browser_read",
+    "computer_screenshot",
+    "computer_click",
+    "computer_type",
+    "computer_key",
+    "computer_scroll",
+    "browser_open",
+    "browser_snapshot",
+    "browser_click",
+    "browser_type",
+    "browser_key",
+    "browser_scroll",
+    "browser_back",
+    "browser_read",
 ];
 
 fn router_env() -> Value {
@@ -169,7 +181,14 @@ impl Router {
     }
 
     /// 用户在私聊（或私聊里的讨论串）里发了一条消息
-    pub async fn handle_user(self: &Arc<Self>, text: &str, via: &str, chat_id: Option<i64>, attachments: &[Value], applet: Option<Value>) -> anyhow::Result<()> {
+    pub async fn handle_user(
+        self: &Arc<Self>,
+        text: &str,
+        via: &str,
+        chat_id: Option<i64>,
+        attachments: &[Value],
+        applet: Option<Value>,
+    ) -> anyhow::Result<()> {
         let cid = chat_id.unwrap_or_else(|| self.chat_id());
         let mut meta = json!({});
         if !via.is_empty() {
@@ -206,18 +225,27 @@ impl Router {
                 let mut ctx = Ctx { chat, turn, turn_tasks: vec![], turn_dms: 0, turn_waits: 0, files: Arc::new(Mutex::new(vec![])) };
                 match me.think(&mut ctx).await {
                     Ok(shown) => {
-                        if let Some(o) = &owed {
-                            if ctx.turn_tasks.is_empty() && ctx.turn_dms == 0 && ctx.turn_waits == 0 {
-                                let text = if shown.is_empty() { t!("（没有回复内容）") } else { shown };
-                                dm::answer(me.bot_id, o, &text, chat_id, json!({})).await;
-                            }
+                        if let Some(o) = &owed
+                            && ctx.turn_tasks.is_empty()
+                            && ctx.turn_dms == 0
+                            && ctx.turn_waits == 0
+                        {
+                            let text = if shown.is_empty() { t!("（没有回复内容）") } else { shown };
+                            dm::answer(me.bot_id, o, &text, chat_id, json!({})).await;
                         }
                         Ok(())
                     }
                     Err(e) => {
                         if let Some(o) = &owed {
                             let name = me.bot()["name"].as_str().unwrap_or("Bot").to_string();
-                            dm::answer(me.bot_id, o, &t!("（{name} 处理时出错：{error}）", name = name, error = providers::brief(&e)), chat_id, json!({})).await;
+                            dm::answer(
+                                me.bot_id,
+                                o,
+                                &t!("（{name} 处理时出错：{error}）", name = name, error = providers::brief(&e)),
+                                chat_id,
+                                json!({}),
+                            )
+                            .await;
                         }
                         Err(e)
                     }
@@ -232,7 +260,15 @@ impl Router {
         crate::computer::desk_release(&format!("chat-{}", self.bot_id)).await;
     }
 
-    async fn stream(&self, ctx: &Ctx, client: &providers::Client, model: &str, msgs: &mut Vec<Value>, sid: &str, use_tools: bool) -> anyhow::Result<(String, String, Vec<(String, String, String)>)> {
+    async fn stream(
+        &self,
+        ctx: &Ctx,
+        client: &providers::Client,
+        model: &str,
+        msgs: &mut Vec<Value>,
+        sid: &str,
+        use_tools: bool,
+    ) -> anyhow::Result<(String, String, Vec<(String, String, String)>)> {
         let tools = self.tools(ctx);
         let cid = ctx.chat["id"].as_i64();
         let make = |msgs: &[Value]| {
@@ -312,9 +348,16 @@ impl Router {
                 }
             }
         }
-        memory::record_usage("router", model, usage.as_ref(), memory::UsageRec {
-            ms: Some(t0.elapsed().as_secs_f64() * 1000.0), ttft: first.map(|f| (f - t0).as_secs_f64() * 1000.0), ..Default::default()
-        });
+        memory::record_usage(
+            "router",
+            model,
+            usage.as_ref(),
+            memory::UsageRec {
+                ms: Some(t0.elapsed().as_secs_f64() * 1000.0),
+                ttft: first.map(|f| (f - t0).as_secs_f64() * 1000.0),
+                ..Default::default()
+            },
+        );
         let (content, leaked) = dsml::split(&content);
         if content.len() > sent {
             self.emit(json!({"type": "stream", "sid": sid, "delta": &content[sent..]}), cid);
@@ -354,7 +397,12 @@ impl Router {
             if let Some(m) = bots::get(i) {
                 let ins = m["instructions"].as_str().unwrap_or("");
                 let role = py::head(&(if ins.is_empty() { "职责没写明，看群里的对话" } else { ins }).replace('\n', " "), 120);
-                lines.push(format!("- {}{}{}：{role}", py::str_of(&m["name"]), if i == self.bot_id { "（你）" } else { "" }, if Some(i) == lead_id { "（协调者）" } else { "" }));
+                lines.push(format!(
+                    "- {}{}{}：{role}",
+                    py::str_of(&m["name"]),
+                    if i == self.bot_id { "（你）" } else { "" },
+                    if Some(i) == lead_id { "（协调者）" } else { "" }
+                ));
             }
         }
         let lead = if lead_id == Some(self.bot_id) {
@@ -396,7 +444,11 @@ impl Router {
             .take(30)
             .map(|b| {
                 let ins = b["instructions"].as_str().unwrap_or("");
-                format!("- {}：{}", py::str_of(&b["name"]), py::head(&(if ins.is_empty() { "职责没写明" } else { ins }).replace('\n', " "), 80))
+                format!(
+                    "- {}：{}",
+                    py::str_of(&b["name"]),
+                    py::head(&(if ins.is_empty() { "职责没写明" } else { ins }).replace('\n', " "), 80)
+                )
             })
             .collect();
         if rows.len() > 30 {
@@ -409,7 +461,10 @@ impl Router {
         let (client, model) = providers::client_for("router")?;
         let b = self.bot();
         let cid = ctx.chat["id"].as_i64().unwrap_or(0);
-        let last = crate::db::scalar("select content from messages where chat_id=? and role='user' order by id desc limit 1", rusqlite::params![cid]);
+        let last = crate::db::scalar(
+            "select content from messages where chat_id=? and role='user' order by id desc limit 1",
+            rusqlite::params![cid],
+        );
         let probe = match &ctx.turn.woke {
             Some(w) => w.text.clone(),
             None => last.as_str().unwrap_or("").to_string(),
@@ -528,7 +583,9 @@ impl Router {
     }
 
     async fn call_tool(self: &Arc<Self>, ctx: &mut Ctx, name: &str, args: Value) -> Out {
-        let s = |k: &str| -> String { args[k].as_str().map(String::from).unwrap_or_else(|| if args[k].is_null() { String::new() } else { py::str_of(&args[k]) }) };
+        let s = |k: &str| -> String {
+            args[k].as_str().map(String::from).unwrap_or_else(|| if args[k].is_null() { String::new() } else { py::str_of(&args[k]) })
+        };
         let chat_id = ctx.chat["id"].as_i64().unwrap_or(0);
         match name {
             "dispatch" => {
@@ -577,7 +634,8 @@ impl Router {
                     return format!("已派发任务 #{}，做完后结果会自动发给 {}", task.id, dm::name_of(Some(r.bot))).into();
                 }
                 if let Some(m) = mac {
-                    return format!("已派发任务 #{}，在用户的 Mac「{}」上做（开始前会先请用户确认）", task.id, py::str_of(&m["name"])).into();
+                    return format!("已派发任务 #{}，在用户的 Mac「{}」上做（开始前会先请用户确认）", task.id, py::str_of(&m["name"]))
+                        .into();
                 }
                 format!("已派发任务 #{}", task.id).into()
             }
@@ -587,14 +645,23 @@ impl Router {
                     return "没发：这是你自己".into();
                 }
                 let Some(to) = to else {
-                    let others: Vec<String> = bots::list_bots().iter().filter(|b| b["id"].as_i64() != Some(self.bot_id)).map(|b| py::str_of(&b["name"])).collect();
+                    let others: Vec<String> = bots::list_bots()
+                        .iter()
+                        .filter(|b| b["id"].as_i64() != Some(self.bot_id))
+                        .map(|b| py::str_of(&b["name"]))
+                        .collect();
                     let fix = if self.bot()["is_primary"] == true {
                         "要用它就先用 create_bot 新建（用户在卡片上确认后建好），不要让用户自己去设置里建".to_string()
                     } else {
                         format!("需要这样一个 Bot 的话，私信主 Bot「{}」请它新建", bots::primary_name())
                     };
                     let o = others.join("、");
-                    return format!("没发：没有叫 {} 的其他 Bot（没建成或已删除，记忆里说有也不算）。现有：{}。{fix}", py::str_of(&args["to"]), if o.is_empty() { "无" } else { &o }).into();
+                    return format!(
+                        "没发：没有叫 {} 的其他 Bot（没建成或已删除，记忆里说有也不算）。现有：{}。{fix}",
+                        py::str_of(&args["to"]),
+                        if o.is_empty() { "无" } else { &o }
+                    )
+                    .into();
                 };
                 if ctx.chat["kind"] == "group" && bots::ids_of(&ctx.chat).contains(&to["id"].as_i64().unwrap_or(0)) {
                     return format!("没发：{} 就在这个群里，用 handoff 交给它", py::str_of(&to["name"])).into();
@@ -648,7 +715,11 @@ impl Router {
                         st.reply = None;
                     }
                 }
-                let reason = t!("{name} 收到 {sender} 的新消息后自己取消的", name = self.bot()["name"].as_str().unwrap_or(""), sender = dm::name_of(Some(woke.from)));
+                let reason = t!(
+                    "{name} 收到 {sender} 的新消息后自己取消的",
+                    name = self.bot()["name"].as_str().unwrap_or(""),
+                    sender = dm::name_of(Some(woke.from))
+                );
                 self.cancel(tid, &reason).into()
             }
             "resolve_approval" => approvals::resolve(
@@ -663,7 +734,8 @@ impl Router {
             .into(),
             "recall" => memory::recall(py::to_int(&args["id"]).unwrap_or(0), chat_id).into(),
             n if botadmin::TOOLS.contains(&n) => {
-                let out = botadmin::call(self, n, &self.bot(), chat_id, self.chat_id(), &args, ctx.turn.reply.clone(), ctx.turn.depth()).await;
+                let out =
+                    botadmin::call(self, n, &self.bot(), chat_id, self.chat_id(), &args, ctx.turn.reply.clone(), ctx.turn.depth()).await;
                 if out.starts_with("已弹出") {
                     ctx.turn_waits += 1;
                 }
@@ -710,7 +782,12 @@ impl Router {
         match r {
             Ok(m) => {
                 self.emit(json!({"type": "memories_changed"}), None);
-                format!("已记住 #{}（{}）：{}", py::str_of(&m["id"]), if m["shared"] == true { "所有 Bot 共享" } else { "只有你知道" }, py::str_of(&m["text"]))
+                format!(
+                    "已记住 #{}（{}）：{}",
+                    py::str_of(&m["id"]),
+                    if m["shared"] == true { "所有 Bot 共享" } else { "只有你知道" },
+                    py::str_of(&m["text"])
+                )
             }
             Err(e) => format!("没记住：{e}"),
         }
@@ -721,7 +798,11 @@ impl Router {
     }
 
     fn capabilities(&self) -> String {
-        let mut lines: Vec<String> = registry::all().iter().filter(|t| !t.describe.is_empty() && t.group.is_empty()).map(|t| format!("- {}：{}", t.name, t.describe)).collect();
+        let mut lines: Vec<String> = registry::all()
+            .iter()
+            .filter(|t| !t.describe.is_empty() && t.group.is_empty())
+            .map(|t| format!("- {}：{}", t.name, t.describe))
+            .collect();
         if config::get_bool("computer.enabled", true) {
             lines.push(format!(
                 "- 电脑：{}遇到登录、验证码、付款这类必须用户本人做的步骤，Worker 会在任务中途暂停，在对话里请用户「接手电脑」，用户交还后同一个任务接着做完。所以这类事情派一个任务就够，不要拆成两个任务，也不要让用户做完后再来找你。提交、付款、发送、删除这类有后果的操作，Worker 会先用 ask_approval 弹确认卡片，用户同意才做；用户要求“先问我再做”时，把这个要求写进 goal 就行。你自己也能用 look_at_screen 直接看屏幕：用户问屏幕上是什么、任务做到哪了，先看再答，不要说你看不见。",
@@ -730,12 +811,23 @@ impl Router {
         }
         let macs = if security::demo() { vec![] } else { crate::computer::link_rows() };
         if !macs.is_empty() {
-            let names: Vec<String> = macs.iter().map(|r| format!("「{}」（{}）", py::str_of(&r["name"]), if r["connected"] == true { "在线" } else { "没连上" })).collect();
+            let names: Vec<String> = macs
+                .iter()
+                .map(|r| format!("「{}」（{}）", py::str_of(&r["name"]), if r["connected"] == true { "在线" } else { "没连上" }))
+                .collect();
             lines.push(format!("- 用户的 Mac：{}。有的事只有用户自己的 Mac 才做得了（要用那台 Mac 上登录着的 App 或网站、Mac 上的文件、只装在 Mac 上的软件）：dispatch 时 mac 写那台的名字，任务就在那台 Mac 上做，开始前会请用户确认。别的事照常在你自己的电脑上做，不要写 mac。", names.join("、")));
         }
         let groups: Vec<(String, Vec<String>)> = registry::by_group()
             .into_iter()
-            .map(|(srv, ts)| (srv, ts.iter().filter(|t| t.where_.contains(&registry::WORKER)).map(|t| t.name.split_once("__").map(|x| x.1.to_string()).unwrap_or_default()).collect()))
+            .map(|(srv, ts)| {
+                (
+                    srv,
+                    ts.iter()
+                        .filter(|t| t.where_.contains(&registry::WORKER))
+                        .map(|t| t.name.split_once("__").map(|x| x.1.to_string()).unwrap_or_default())
+                        .collect(),
+                )
+            })
             .collect();
         let label = |n: &str| -> String {
             let t = catalog::title(n);
@@ -748,7 +840,10 @@ impl Router {
         }
         let off: Vec<String> = mcp_hub::all_apps().into_iter().filter(|n| !groups.iter().any(|(g, _)| g == n)).collect();
         if !off.is_empty() {
-            lines.push(format!("- 未连接的应用（现在用不了，请用户到「应用」页面重新连接）：{}", off.iter().map(|n| label(n)).collect::<Vec<_>>().join(", ")));
+            lines.push(format!(
+                "- 未连接的应用（现在用不了，请用户到「应用」页面重新连接）：{}",
+                off.iter().map(|n| label(n)).collect::<Vec<_>>().join(", ")
+            ));
         }
         lines.join("\n")
     }
@@ -819,7 +914,14 @@ impl Router {
             .iter()
             .map(|t| {
                 let s = t.st.lock();
-                format!("#{} [{}] {} 步数={} {}", t.id, if s.waiting_approval.is_some() { "等待确认".to_string() } else { s.status.clone() }, t.mode, s.steps, py::head(&t.goal, 50))
+                format!(
+                    "#{} [{}] {} 步数={} {}",
+                    t.id,
+                    if s.waiting_approval.is_some() { "等待确认".to_string() } else { s.status.clone() },
+                    t.mode,
+                    s.steps,
+                    py::head(&t.goal, 50)
+                )
             })
             .collect();
         if rs.is_empty() { "暂无任务".into() } else { rs.join("\n") }
@@ -841,7 +943,11 @@ impl Router {
                 }
             }
             let goal = format!("{}{}", t2.goal, t2.notes);
-            let r = if t2.mode == "heavy" { worker::run_heavy(t2.clone()).await } else { worker::run_worker(t2.clone(), goal, String::new()).await };
+            let r = if t2.mode == "heavy" {
+                worker::run_heavy(t2.clone()).await
+            } else {
+                worker::run_worker(t2.clone(), goal, String::new()).await
+            };
             r.map(|s| {
                 t2.st.lock().result = s;
                 None
@@ -949,7 +1055,12 @@ impl Router {
         t.cancel.cancel();
         memory::update_meta(tid, &json!({"status": "cancelled", "elapsed": py::round0(py::now() - started), "steps": steps}));
         tasklog::close(&t, "cancelled", &result);
-        self.add("task", &t!("[任务 #{id} 已取消：{reason}]", id = tid, reason = reason), Some(t.chat_id), json!({"kind": "cancel", "task_id": tid}));
+        self.add(
+            "task",
+            &t!("[任务 #{id} 已取消：{reason}]", id = tid, reason = reason),
+            Some(t.chat_id),
+            json!({"kind": "cancel", "task_id": tid}),
+        );
         self.emit(json!({"type": "task", "task": t.public()}), Some(t.chat_id));
         t!("已取消 #{id}", id = tid)
     }

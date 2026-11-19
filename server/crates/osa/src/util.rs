@@ -92,7 +92,13 @@ pub fn normpath(path: &str) -> String {
     if path.is_empty() {
         return ".".into();
     }
-    let initial = if path.starts_with("//") && !path.starts_with("///") { 2 } else if path.starts_with('/') { 1 } else { 0 };
+    let initial = if path.starts_with("//") && !path.starts_with("///") {
+        2
+    } else if path.starts_with('/') {
+        1
+    } else {
+        0
+    };
     let mut parts: Vec<&str> = vec![];
     for comp in path.split('/') {
         if comp.is_empty() || comp == "." {

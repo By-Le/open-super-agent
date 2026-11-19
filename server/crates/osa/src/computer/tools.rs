@@ -11,8 +11,13 @@ pub async fn release() {}
 
 fn names() -> Vec<String> {
     let s = crate::assets::schemas();
-    s["computer_schemas"].as_array().into_iter().chain(s["desk_schemas"].as_array()).flatten()
-        .filter_map(|x| x["function"]["name"].as_str().map(String::from)).collect()
+    s["computer_schemas"]
+        .as_array()
+        .into_iter()
+        .chain(s["desk_schemas"].as_array())
+        .flatten()
+        .filter_map(|x| x["function"]["name"].as_str().map(String::from))
+        .collect()
 }
 
 pub fn is_name(name: &str) -> bool {
@@ -23,7 +28,13 @@ pub fn is_desktop(name: &str) -> bool {
     crate::assets::schemas()["desk_schemas"].as_array().is_some_and(|a| a.iter().any(|x| x["function"]["name"] == name))
 }
 
-pub async fn call(_task: &Arc<Task>, _name: &str, _args: &Value, _progress: &(dyn Fn(String) + Sync), _key: Option<&str>) -> (String, Option<Vec<u8>>) {
+pub async fn call(
+    _task: &Arc<Task>,
+    _name: &str,
+    _args: &Value,
+    _progress: &(dyn Fn(String) + Sync),
+    _key: Option<&str>,
+) -> (String, Option<Vec<u8>>) {
     ("电脑现在用不了（Rust 版还没有电脑）。".into(), None)
 }
 

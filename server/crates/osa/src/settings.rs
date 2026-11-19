@@ -11,7 +11,13 @@ use std::collections::HashMap;
 pub const EDITABLE_LIMITS: [&str; 4] = ["daily_token_budget", "worker_max_steps", "task_timeout_s", "approval_timeout_s"];
 
 pub fn role_names() -> HashMap<&'static str, &'static str> {
-    HashMap::from([("router", "对话"), ("worker", "后台任务"), ("reviewer", "Heavy 汇总"), ("filter", "整理和过滤"), ("embedding", "按意思检索")])
+    HashMap::from([
+        ("router", "对话"),
+        ("worker", "后台任务"),
+        ("reviewer", "Heavy 汇总"),
+        ("filter", "整理和过滤"),
+        ("embedding", "按意思检索"),
+    ])
 }
 
 /// config.yaml 里原来的电脑设置：界面上选回“自动”时用
@@ -57,7 +63,8 @@ pub mod pc {
     }
 
     pub fn choices() -> Vec<&'static str> {
-        let want: Vec<String> = config::get("computer.choices").as_array().map(|a| a.iter().map(crate::py::str_of).collect()).unwrap_or_default();
+        let want: Vec<String> =
+            config::get("computer.choices").as_array().map(|a| a.iter().map(crate::py::str_of).collect()).unwrap_or_default();
         BACKENDS.iter().copied().filter(|b| (want.is_empty() || want.iter().any(|w| w == b)) && (*b != "host" || host_allowed())).collect()
     }
 
@@ -111,7 +118,11 @@ pub mod pc {
     }
 
     pub fn available() -> Vec<Value> {
-        let host = if host_allowed() { json!({"id": "host", "ok": chrome_path().is_some()}) } else { json!({"id": "host", "ok": false, "locked": true}) };
+        let host = if host_allowed() {
+            json!({"id": "host", "ok": chrome_path().is_some()})
+        } else {
+            json!({"id": "host", "ok": false, "locked": true})
+        };
         let key = key_source();
         let why = docker_problem();
         vec![host, json!({"id": "local", "ok": why.is_empty(), "why": why}), json!({"id": "instabox", "ok": !key.is_empty(), "key": key})]
@@ -150,7 +161,8 @@ pub fn apply() {
         if let Some(p) = o.get("computer_parallel") {
             c["computer"]["parallel"] = p.clone();
         }
-        let b = o.get("computer_backend").and_then(|b| b.as_str()).filter(|b| pc::BACKENDS.contains(b) && (*b != "host" || pc::host_allowed()));
+        let b =
+            o.get("computer_backend").and_then(|b| b.as_str()).filter(|b| pc::BACKENDS.contains(b) && (*b != "host" || pc::host_allowed()));
         c["computer"]["backend"] = match b {
             Some(b) => json!(b),
             None => orig.get("backend").cloned().unwrap_or(json!("auto")),
@@ -276,7 +288,10 @@ pub fn save(data: &Value) -> Result<Value, String> {
             if roles_cfg.get(&role).is_none() {
                 continue;
             }
-            let mut v: Map<String, Value> = ["provider", "model", "thinking", "reasoning_effort"].iter().filter_map(|k| v.get(*k).map(|x| (k.to_string(), x.clone()))).collect();
+            let mut v: Map<String, Value> = ["provider", "model", "thinking", "reasoning_effort"]
+                .iter()
+                .filter_map(|k| v.get(*k).map(|x| (k.to_string(), x.clone())))
+                .collect();
             if let Some(p) = v.get("provider") {
                 let p = py::str_of(p);
                 if !providers::exists(&p) {
@@ -382,7 +397,7 @@ pub fn save(data: &Value) -> Result<Value, String> {
     memory::set_setting("overrides", &Value::Object(o));
     apply();
     if has("embedding") {
-        crate::search::wake();   // 换了模型：后台重新算向量
+        crate::search::wake(); // 换了模型：后台重新算向量
     }
     Ok(public())
 }
@@ -433,7 +448,10 @@ async fn check_provider(Body(d): Body) -> Res {
     security::check_provider_url(&url).await?;
     let mut key = d["api_key"].as_str().unwrap_or("").trim().to_string();
     let name = if py::truthy(&d["name"]) { py::str_of(&d["name"]) } else { String::new() };
-    if key.is_empty() && providers::exists(&name) && providers::same_origin(&url, providers::describe(&name)["base_url"].as_str().unwrap_or("")) {
+    if key.is_empty()
+        && providers::exists(&name)
+        && providers::same_origin(&url, providers::describe(&name)["base_url"].as_str().unwrap_or(""))
+    {
         key = providers::api_key(&name);
     }
     ok(providers::check(&url, &key).await)

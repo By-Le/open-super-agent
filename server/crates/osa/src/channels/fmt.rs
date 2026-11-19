@@ -59,11 +59,11 @@ pub fn split(text: &str, limit: usize) -> Vec<String> {
         if !fence {
             let half = cur.len() / 2;
             let blanks: Vec<usize> = cur.iter().enumerate().filter(|(i, x)| x.trim().is_empty() && *i >= half).map(|(i, _)| i).collect();
-            if let Some(&b) = blanks.last() {
-                if !cur[b..].iter().any(|x| is_fence(x)) {
-                    carry = cur[b + 1..].to_vec();
-                    cur.truncate(b);
-                }
+            if let Some(&b) = blanks.last()
+                && !cur[b..].iter().any(|x| is_fence(x))
+            {
+                carry = cur[b + 1..].to_vec();
+                cur.truncate(b);
             }
         }
         let body = cur.join("\n").trim_matches('\n').to_string();
@@ -128,7 +128,8 @@ fn inline(text: &str) -> String {
     let t = sub(&STRIKE, &t, |m| format!("<s>{}</s>", g(m, 1)));
     let t = sub(&BULLET, &t, |m| format!("{}• ", g(m, 1)));
     let t = sub(&RULE, &t, |_| "──────".to_string());
-    let t = sub(&QUOTE, &t, |m| format!("<blockquote>{}</blockquote>\n", sub(&QUOTE_MARK, g(m, 0).trim_end_matches('\n'), |_| String::new())));
+    let t =
+        sub(&QUOTE, &t, |m| format!("<blockquote>{}</blockquote>\n", sub(&QUOTE_MARK, g(m, 0).trim_end_matches('\n'), |_| String::new())));
     let t = sub(&TABLE, &t, |m| format!("<pre>{}</pre>\n", g(m, 0).trim_end()));
     let k = keep.borrow();
     sub(&HOLD, &t, |m| k.get(g(m, 1).parse::<usize>().unwrap_or(0)).cloned().unwrap_or_default())
@@ -242,7 +243,10 @@ mod tests {
 
     #[test]
     fn html() {
-        assert_eq!(telegram_html("# 标题\n**粗** *斜* `a<b` [x](http://a)"), "<b>标题</b>\n<b>粗</b> <i>斜</i> <code>a&lt;b</code> <a href=\"http://a\">x</a>");
+        assert_eq!(
+            telegram_html("# 标题\n**粗** *斜* `a<b` [x](http://a)"),
+            "<b>标题</b>\n<b>粗</b> <i>斜</i> <code>a&lt;b</code> <a href=\"http://a\">x</a>"
+        );
         assert_eq!(telegram_html("```py\nx<1\n```"), "<pre><code class=\"language-py\">x&lt;1</code></pre>");
         assert_eq!(dingtalk_md("a\nb"), "a  \nb");
         let parts = split(&"字".repeat(50), 20);

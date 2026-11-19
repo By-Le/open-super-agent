@@ -86,7 +86,11 @@ pub trait Auth: Send + Sync {
     /// 请求前要带的 Authorization（令牌过期了先刷新）。protocol：已经商定的协议版本
     fn header(&self, protocol: Option<String>) -> futures::future::BoxFuture<'_, Option<String>>;
     /// 收到 401：走完整的授权（可能要等用户在弹窗里登录），成功后调用方重发一次
-    fn unauthorized(&self, www_authenticate: Option<String>, protocol: Option<String>) -> futures::future::BoxFuture<'_, Result<(), McpError>>;
+    fn unauthorized(
+        &self,
+        www_authenticate: Option<String>,
+        protocol: Option<String>,
+    ) -> futures::future::BoxFuture<'_, Result<(), McpError>>;
 }
 
 fn handle_incoming(msg: Value, pending: &Pending, out: &mpsc::UnboundedSender<Value>) {
@@ -124,7 +128,10 @@ fn handle_incoming(msg: Value, pending: &Pending, out: &mpsc::UnboundedSender<Va
 
 fn fail_all(pending: &Pending, why: &str) {
     for (_, tx) in pending.lock().drain() {
-        let _ = tx.send(Err(McpError::Rpc { code: CONNECTION_CLOSED, message: format!("Connection closed{}", if why.is_empty() { String::new() } else { format!(": {why}") }) }));
+        let _ = tx.send(Err(McpError::Rpc {
+            code: CONNECTION_CLOSED,
+            message: format!("Connection closed{}", if why.is_empty() { String::new() } else { format!(": {why}") }),
+        }));
     }
 }
 
@@ -166,7 +173,13 @@ impl Session {
         match t {
             Transport::Stdio { command, args, env } => {
                 let mut cmd = tokio::process::Command::new(&command);
-                cmd.args(&args).env_clear().envs(env).stdin(std::process::Stdio::piped()).stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::inherit()).kill_on_drop(true);
+                cmd.args(&args)
+                    .env_clear()
+                    .envs(env)
+                    .stdin(std::process::Stdio::piped())
+                    .stdout(std::process::Stdio::piped())
+                    .stderr(std::process::Stdio::inherit())
+                    .kill_on_drop(true);
                 #[cfg(unix)]
                 cmd.process_group(0);
                 let mut child = cmd.spawn().map_err(|e| McpError::Transport(format!("[Errno 2] {e}: '{command}'")))?;
@@ -207,7 +220,11 @@ impl Session {
                         let id = m["id"].as_i64();
                         let mut tried_auth = false;
                         let r = loop {
-                            let mut rb = client.post(&url).header("accept", "application/json, text/event-stream").header("content-type", "application/json").json(&m);
+                            let mut rb = client
+                                .post(&url)
+                                .header("accept", "application/json, text/event-stream")
+                                .header("content-type", "application/json")
+                                .json(&m);
                             if let Some(s) = sid.lock().clone() {
                                 rb = rb.header("mcp-session-id", s);
                             }
@@ -215,10 +232,10 @@ impl Session {
                             if let Some(v) = pv.clone() {
                                 rb = rb.header("mcp-protocol-version", v);
                             }
-                            if let Some(a) = &auth {
-                                if let Some(h) = a.header(pv.clone()).await {
-                                    rb = rb.header("authorization", h);
-                                }
+                            if let Some(a) = &auth
+                                && let Some(h) = a.header(pv.clone()).await
+                            {
+                                rb = rb.header("authorization", h);
                             }
                             let r = match rb.send().await {
                                 Ok(r) => r,
@@ -238,10 +255,10 @@ impl Session {
                         let r = match r {
                             Ok(r) => r,
                             Err(e) => {
-                                if let Some(id) = id {
-                                    if let Some(tx) = p.lock().remove(&id) {
-                                        let _ = tx.send(Err(e));
-                                    }
+                                if let Some(id) = id
+                                    && let Some(tx) = p.lock().remove(&id)
+                                {
+                                    let _ = tx.send(Err(e));
                                 }
                                 continue;
                             }
@@ -254,20 +271,24 @@ impl Session {
                             continue;
                         }
                         if status == 404 && sid.lock().is_some() {
-                            if let Some(id) = id {
-                                if let Some(tx) = p.lock().remove(&id) {
-                                    let _ = tx.send(Err(McpError::Rpc { code: CONNECTION_CLOSED, message: "Session terminated".into() }));
-                                }
+                            if let Some(id) = id
+                                && let Some(tx) = p.lock().remove(&id)
+                            {
+                                let _ = tx.send(Err(McpError::Rpc { code: CONNECTION_CLOSED, message: "Session terminated".into() }));
                             }
                             continue;
                         }
                         if !(200..300).contains(&status) {
                             let body = r.text().await.unwrap_or_default();
-                            let err = if status == 401 { McpError::Unauthorized(format!("401 Unauthorized: {}", crate::py::head(&body, 200))) } else { McpError::Transport(format!("HTTP {status}: {}", crate::py::head(&body, 200))) };
-                            if let Some(id) = id {
-                                if let Some(tx) = p.lock().remove(&id) {
-                                    let _ = tx.send(Err(err));
-                                }
+                            let err = if status == 401 {
+                                McpError::Unauthorized(format!("401 Unauthorized: {}", crate::py::head(&body, 200)))
+                            } else {
+                                McpError::Transport(format!("HTTP {status}: {}", crate::py::head(&body, 200)))
+                            };
+                            if let Some(id) = id
+                                && let Some(tx) = p.lock().remove(&id)
+                            {
+                                let _ = tx.send(Err(err));
                             }
                             continue;
                         }
@@ -284,10 +305,8 @@ impl Session {
                                     buf.push_str(&String::from_utf8_lossy(&b));
                                     for (_, data) in sse_events(&mut buf) {
                                         if let Ok(v) = serde_json::from_str::<Value>(&data) {
-                                            if is_init {
-                                                if let Some(pv) = v["result"]["protocolVersion"].as_str() {
-                                                    *proto2.lock() = Some(pv.to_string());
-                                                }
+                                            if is_init && let Some(pv) = v["result"]["protocolVersion"].as_str() {
+                                                *proto2.lock() = Some(pv.to_string());
                                             }
                                             handle_incoming(v, &p2, &back2);
                                         }
@@ -300,10 +319,8 @@ impl Session {
                                 tokio::spawn(fut);
                             }
                         } else if let Ok(v) = r.json::<Value>().await {
-                            if is_init {
-                                if let Some(pv) = v["result"]["protocolVersion"].as_str() {
-                                    *proto.lock() = Some(pv.to_string());
-                                }
+                            if is_init && let Some(pv) = v["result"]["protocolVersion"].as_str() {
+                                *proto.lock() = Some(pv.to_string());
                             }
                             handle_incoming(v, &p, &back);
                         }
@@ -316,10 +333,10 @@ impl Session {
                 let mut tried_auth = false;
                 let r = loop {
                     let mut rb = client.get(&url).header("accept", "text/event-stream");
-                    if let Some(a) = &auth {
-                        if let Some(h) = a.header(None).await {
-                            rb = rb.header("authorization", h);
-                        }
+                    if let Some(a) = &auth
+                        && let Some(h) = a.header(None).await
+                    {
+                        rb = rb.header("authorization", h);
                     }
                     let r = rb.send().await.map_err(|e| McpError::Transport(e.to_string()))?;
                     match &auth {
@@ -361,16 +378,19 @@ impl Session {
                     fail_all(&p, "");
                 }));
                 let auth2 = auth.clone();
-                let endpoint = tokio::time::timeout(Duration::from_secs(30), ep_rx).await.map_err(|_| McpError::Transport("SSE 没有给出 endpoint".into()))?.map_err(|_| McpError::Closed(String::new()))?;
+                let endpoint = tokio::time::timeout(Duration::from_secs(30), ep_rx)
+                    .await
+                    .map_err(|_| McpError::Transport("SSE 没有给出 endpoint".into()))?
+                    .map_err(|_| McpError::Closed(String::new()))?;
                 let p = pending.clone();
                 tasks.push(tokio::spawn(async move {
                     while let Some(m) = out_rx.recv().await {
                         let id = m["id"].as_i64();
                         let mut rb = client.post(&endpoint).json(&m);
-                        if let Some(a) = &auth2 {
-                            if let Some(h) = a.header(None).await {
-                                rb = rb.header("authorization", h);
-                            }
+                        if let Some(a) = &auth2
+                            && let Some(h) = a.header(None).await
+                        {
+                            rb = rb.header("authorization", h);
                         }
                         match rb.send().await {
                             Ok(r) if r.status().is_success() => {}
@@ -421,7 +441,9 @@ impl Session {
             self.pending.lock().remove(&id);
             return Err(McpError::Rpc { code: CONNECTION_CLOSED, message: "Connection closed".into() });
         }
-        self.out.send(json!({"jsonrpc": "2.0", "id": id, "method": method, "params": params})).map_err(|_| McpError::Closed(String::new()))?;
+        self.out
+            .send(json!({"jsonrpc": "2.0", "id": id, "method": method, "params": params}))
+            .map_err(|_| McpError::Closed(String::new()))?;
         rx.await.map_err(|_| McpError::Rpc { code: CONNECTION_CLOSED, message: "Connection closed".into() })?
     }
 
@@ -484,7 +506,9 @@ fn http_client(headers: &HashMap<String, String>) -> Result<reqwest::Client, Mcp
 pub fn text_of(result: &Value) -> String {
     let parts: Vec<String> = result["content"]
         .as_array()
-        .map(|a| a.iter().map(|c| c["text"].as_str().filter(|t| !t.is_empty()).map(String::from).unwrap_or_else(|| c.to_string())).collect())
+        .map(|a| {
+            a.iter().map(|c| c["text"].as_str().filter(|t| !t.is_empty()).map(String::from).unwrap_or_else(|| c.to_string())).collect()
+        })
         .unwrap_or_default();
     let out = parts.join("\n");
     if crate::py::truthy(&result["isError"]) { format!("工具报错：{out}") } else { out }

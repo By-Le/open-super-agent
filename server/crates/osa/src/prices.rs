@@ -33,7 +33,8 @@ fn file() -> PathBuf {
 }
 
 static DATA: LazyLock<RwLock<Value>> = LazyLock::new(|| {
-    let v = std::fs::read_to_string(file()).ok().and_then(|s| serde_json::from_str::<Value>(&s).ok()).filter(|v| v["providers"].is_object());
+    let v =
+        std::fs::read_to_string(file()).ok().and_then(|s| serde_json::from_str::<Value>(&s).ok()).filter(|v| v["providers"].is_object());
     RwLock::new(v.unwrap_or(json!({"ts": 0, "providers": {}})))
 });
 static STATUS: Mutex<(String, f64)> = Mutex::new((String::new(), 0.0));
@@ -49,7 +50,11 @@ fn rate() -> f64 {
     match p["usd_rate"].as_f64().filter(|r| *r != 0.0) {
         Some(r) => r,
         None => {
-            if matches!(p["currency"].as_str(), Some("$") | Some("USD")) { 1.0 } else { 7.1 }
+            if matches!(p["currency"].as_str(), Some("$") | Some("USD")) {
+                1.0
+            } else {
+                7.1
+            }
         }
     }
 }
@@ -71,8 +76,11 @@ fn compact(raw: &Value) -> Value {
                 continue;
             }
             let vision = m["modalities"]["input"].as_array().is_some_and(|a| a.iter().any(|x| x == "image"));
-            ms.insert(mid, json!({"i": c["input"], "o": c["output"], "c": c["cache_read"], "v": vision as i64,
-                                  "t": m["type"].as_str().unwrap_or(""), "n": m["name"].as_str().unwrap_or("")}));
+            ms.insert(
+                mid,
+                json!({"i": c["input"], "o": c["output"], "c": c["cache_read"], "v": vision as i64,
+                                  "t": m["type"].as_str().unwrap_or(""), "n": m["name"].as_str().unwrap_or("")}),
+            );
         }
         let api = p["api"].as_str().unwrap_or("").to_string();
         let name = p["name"].as_str().filter(|s| !s.is_empty()).map(String::from).unwrap_or_else(|| pid.clone());
@@ -120,7 +128,8 @@ pub async fn price_loop() {
 
 pub fn info() -> Value {
     let d = DATA.read();
-    let n: usize = d["providers"].as_object().map(|o| o.values().map(|p| p["models"].as_object().map(|m| m.len()).unwrap_or(0)).sum()).unwrap_or(0);
+    let n: usize =
+        d["providers"].as_object().map(|o| o.values().map(|p| p["models"].as_object().map(|m| m.len()).unwrap_or(0)).sum()).unwrap_or(0);
     json!({"source": source(), "updated": d.get("ts").cloned().unwrap_or(json!(0)), "error": STATUS.lock().0,
            "rate": rate(), "currency": config::get("pricing.currency"), "models": n})
 }
@@ -282,7 +291,8 @@ pub fn lookup(provider: &str, model: &str) -> Value {
 fn guess_kind(mid: &str) -> &'static str {
     static EMB: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"embed|bge-|/bge|^bge|m3e|gte-|\be5-").unwrap());
     static OTHER: LazyLock<Regex> = LazyLock::new(|| {
-        Regex::new(r"tts|whisper|dall-e|gpt-image|sora|wanx|cogview|seedream|seedance|kolors|flux|stable-diffusion|asr|speech|audio").unwrap()
+        Regex::new(r"tts|whisper|dall-e|gpt-image|sora|wanx|cogview|seedream|seedance|kolors|flux|stable-diffusion|asr|speech|audio")
+            .unwrap()
     });
     let x = mid.to_lowercase();
     if EMB.is_match(&x) {
@@ -306,7 +316,13 @@ pub fn annotate(provider: &str, ids: &[String]) -> Vec<Value> {
         if let Some((m, _)) = if local { None } else { find(provider, mid) } {
             let t = m["t"].as_str().unwrap_or("");
             item["vision"] = json!(py::truthy(&m["v"]));
-            item["kind"] = json!(if ["embedding", "chat", "reranking"].contains(&t) { t } else if !t.is_empty() { "other" } else { "chat" });
+            item["kind"] = json!(if ["embedding", "chat", "reranking"].contains(&t) {
+                t
+            } else if !t.is_empty() {
+                "other"
+            } else {
+                "chat"
+            });
             if let Some(i) = m["i"].as_f64() {
                 item["input"] = json!(py::round_n(i * r, 4));
                 item["output"] = json!(py::round_n(m["o"].as_f64().unwrap_or(0.0) * r, 4));
@@ -336,7 +352,8 @@ pub fn models_of(provider: &str) -> Vec<String> {
 pub fn cost(provider: &str, model: &str, hit: i64, miss: i64, out: i64, peak: bool) -> f64 {
     if let Some(man) = manual(model) {
         let k = if peak { 0 } else { 1 };
-        return (hit as f64 * tier(&man["cache_hit"], k) + miss as f64 * tier(&man["input"], k) + out as f64 * tier(&man["output"], k)) / 1e6;
+        return (hit as f64 * tier(&man["cache_hit"], k) + miss as f64 * tier(&man["input"], k) + out as f64 * tier(&man["output"], k))
+            / 1e6;
     }
     let p = provider_cfg(provider);
     if p.as_object().is_some_and(|o| !o.is_empty()) && is_local(&p) {

@@ -121,7 +121,13 @@ pub fn works(kind: &str) -> bool {
     let ok = match wrap(kind, &argv, &d, &d, &d, false, &reads) {
         Ok(a) => {
             let mut cmd = std::process::Command::new(&a[0]);
-            cmd.args(&a[1..]).current_dir(&d).env_clear().envs(env_of(&d)).stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::piped());
+            cmd.args(&a[1..])
+                .current_dir(&d)
+                .env_clear()
+                .envs(env_of(&d))
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::piped());
             match cmd.spawn() {
                 Ok(c) => {
                     let (tx, rx) = std::sync::mpsc::channel();
@@ -246,7 +252,13 @@ fn inputs_of(files: &Value, main: &str) -> Result<Vec<(String, String)>, String>
         let raw = name.replace('\\', "/");
         let absolute = raw.starts_with('/');
         let parts: Vec<&str> = raw.split('/').filter(|p| !p.is_empty() && *p != ".").collect();
-        let p = if absolute { format!("/{}", parts.join("/")) } else if parts.is_empty() { ".".into() } else { parts.join("/") };
+        let p = if absolute {
+            format!("/{}", parts.join("/"))
+        } else if parts.is_empty() {
+            ".".into()
+        } else {
+            parts.join("/")
+        };
         if parts.is_empty() || absolute || parts.contains(&"..") || p == main || p == "." || p.starts_with('-') {
             return Err(format!("文件名不行：{name}（写相对路径，不能有 ..）"));
         }
@@ -312,7 +324,12 @@ fn macos_stub(p: &str) -> bool {
     // /usr/bin/python3 只是个壳：没装命令行工具时一跑就弹安装框
     cfg!(target_os = "macos")
         && real(p) == "/usr/bin/python3"
-        && !std::process::Command::new("xcode-select").arg("-p").stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).status().is_ok_and(|s| s.success())
+        && !std::process::Command::new("xcode-select")
+            .arg("-p")
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .is_ok_and(|s| s.success())
 }
 
 fn uv_find() -> Option<String> {
@@ -345,7 +362,14 @@ async fn python() -> Option<String> {
         return Some(p);
     }
     let uv = which("uv")?;
-    let ok = tokio::process::Command::new(uv).args(["python", "install"]).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).status().await.ok()?.success();
+    let ok = tokio::process::Command::new(uv)
+        .args(["python", "install"])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .await
+        .ok()?
+        .success();
     if !ok {
         return None;
     }
@@ -381,7 +405,8 @@ fn reads_of(lang: &str, exe: &str) -> Vec<String> {
         dirs.extend(pre);
     }
     dirs.push(parent2);
-    let mut out: Vec<String> = dirs.iter().filter(|d| !d.is_empty()).map(|d| real(d)).filter(|d| d != "/").collect::<HashSet<_>>().into_iter().collect();
+    let mut out: Vec<String> =
+        dirs.iter().filter(|d| !d.is_empty()).map(|d| real(d)).filter(|d| d != "/").collect::<HashSet<_>>().into_iter().collect();
     out.sort();
     out
 }
@@ -400,7 +425,12 @@ fn hidden() -> Vec<String> {
         return v;
     }
     let top: Vec<String> = match std::fs::read_dir("/") {
-        Ok(rd) => rd.filter_map(|e| e.ok()).map(|e| e.file_name().to_string_lossy().into_owned()).filter(|n| !SYSTEM.contains(&n.as_str()) && n != "etc").map(|n| format!("/{n}")).collect(),
+        Ok(rd) => rd
+            .filter_map(|e| e.ok())
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .filter(|n| !SYSTEM.contains(&n.as_str()) && n != "etc")
+            .map(|n| format!("/{n}"))
+            .collect(),
         Err(_) => ["/root", "/home", "/opt", "/srv", "/mnt", "/media", "/var", "/run", "/boot"].iter().map(|s| s.to_string()).collect(),
     };
     let mut s: Vec<String> = std::iter::once("/tmp".to_string()).chain(top).collect::<HashSet<_>>().into_iter().collect();
@@ -410,8 +440,27 @@ fn hidden() -> Vec<String> {
 }
 
 const ETC_KEEP: [&str; 21] = [
-    "passwd", "group", "nsswitch.conf", "hosts", "resolv.conf", "localtime", "timezone", "ld.so.cache", "ld.so.conf", "ld.so.conf.d", "ssl",
-    "ca-certificates", "pki", "alternatives", "mime.types", "fonts", "os-release", "lsb-release", "debian_version", "python3", "matplotlibrc",
+    "passwd",
+    "group",
+    "nsswitch.conf",
+    "hosts",
+    "resolv.conf",
+    "localtime",
+    "timezone",
+    "ld.so.cache",
+    "ld.so.conf",
+    "ld.so.conf.d",
+    "ssl",
+    "ca-certificates",
+    "pki",
+    "alternatives",
+    "mime.types",
+    "fonts",
+    "os-release",
+    "lsb-release",
+    "debian_version",
+    "python3",
+    "matplotlibrc",
 ];
 
 static SECRET: LazyLock<regex::Regex> = LazyLock::new(|| regex::Regex::new(r"(?i)KEY|TOKEN|SECRET|PASSW|CREDENTIAL|^OSA_").unwrap());
@@ -421,7 +470,15 @@ pub fn env_of(tmp: &Path) -> Vec<(String, String)> {
     let tmp = tmp.to_string_lossy().into_owned();
     let mut env: Vec<(String, String)> = std::env::vars().filter(|(k, _)| !SECRET.is_match(k)).collect();
     let lang = std::env::var("LANG").ok().filter(|l| !l.is_empty()).unwrap_or_else(|| "C.UTF-8".into());
-    for (k, v) in [("HOME", tmp.clone()), ("TMPDIR", tmp), ("PYTHONUTF8", "1".into()), ("PYTHONDONTWRITEBYTECODE", "1".into()), ("PYTHONUNBUFFERED", "1".into()), ("MPLBACKEND", "Agg".into()), ("LANG", lang)] {
+    for (k, v) in [
+        ("HOME", tmp.clone()),
+        ("TMPDIR", tmp),
+        ("PYTHONUTF8", "1".into()),
+        ("PYTHONDONTWRITEBYTECODE", "1".into()),
+        ("PYTHONUNBUFFERED", "1".into()),
+        ("MPLBACKEND", "Agg".into()),
+        ("LANG", lang),
+    ] {
         env.retain(|(x, _)| x != k);
         env.push((k.to_string(), v));
     }
@@ -437,7 +494,13 @@ fn sbpl(s: &str) -> String {
 }
 
 fn seatbelt(ws: &str, tmp: &str, reads: &[String], net: bool) -> String {
-    let wh = |paths: &[String]| paths.iter().map(|p| if Path::new(p).is_file() { format!("(literal {})", sbpl(p)) } else { format!("(subpath {})", sbpl(p)) }).collect::<Vec<_>>().join(" ");
+    let wh = |paths: &[String]| {
+        paths
+            .iter()
+            .map(|p| if Path::new(p).is_file() { format!("(literal {})", sbpl(p)) } else { format!("(subpath {})", sbpl(p)) })
+            .collect::<Vec<_>>()
+            .join(" ")
+    };
     let hide: Vec<String> = hidden().into_iter().filter(|h| Path::new(h).exists()).collect();
     let mut allow: Vec<String> = reads.to_vec();
     allow.push(ws.into());
@@ -499,8 +562,24 @@ fn bwrap(argv: &[String], ws: &str, run: &str, reads: &[String]) -> Vec<String> 
     let (hide, ro, rw) = view(ws, reads);
     let cfg = config_file();
     let mut a: Vec<String> = [
-        "bwrap", "--die-with-parent", "--new-session", "--cap-drop", "ALL", "--unshare-user-try", "--unshare-ipc", "--unshare-pid", "--unshare-uts",
-        "--unshare-cgroup-try", "--unshare-net", "--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc",
+        "bwrap",
+        "--die-with-parent",
+        "--new-session",
+        "--cap-drop",
+        "ALL",
+        "--unshare-user-try",
+        "--unshare-ipc",
+        "--unshare-pid",
+        "--unshare-uts",
+        "--unshare-cgroup-try",
+        "--unshare-net",
+        "--ro-bind",
+        "/",
+        "/",
+        "--dev",
+        "/dev",
+        "--proc",
+        "/proc",
     ]
     .iter()
     .map(|s| s.to_string())
@@ -532,7 +611,10 @@ fn unshare(argv: &[String], ws: &str, run: &str, reads: &[String]) -> Result<Vec
     let (hide, ro, rw) = view(ws, reads);
     let py = python_known().ok_or("unshare 要用 Python")?;
     let spec = json!({"hide": hide, "ro": ro, "rw": rw, "cfg": config_file(), "cwd": run, "argv": argv});
-    let mut a: Vec<String> = ["unshare", "--user", "--map-root-user", "--mount", "--pid", "--fork", "--net", "--ipc", "--uts", "--"].iter().map(|s| s.to_string()).collect();
+    let mut a: Vec<String> = ["unshare", "--user", "--map-root-user", "--mount", "--pid", "--fork", "--net", "--ipc", "--uts", "--"]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
     a.extend([py, "-I".into(), "-S".into(), "-c".into(), PRELUDE.into(), py::dumps(&spec, true)]);
     Ok(a)
 }
@@ -568,7 +650,14 @@ async fn spawn(argv: &[String], cwd: &Path, env: Vec<(String, String)>, timeout:
     let (mut rd, wr) = std::io::pipe()?;
     let wr2 = wr.try_clone()?;
     let mut cmd = tokio::process::Command::new(&argv[0]);
-    cmd.args(&argv[1..]).current_dir(cwd).env_clear().envs(env).stdin(std::process::Stdio::null()).stdout(wr).stderr(wr2).kill_on_drop(true);
+    cmd.args(&argv[1..])
+        .current_dir(cwd)
+        .env_clear()
+        .envs(env)
+        .stdin(std::process::Stdio::null())
+        .stdout(wr)
+        .stderr(wr2)
+        .kill_on_drop(true);
     #[cfg(unix)]
     unsafe {
         cmd.pre_exec(|| {
@@ -644,10 +733,11 @@ fn prune(root: &Path) {
     let old = std::time::SystemTime::now() - Duration::from_secs(KEEP_DAYS * 86400);
     let Ok(rd) = std::fs::read_dir(root) else { return };
     for e in rd.filter_map(|e| e.ok()) {
-        if let Ok(md) = std::fs::symlink_metadata(e.path()) {
-            if md.is_dir() && md.modified().is_ok_and(|m| m < old) {
-                let _ = std::fs::remove_dir_all(e.path());
-            }
+        if let Ok(md) = std::fs::symlink_metadata(e.path())
+            && md.is_dir()
+            && md.modified().is_ok_and(|m| m < old)
+        {
+            let _ = std::fs::remove_dir_all(e.path());
         }
     }
 }
@@ -697,7 +787,10 @@ async fn on_host(lang: &str, code: &str, inputs: &[(String, String)], timeout: i
     }
     let tmp = if kind == "sandbox-exec" { tempdir("osa-run-").map_err(|e| e.to_string())? } else { PathBuf::from("/tmp") };
     let argv: Vec<String> = if lang == "python" { vec![exe.clone(), "-B".into(), main.clone()] } else { vec![exe.clone(), main.clone()] };
-    let reads = { let (l, e) = (lang.to_string(), exe.clone()); tokio::task::spawn_blocking(move || reads_of(&l, &e)).await.unwrap_or_default() };
+    let reads = {
+        let (l, e) = (lang.to_string(), exe.clone());
+        tokio::task::spawn_blocking(move || reads_of(&l, &e)).await.unwrap_or_default()
+    };
     let r = match wrap(&kind, &argv, &ws, &run, &tmp, net, &reads) {
         Ok(a) => spawn(&a, &run, env_of(&tmp), timeout).await.map_err(|e| e.to_string()),
         Err(e) => Err(e),

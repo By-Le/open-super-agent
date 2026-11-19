@@ -130,7 +130,10 @@ pub fn get(mid: &str) -> Option<(String, Vec<u8>, String)> {
         return None;
     }
     let c = db::conn();
-    c.query_row("select mime, data, name from media where id=?", params![mid], |r| Ok((r.get::<_, String>(0)?, r.get::<_, Vec<u8>>(1)?, r.get::<_, String>(2).unwrap_or_default()))).ok()
+    c.query_row("select mime, data, name from media where id=?", params![mid], |r| {
+        Ok((r.get::<_, String>(0)?, r.get::<_, Vec<u8>>(1)?, r.get::<_, String>(2).unwrap_or_default()))
+    })
+    .ok()
 }
 
 pub fn info(mid: &Value) -> Option<Value> {
@@ -141,7 +144,8 @@ pub fn info(mid: &Value) -> Option<Value> {
 
 pub fn read_range(mid: &str, start: i64, length: i64) -> Vec<u8> {
     let c = db::conn();
-    c.query_row("select substr(data, ?, ?) from media where id=?", params![start + 1, length, mid], |r| r.get::<_, Vec<u8>>(0)).unwrap_or_default()
+    c.query_row("select substr(data, ?, ?) from media where id=?", params![start + 1, length, mid], |r| r.get::<_, Vec<u8>>(0))
+        .unwrap_or_default()
 }
 
 pub fn url(mid: &str) -> String {
@@ -161,7 +165,11 @@ pub fn used() -> HashSet<String> {
 
 pub fn gc() {
     let keep = used();
-    let old: Vec<String> = db::rows("select id from media where created < ?", params![py::now() - KEEP_S]).into_iter().map(|r| r.s(0)).filter(|x| !keep.contains(x)).collect();
+    let old: Vec<String> = db::rows("select id from media where created < ?", params![py::now() - KEEP_S])
+        .into_iter()
+        .map(|r| r.s(0))
+        .filter(|x| !keep.contains(x))
+        .collect();
     for x in old {
         db::exec("delete from media where id=?", params![x]);
     }
@@ -181,10 +189,10 @@ pub fn clean_attachments(items: &Value) -> Vec<Value> {
             continue;
         }
         let mut item = json!({"name": py::head(&if a["name"].is_null() { String::new() } else { py::str_of(&a["name"]) }, 200)});
-        if let Some(p) = a["path"].as_str().filter(|p| !p.trim().is_empty()) {
-            if let Ok(n) = library::norm(p, None) {
-                item["path"] = json!(n);
-            }
+        if let Some(p) = a["path"].as_str().filter(|p| !p.trim().is_empty())
+            && let Ok(n) = library::norm(p, None)
+        {
+            item["path"] = json!(n);
         }
         if let Some(m) = info(&a["media"]) {
             item["media"] = m["id"].clone();
@@ -199,10 +207,10 @@ pub fn clean_attachments(items: &Value) -> Vec<Value> {
         if item.get("path").is_none() && item.get("media").is_none() {
             continue;
         }
-        if item.get("size").is_none() {
-            if let Some(s) = a["size"].as_i64().filter(|s| *s >= 0 && a["size"].is_i64()) {
-                item["size"] = json!(s);
-            }
+        if item.get("size").is_none()
+            && let Some(s) = a["size"].as_i64().filter(|s| *s >= 0 && a["size"].is_i64())
+        {
+            item["size"] = json!(s);
         }
         if item["name"].as_str().unwrap_or("").is_empty() {
             item["name"] = json!(basename(item["path"].as_str().unwrap_or("")));
@@ -232,7 +240,11 @@ pub fn link(a: &Value) -> String {
     }
     let path = a["path"].as_str().unwrap_or("");
     let q: String = url::form_urlencoded::byte_serialize(path.as_bytes()).collect::<String>().replace('+', "%20");
-    format!("/files/download?path={}{}", q.replace("%2F", "/"), if py::truthy(&a["mac"]) { format!("&mac={}", py::to_int(&a["mac"]).unwrap_or(0)) } else { String::new() })
+    format!(
+        "/files/download?path={}{}",
+        q.replace("%2F", "/"),
+        if py::truthy(&a["mac"]) { format!("&mac={}", py::to_int(&a["mac"]).unwrap_or(0)) } else { String::new() }
+    )
 }
 
 fn vision_tests() -> serde_json::Map<String, Value> {
@@ -265,7 +277,12 @@ pub fn strip_images(msgs: &mut [Value]) -> bool {
     for m in msgs.iter_mut() {
         let Some(parts) = m["content"].as_array() else { continue };
         if parts.iter().any(|p| p["type"] == "image_url") {
-            let text = parts.iter().filter(|p| p["type"] == "text").map(|p| p["text"].as_str().unwrap_or("").to_string()).collect::<Vec<_>>().join("\n\n");
+            let text = parts
+                .iter()
+                .filter(|p| p["type"] == "text")
+                .map(|p| p["text"].as_str().unwrap_or("").to_string())
+                .collect::<Vec<_>>()
+                .join("\n\n");
             m["content"] = json!(format!("{text}\n（附带的图片没发给你：这个模型不收图片）"));
             hit = true;
         }
@@ -282,7 +299,11 @@ pub fn image_part(mid: &str) -> Option<Value> {
 }
 
 pub fn sent_text(att: &Value) -> String {
-    let what = if py::truthy(&att["media"]) { "图片已经显示在对话里" } else { "文件卡片已经显示在对话里，用户点开就能看或下载" };
+    let what = if py::truthy(&att["media"]) {
+        "图片已经显示在对话里"
+    } else {
+        "文件卡片已经显示在对话里，用户点开就能看或下载"
+    };
     format!("已发给用户：{}（{what}）。回复里不用再贴链接。", py::str_of(&att["name"]))
 }
 
@@ -316,10 +337,10 @@ mod api {
             return None;
         }
         let (ai, bi) = (a.parse::<i64>().ok(), b.parse::<i64>().ok());
-        if let (Some(x), Some(y)) = (ai, bi) {
-            if y < x {
-                return None;
-            }
+        if let (Some(x), Some(y)) = (ai, bi)
+            && y < x
+        {
+            return None;
         }
         if a.is_empty() {
             let n = bi.unwrap_or(0);

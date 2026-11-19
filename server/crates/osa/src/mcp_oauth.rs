@@ -29,7 +29,10 @@ const DEFAULT_REDIRECT: &str = "http://127.0.0.1/oauth/callback";
 
 // ---------- 存储 ----------
 fn load(name: &str) -> Value {
-    vault::get(&mcp_hub::oauth_key(name)).and_then(|s| serde_json::from_str::<Value>(&s).ok()).filter(|v| v.is_object()).unwrap_or(json!({}))
+    vault::get(&mcp_hub::oauth_key(name))
+        .and_then(|s| serde_json::from_str::<Value>(&s).ok())
+        .filter(|v| v.is_object())
+        .unwrap_or(json!({}))
 }
 
 fn put(name: &str, kv: Value) {
@@ -99,7 +102,12 @@ pub async fn login(name: &str, redirect: &str) -> Result<(String, String), Strin
     mcp_hub::save(name, &json!({"oauth_redirect": redirect, "enabled": true}))?;
     mcp_hub::disconnect(name, false).await;
     vault::delete(&mcp_hub::oauth_key(name));
-    let w = Arc::new(Login { url: watch::channel(None).0, code: watch::channel(None).0, task_done: watch::channel(false).0, state: Mutex::new(String::new()) });
+    let w = Arc::new(Login {
+        url: watch::channel(None).0,
+        code: watch::channel(None).0,
+        task_done: watch::channel(false).0,
+        state: Mutex::new(String::new()),
+    });
     LOGINS.lock().insert(name.to_string(), w.clone());
     mcp_hub::mark_needs_login(name, false);
     let (n2, w2) = (name.to_string(), w.clone());
@@ -136,7 +144,11 @@ pub async fn finish_login(state: &str, code: &str, iss: &str, error: &str) -> Op
     if !error.is_empty() {
         fail(&w, t!("授权没有完成：{error}", error = error));
     } else {
-        let _ = w.code.send(Some(Ok(Code { code: code.into(), state: state.into(), iss: if iss.is_empty() { None } else { Some(iss.into()) } })));
+        let _ = w.code.send(Some(Ok(Code {
+            code: code.into(),
+            state: state.into(),
+            iss: if iss.is_empty() { None } else { Some(iss.into()) },
+        })));
     }
     mcp_hub::set_status(&name, Later::plain("已授权，正在连接…"));
     changed();
@@ -267,7 +279,8 @@ async fn post_form(url: &str, data: &[(String, String)], headers: &[(String, Str
 
 fn prm_of(body: &str) -> Option<Value> {
     let v: Value = serde_json::from_str(body).ok()?;
-    let ok = v["resource"].is_string() && v["authorization_servers"].as_array().is_some_and(|a| !a.is_empty() && a.iter().all(|x| x.is_string()));
+    let ok = v["resource"].is_string()
+        && v["authorization_servers"].as_array().is_some_and(|a| !a.is_empty() && a.iter().all(|x| x.is_string()));
     ok.then_some(v)
 }
 
@@ -286,11 +299,11 @@ fn tidy(r: Resp) -> Resp {
     if d.get("ok") == Some(&Value::Bool(false)) {
         return Resp { status: 400, body: r.body };
     }
-    if let Some(tt) = d.get("token_type").and_then(|v| v.as_str()) {
-        if tt.to_lowercase() != "bearer" {
-            d.insert("token_type".into(), json!("Bearer"));
-            return Resp { status: 200, body: Value::Object(d).to_string() };
-        }
+    if let Some(tt) = d.get("token_type").and_then(|v| v.as_str())
+        && tt.to_lowercase() != "bearer"
+    {
+        d.insert("token_type".into(), json!("Bearer"));
+        return Resp { status: 200, body: Value::Object(d).to_string() };
     }
     r
 }
@@ -418,16 +431,17 @@ impl Provider {
         c.tokens = stored["tokens"].as_object().map(|o| Value::Object(o.clone()));
         c.client = self.client_info();
         c.expiry = None;
-        if c.tokens.is_some() {
-            if let Some(exp) = stored["expires_at"].as_f64() {
-                c.expiry = Some(exp - 30.0);
-            }
+        if c.tokens.is_some()
+            && let Some(exp) = stored["expires_at"].as_f64()
+        {
+            c.expiry = Some(exp - 30.0);
         }
         c.initialized = true;
     }
 
     fn valid(c: &Ctx) -> bool {
-        c.tokens.as_ref().is_some_and(|t| t["access_token"].as_str().is_some_and(|s| !s.is_empty())) && c.expiry.is_none_or(|e| py::now() <= e)
+        c.tokens.as_ref().is_some_and(|t| t["access_token"].as_str().is_some_and(|s| !s.is_empty()))
+            && c.expiry.is_none_or(|e| py::now() <= e)
     }
 
     fn can_refresh(c: &Ctx) -> bool {
@@ -447,16 +461,19 @@ impl Provider {
 
     fn resource_url(&self, c: &Ctx) -> String {
         let r = resource_of(&self.server_url);
-        if let Some(pr) = c.prm.as_ref().and_then(|p| p["resource"].as_str()) {
-            if resource_allowed(&r, pr) {
-                return pr.to_string();
-            }
+        if let Some(pr) = c.prm.as_ref().and_then(|p| p["resource"].as_str())
+            && resource_allowed(&r, pr)
+        {
+            return pr.to_string();
         }
         r
     }
 
     fn token_endpoint(&self, c: &Ctx) -> String {
-        c.asm.as_ref().and_then(|a| a["token_endpoint"].as_str().map(String::from)).unwrap_or_else(|| format!("{}/token", base_of(&self.server_url)))
+        c.asm
+            .as_ref()
+            .and_then(|a| a["token_endpoint"].as_str().map(String::from))
+            .unwrap_or_else(|| format!("{}/token", base_of(&self.server_url)))
     }
 
     fn expected_issuer(&self, c: &Ctx) -> String {
@@ -491,20 +508,20 @@ impl Provider {
     async fn discover(&self, c: &mut Ctx) -> Result<(), String> {
         for url in prm_urls(None, &self.server_url) {
             let r = get_meta(&url).await?;
-            if r.status == 200 {
-                if let Some(prm) = prm_of(&r.body) {
-                    self.validate_resource(&prm).map_err(|e| e.to_string())?;
-                    c.auth_server = prm["authorization_servers"][0].as_str().map(String::from);
-                    c.prm = Some(prm);
-                    break;
-                }
+            if r.status == 200
+                && let Some(prm) = prm_of(&r.body)
+            {
+                self.validate_resource(&prm).map_err(|e| e.to_string())?;
+                c.auth_server = prm["authorization_servers"][0].as_str().map(String::from);
+                c.prm = Some(prm);
+                break;
             }
         }
         let mut expected = self.expected_issuer(c);
-        if let Some(ci) = &c.client {
-            if !credentials_match(ci, &expected) {
-                return Ok(());
-            }
+        if let Some(ci) = &c.client
+            && !credentials_match(ci, &expected)
+        {
+            return Ok(());
         }
         for url in asm_urls(c.auth_server.as_deref(), &self.server_url) {
             let r = get_meta(&url).await?;
@@ -535,10 +552,10 @@ impl Provider {
     }
 
     async fn refresh(&self, c: &mut Ctx) -> bool {
-        if c.asm.is_none() {
-            if let Err(e) = self.discover(c).await {
-                tracing::warn!("查找 {} 的令牌地址失败：{e}", self.server_url);
-            }
+        if c.asm.is_none()
+            && let Err(e) = self.discover(c).await
+        {
+            tracing::warn!("查找 {} 的令牌地址失败：{e}", self.server_url);
         }
         let (Some(tok), Some(ci)) = (c.tokens.clone(), c.client.clone()) else { return false };
         let mut data = vec![
@@ -562,15 +579,15 @@ impl Provider {
         }
         match token_of(&r.body) {
             Ok(mut new) => {
-                if new.get("scope").is_none() {
-                    if let Some(s) = tok.get("scope").filter(|s| !s.is_null()) {
-                        new["scope"] = s.clone();
-                    }
+                if new.get("scope").is_none()
+                    && let Some(s) = tok.get("scope").filter(|s| !s.is_null())
+                {
+                    new["scope"] = s.clone();
                 }
-                if new.get("refresh_token").is_none() {
-                    if let Some(s) = tok.get("refresh_token").filter(|s| !s.is_null()) {
-                        new["refresh_token"] = s.clone();
-                    }
+                if new.get("refresh_token").is_none()
+                    && let Some(s) = tok.get("refresh_token").filter(|s| !s.is_null())
+                {
+                    new["refresh_token"] = s.clone();
                 }
                 self.set_tokens(c, new);
                 true
@@ -604,7 +621,11 @@ impl Provider {
             query = urlencode(&m.into_iter().collect::<Vec<_>>());
         }
         let url = if auth_url.contains('?') { format!("{head}?{query}") } else { head };
-        let state = parse_qsl(url.split_once('?').map(|x| x.1).unwrap_or("")).into_iter().find(|(k, _)| k == "state").map(|x| x.1).unwrap_or_default();
+        let state = parse_qsl(url.split_once('?').map(|x| x.1).unwrap_or(""))
+            .into_iter()
+            .find(|(k, _)| k == "state")
+            .map(|x| x.1)
+            .unwrap_or_default();
         STATES.lock().insert(state.clone(), name.clone());
         *w.state.lock() = state.clone();
         mcp_hub::set_status(name, Later::plain("等你在弹出的窗口里登录授权…"));
@@ -641,20 +662,18 @@ impl Provider {
             if r.status >= 500 || r.status == 429 {
                 failed = Some(r.status);
             }
-            if r.status == 200 {
-                if let Some(prm) = prm_of(&r.body) {
-                    self.validate_resource(&prm)?;
-                    c.auth_server = prm["authorization_servers"][0].as_str().map(String::from);
-                    c.prm = Some(prm);
-                    found = true;
-                    break;
-                }
+            if r.status == 200
+                && let Some(prm) = prm_of(&r.body)
+            {
+                self.validate_resource(&prm)?;
+                c.auth_server = prm["authorization_servers"][0].as_str().map(String::from);
+                c.prm = Some(prm);
+                found = true;
+                break;
             }
         }
-        if !found {
-            if let Some(code) = failed {
-                return Err(err(format!("Protected resource metadata request failed: HTTP {code}")));
-            }
+        if !found && let Some(code) = failed {
+            return Err(err(format!("Protected resource metadata request failed: HTTP {code}")));
         }
         let mut expected = self.expected_issuer(c);
         if c.client.as_ref().is_some_and(|ci| !credentials_match(ci, &expected)) {
@@ -686,7 +705,11 @@ impl Provider {
         if c.client.is_none() {
             let discovered = c.asm.as_ref().map(|_| self.expected_issuer(c));
             let fallback = base_of(&self.server_url);
-            let reg_url = c.asm.as_ref().and_then(|a| a["registration_endpoint"].as_str().map(String::from)).unwrap_or_else(|| format!("{fallback}/register"));
+            let reg_url = c
+                .asm
+                .as_ref()
+                .and_then(|a| a["registration_endpoint"].as_str().map(String::from))
+                .unwrap_or_else(|| format!("{fallback}/register"));
             let mut body = Map::new();
             body.insert("response_types".into(), json!(["code"]));
             if let Some(s) = &c.scope {
@@ -715,16 +738,18 @@ impl Provider {
             let method = info.get("token_endpoint_auth_method").and_then(|v| v.as_str()).map(String::from);
             if let Some(m) = &method {
                 if !KNOWN_METHODS.contains(&m.as_str()) || m == "private_key_jwt" {
-                    return Err(err(format!("Authorization server registered the client with unsupported token_endpoint_auth_method '{m}'")));
+                    return Err(err(format!(
+                        "Authorization server registered the client with unsupported token_endpoint_auth_method '{m}'"
+                    )));
                 }
                 if (m == "client_secret_post" || m == "client_secret_basic") && !info.contains_key("client_secret") {
                     return Err(err(format!("Authorization server registered the client for '{m}' but issued no client_secret")));
                 }
             }
-            if let (Some(asm), Some(d)) = (&c.asm, &discovered) {
-                if asm["registration_endpoint"].is_string() || base_of(d) == fallback {
-                    info.insert("issuer".into(), json!(d));
-                }
+            if let (Some(asm), Some(d)) = (&c.asm, &discovered)
+                && (asm["registration_endpoint"].is_string() || base_of(d) == fallback)
+            {
+                info.insert("issuer".into(), json!(d));
             }
             let info = Value::Object(info);
             if self.fixed.is_none() {
@@ -736,7 +761,11 @@ impl Provider {
         if let Some(s) = &self.scope {
             c.scope = Some(s.clone());
         }
-        let auth_endpoint = c.asm.as_ref().and_then(|a| a["authorization_endpoint"].as_str().map(String::from)).unwrap_or_else(|| format!("{}/authorize", base_of(&self.server_url)));
+        let auth_endpoint = c
+            .asm
+            .as_ref()
+            .and_then(|a| a["authorization_endpoint"].as_str().map(String::from))
+            .unwrap_or_else(|| format!("{}/authorize", base_of(&self.server_url)));
         let ci = c.client.clone().unwrap_or(json!({}));
         let (verifier, challenge) = pkce();
         let state = util::token_urlsafe(32);
@@ -790,10 +819,10 @@ impl Provider {
             return Err(err(format!("Token exchange failed ({}): {}", r.status, r.body)));
         }
         let mut tok = token_of(&r.body).map_err(|e| err(format!("Invalid token response: {e}")))?;
-        if tok.get("scope").is_none() {
-            if let Some(s) = &c.scope {
-                tok["scope"] = json!(s);
-            }
+        if tok.get("scope").is_none()
+            && let Some(s) = &c.scope
+        {
+            tok["scope"] = json!(s);
         }
         self.set_tokens(c, tok);
         Ok(())

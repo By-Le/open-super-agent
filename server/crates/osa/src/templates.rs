@@ -79,7 +79,10 @@ fn check_en(t: &Value) -> Result<(), String> {
         }
         let base = if t[key].is_null() { json!([]) } else { t[key].clone() };
         let good = match (xs.as_array(), base.as_array()) {
-            (Some(x), Some(b)) => x.len() == b.len() && x.iter().all(|i| i.is_null() || i.as_object().is_some_and(|o| o.keys().all(|k| fields.contains(&k.as_str())))),
+            (Some(x), Some(b)) => {
+                x.len() == b.len()
+                    && x.iter().all(|i| i.is_null() || i.as_object().is_some_and(|o| o.keys().all(|k| fields.contains(&k.as_str()))))
+            }
             _ => false,
         };
         if !good {
@@ -117,7 +120,10 @@ fn english(t: &Value) -> Value {
         out["skills"] = json!(ss.iter().zip(es).map(|(s, e)| over(s, e)).collect::<Vec<_>>());
         for (s, e) in ss.iter().zip(es) {
             if s.is_object() && py::truthy(e) && py::truthy(&e["name"]) {
-                rename.insert(skills::clean_name(&if py::truthy(&s["name"]) { py::str_of(&s["name"]) } else { String::new() }), json!(skills::clean_name(&py::str_of(&e["name"]))));
+                rename.insert(
+                    skills::clean_name(&if py::truthy(&s["name"]) { py::str_of(&s["name"]) } else { String::new() }),
+                    json!(skills::clean_name(&py::str_of(&e["name"]))),
+                );
             }
         }
     }
@@ -253,10 +259,18 @@ pub fn preview(t: &Value) -> Value {
     let names: Vec<String> = t["apps"].as_array().map(|a| a.iter().map(py::str_of).collect()).unwrap_or_default();
     let mut out = t.clone();
     out["apps"] = json!(skills::app_status(&names));
-    out["routines"] = json!(t["routines"].as_array().cloned().unwrap_or_default().into_iter().map(|mut r| {
-        r["when"] = json!(routines::describe(&r["trigger"], None));
-        r
-    }).collect::<Vec<_>>());
+    out["routines"] = json!(
+        t["routines"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|mut r| {
+                r["when"] = json!(routines::describe(&r["trigger"], None));
+                r
+            })
+            .collect::<Vec<_>>()
+    );
     out
 }
 
@@ -287,7 +301,10 @@ pub fn from_bot(bot_id: i64) -> Result<Value, String> {
     let b = bots::get(bot_id).ok_or_else(|| t!("没有这个 Bot"))?;
     let rs = routines::list_for(Some(bot_id));
     let used: Vec<String> = rs.iter().filter(|r| py::truthy(&r["skill"])).map(|r| py::str_of(&r["skill"])).collect();
-    let ss: Vec<Value> = skills::list_for(bot_id).into_iter().filter(|s| s["bot_id"].as_i64() == Some(bot_id) || used.contains(&py::str_of(&s["name"]))).collect();
+    let ss: Vec<Value> = skills::list_for(bot_id)
+        .into_iter()
+        .filter(|s| s["bot_id"].as_i64() == Some(bot_id) || used.contains(&py::str_of(&s["name"])))
+        .collect();
     let ins = b["instructions"].as_str().unwrap_or("").to_string();
     let mut body_parts = vec![ins.clone()];
     body_parts.extend(ss.iter().map(|s| py::str_of(&s["body"])));
@@ -365,7 +382,9 @@ pub fn by_token(token: &str) -> Option<i64> {
 }
 
 pub fn raw_url(url: &str) -> Result<String, String> {
-    let u = reqwest::Url::parse(url.trim()).ok().filter(|u| (u.scheme() == "http" || u.scheme() == "https") && u.host_str().is_some_and(|h| !h.is_empty()));
+    let u = reqwest::Url::parse(url.trim())
+        .ok()
+        .filter(|u| (u.scheme() == "http" || u.scheme() == "https") && u.host_str().is_some_and(|h| !h.is_empty()));
     let u = u.ok_or_else(|| t!("链接要以 http:// 或 https:// 开头"))?;
     let host = u.host_str().unwrap_or("");
     let netloc = match u.port() {
@@ -384,9 +403,19 @@ pub fn raw_url(url: &str) -> Result<String, String> {
 
 pub async fn fetch(url: &str) -> Result<Value, String> {
     let src = raw_url(url)?;
-    let c = reqwest::Client::builder().timeout(std::time::Duration::from_secs(15)).redirect(reqwest::redirect::Policy::limited(20)).build().unwrap_or_default();
+    let c = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .redirect(reqwest::redirect::Policy::limited(20))
+        .build()
+        .unwrap_or_default();
     let r = c.get(&src).send().await.map_err(|e| {
-        let kind = if e.is_timeout() { "ReadTimeout" } else if e.is_connect() { "ConnectError" } else { "HTTPError" };
+        let kind = if e.is_timeout() {
+            "ReadTimeout"
+        } else if e.is_connect() {
+            "ConnectError"
+        } else {
+            "HTTPError"
+        };
         t!("取不到这个链接（{err}）", err = kind)
     })?;
     let code = r.status().as_u16();
@@ -405,12 +434,26 @@ pub async fn fetch(url: &str) -> Result<Value, String> {
 // ---------- 安装 ----------
 pub fn install(t: &Value, enable_routines: bool, name: &str) -> Result<Value, String> {
     let n = py::head(name.trim(), 40);
-    let b = bots::create(if n.is_empty() { t["name"].as_str().unwrap_or("") } else { &n }, &t["avatar"], t["instructions"].as_str().unwrap_or(""), false)?;
+    let b = bots::create(
+        if n.is_empty() { t["name"].as_str().unwrap_or("") } else { &n },
+        &t["avatar"],
+        t["instructions"].as_str().unwrap_or(""),
+        false,
+    )?;
     let bid = b["id"].as_i64().unwrap_or(0);
     let r: Result<(), String> = (|| {
         for s in t["skills"].as_array().cloned().unwrap_or_default() {
             let files = if py::truthy(&s["files"]) { s["files"].clone() } else { json!({}) };
-            skills::save_full(Some(bid), s["name"].as_str().unwrap_or(""), s["body"].as_str().unwrap_or(""), s["description"].as_str().unwrap_or(""), "import", None, Some(&files), Apps::Set(s["apps"].clone()))?;
+            skills::save_full(
+                Some(bid),
+                s["name"].as_str().unwrap_or(""),
+                s["body"].as_str().unwrap_or(""),
+                s["description"].as_str().unwrap_or(""),
+                "import",
+                None,
+                Some(&files),
+                Apps::Set(s["apps"].clone()),
+            )?;
         }
         for r in t["routines"].as_array().cloned().unwrap_or_default() {
             let mut trig = r["trigger"].clone();
@@ -477,7 +520,10 @@ fn template_file(bot_id: i64) -> Response {
     };
     let name = format!("{}.osabot.yaml", py::str_of(&t["name"]));
     (
-        [(header::CONTENT_TYPE, "application/yaml; charset=utf-8".to_string()), (header::CONTENT_DISPOSITION, format!("attachment; filename*=UTF-8''{}", skills::quote_name(&name)))],
+        [
+            (header::CONTENT_TYPE, "application/yaml; charset=utf-8".to_string()),
+            (header::CONTENT_DISPOSITION, format!("attachment; filename*=UTF-8''{}", skills::quote_name(&name))),
+        ],
         to_text(&t),
     )
         .into_response()

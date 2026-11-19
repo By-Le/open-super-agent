@@ -16,7 +16,12 @@ use tokio_tungstenite::tungstenite::Message;
 pub const TOPIC_MSG: &str = "/v1.0/im/bot/messages/get";
 
 fn api() -> String {
-    std::env::var("OSA_DINGTALK_API").ok().filter(|s| !s.is_empty()).unwrap_or_else(|| "https://api.dingtalk.com".into()).trim_end_matches('/').to_string()
+    std::env::var("OSA_DINGTALK_API")
+        .ok()
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "https://api.dingtalk.com".into())
+        .trim_end_matches('/')
+        .to_string()
 }
 
 #[derive(Debug)]
@@ -85,7 +90,10 @@ pub async fn check(fields: &Value) -> Result<Value, String> {
     let c = super::http(20);
     if let Err(e) = token(&c, &app_key, &secret).await {
         if let Some(d) = e.downcast_ref::<DingError>() {
-            return Err(t!("Client ID 或 Client Secret 不对（{error}）", error = if d.msg.is_empty() { d.code.clone() } else { d.msg.clone() }));
+            return Err(t!(
+                "Client ID 或 Client Secret 不对（{error}）",
+                error = if d.msg.is_empty() { d.code.clone() } else { d.msg.clone() }
+            ));
         }
         let n = e.downcast_ref::<reqwest::Error>().map(err_name).unwrap_or("KeyError");
         return Err(t!("连不上钉钉（{error}）", error = n));
@@ -138,9 +146,15 @@ impl DingTalk {
     }
 
     async fn session(&self, ch: &Arc<Chan>) -> anyhow::Result<()> {
-        let d = post(&self.http, "/v1.0/gateway/connections/open", &json!({
+        let d = post(
+            &self.http,
+            "/v1.0/gateway/connections/open",
+            &json!({
             "clientId": self.app_key, "clientSecret": ch.secret,
-            "subscriptions": [{"type": "CALLBACK", "topic": TOPIC_MSG}], "ua": "open-super-agent", "localIp": ""}), "").await?;
+            "subscriptions": [{"type": "CALLBACK", "topic": TOPIC_MSG}], "ua": "open-super-agent", "localIp": ""}),
+            "",
+        )
+        .await?;
         let endpoint = d["endpoint"].as_str().ok_or_else(|| anyhow::anyhow!("KeyError"))?;
         let ticket: String = url::form_urlencoded::byte_serialize(d["ticket"].as_str().unwrap_or("").as_bytes()).collect();
         let (ws, _) = tokio_tungstenite::connect_async(format!("{endpoint}?ticket={ticket}")).await?;
@@ -168,7 +182,12 @@ impl DingTalk {
 }
 
 impl DingTalk {
-    async fn frame(&self, ch: &Arc<Chan>, sink: &Arc<tokio::sync::Mutex<impl futures::Sink<Message> + Unpin>>, raw: &str) -> anyhow::Result<()> {
+    async fn frame(
+        &self,
+        ch: &Arc<Chan>,
+        sink: &Arc<tokio::sync::Mutex<impl futures::Sink<Message> + Unpin>>,
+        raw: &str,
+    ) -> anyhow::Result<()> {
         let f: Value = serde_json::from_str(raw)?;
         let h = &f["headers"];
         let mut ack = json!({"code": 200, "headers": {"contentType": "application/json", "messageId": h["messageId"].as_str().unwrap_or("")},
@@ -217,9 +236,13 @@ impl DingTalk {
             *self.robot_code.lock() = rc.to_string();
         }
         let content = &m["content"];
-        let n = py::tail(&m["msgId"].as_str().filter(|s| !s.is_empty()).map(String::from).unwrap_or_else(|| (py::now() as i64).to_string()), 10);
+        let n = py::tail(
+            &m["msgId"].as_str().filter(|s| !s.is_empty()).map(String::from).unwrap_or_else(|| (py::now() as i64).to_string()),
+            10,
+        );
         let (mut text, mut files): (String, Vec<(String, Value)>) = (String::new(), vec![]);
-        let code_of = |v: &Value| [&v["downloadCode"], &v["pictureDownloadCode"]].into_iter().find(|x| py::truthy(x)).cloned().unwrap_or(Value::Null);
+        let code_of =
+            |v: &Value| [&v["downloadCode"], &v["pictureDownloadCode"]].into_iter().find(|x| py::truthy(x)).cloned().unwrap_or(Value::Null);
         match m["msgtype"].as_str().unwrap_or("") {
             "text" => text = m["text"]["content"].as_str().unwrap_or("").to_string(),
             "richText" => {
@@ -232,7 +255,10 @@ impl DingTalk {
                 }
             }
             "picture" => files.push((format!("image_{n}.png"), code_of(content))),
-            "file" => files.push((content["fileName"].as_str().filter(|s| !s.is_empty()).map(String::from).unwrap_or_else(|| format!("file_{n}")), content["downloadCode"].clone())),
+            "file" => files.push((
+                content["fileName"].as_str().filter(|s| !s.is_empty()).map(String::from).unwrap_or_else(|| format!("file_{n}")),
+                content["downloadCode"].clone(),
+            )),
             "video" => files.push((format!("video_{n}.mp4"), content["downloadCode"].clone())),
             "audio" => {
                 text = content["recognition"].as_str().unwrap_or("").to_string();
@@ -257,22 +283,36 @@ impl DingTalk {
     async fn markdown(&self, ch: &Chan, peer: &str, title: &str, text: &str) -> anyhow::Result<()> {
         let (url, exp) = self.webhooks.lock().get(peer).cloned().unwrap_or_default();
         if !url.is_empty() && exp > py::now() + 30.0 {
-            if let Ok(r) = self.http.post(&url).json(&json!({"msgtype": "markdown", "markdown": {"title": title, "text": text}})).send().await {
-                if r.status().as_u16() == 200 && r.json::<Value>().await.is_ok_and(|d| d["errcode"].as_i64().unwrap_or(0) == 0) {
-                    return Ok(());
-                }
+            if let Ok(r) =
+                self.http.post(&url).json(&json!({"msgtype": "markdown", "markdown": {"title": title, "text": text}})).send().await
+                && r.status().as_u16() == 200
+                && r.json::<Value>().await.is_ok_and(|d| d["errcode"].as_i64().unwrap_or(0) == 0)
+            {
+                return Ok(());
             }
             self.webhooks.lock().remove(peer);
         }
         let robot = self.robot_code.lock().clone();
-        let d = match self.api(ch, "/v1.0/robot/oToMessages/batchSend", &json!({"robotCode": robot, "userIds": [peer], "msgKey": "sampleMarkdown",
-                "msgParam": py::dumps_u(&json!({"title": title, "text": text}))})).await {
+        let d = match self
+            .api(
+                ch,
+                "/v1.0/robot/oToMessages/batchSend",
+                &json!({"robotCode": robot, "userIds": [peer], "msgKey": "sampleMarkdown",
+                "msgParam": py::dumps_u(&json!({"title": title, "text": text}))}),
+            )
+            .await
+        {
             Ok(d) => d,
             Err(e) => {
-                if let Some(de) = e.downcast_ref::<DingError>() {
-                    if de.status == 403 || format!("{}{}", de.code, de.msg).to_lowercase().contains("permission") || de.msg.contains("权限") {
-                        ch.set_state("error", Some(Later::plain("发不出消息：应用还没开通“企业内机器人发送消息”权限（开发者后台 → 权限管理），开通后重新发布")));
-                    }
+                if let Some(de) = e.downcast_ref::<DingError>()
+                    && (de.status == 403
+                        || format!("{}{}", de.code, de.msg).to_lowercase().contains("permission")
+                        || de.msg.contains("权限"))
+                {
+                    ch.set_state(
+                        "error",
+                        Some(Later::plain("发不出消息：应用还没开通“企业内机器人发送消息”权限（开发者后台 → 权限管理），开通后重新发布")),
+                    );
                 }
                 return Err(e);
             }
@@ -320,7 +360,10 @@ impl Platform for DingTalk {
         let d = match self.api(ch, "/v1.0/robot/messageFiles/download", &json!({"downloadCode": fref, "robotCode": robot})).await {
             Ok(d) => d,
             Err(e) => {
-                let msg = e.downcast_ref::<DingError>().map(|d| if d.msg.is_empty() { d.code.clone() } else { d.msg.clone() }).unwrap_or_else(|| e.to_string());
+                let msg = e
+                    .downcast_ref::<DingError>()
+                    .map(|d| if d.msg.is_empty() { d.code.clone() } else { d.msg.clone() })
+                    .unwrap_or_else(|| e.to_string());
                 anyhow::bail!(t!("钉钉不让下载（{error}）", error = msg));
             }
         };
@@ -334,13 +377,24 @@ impl Platform for DingTalk {
 
     async fn send_card(&self, ch: &Arc<Chan>, peer: &str, card: &Card) -> anyhow::Result<String> {
         let btns = card["buttons"].as_array().cloned().unwrap_or_default();
-        let mut links: Vec<String> = btns.iter().map(|b| link(b[0].as_str().unwrap_or(""), &word_command(b[1].as_str().unwrap_or(""), &card["id"]))).collect();
+        let mut links: Vec<String> =
+            btns.iter().map(|b| link(b[0].as_str().unwrap_or(""), &word_command(b[1].as_str().unwrap_or(""), &card["id"]))).collect();
         if let Some(l) = card["link"].as_array() {
             links.push(format!("[{}]({})", py::str_of(&l[0]), py::str_of(&l[1])));
         }
-        let say = btns.iter().take(2).map(|b| t!("“{text}”", text = word_command(b[1].as_str().unwrap_or(""), &card["id"]))).collect::<Vec<_>>().join(&t!("、"));
+        let say = btns
+            .iter()
+            .take(2)
+            .map(|b| t!("“{text}”", text = word_command(b[1].as_str().unwrap_or(""), &card["id"])))
+            .collect::<Vec<_>>()
+            .join(&t!("、"));
         let title = py::str_of(&card["title"]);
-        let text = format!("### {title}\n\n{}\n\n{}\n\n{}", py::str_of(&card["body"]), links.join(" ｜ "), t!("点上面的链接，或者直接回复{say}。", say = say));
+        let text = format!(
+            "### {title}\n\n{}\n\n{}\n\n{}",
+            py::str_of(&card["body"]),
+            links.join(" ｜ "),
+            t!("点上面的链接，或者直接回复{say}。", say = say)
+        );
         self.markdown(ch, peer, &title, &fmt::dingtalk_md(&text)).await?;
         Ok(String::new())
     }

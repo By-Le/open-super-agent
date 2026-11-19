@@ -24,7 +24,14 @@ pub fn get(chat_id: i64) -> Arc<Group> {
     GROUPS
         .lock()
         .entry(chat_id)
-        .or_insert_with(|| Arc::new(Group { chat_id, lock: tokio::sync::Mutex::new(()), handoffs: Mutex::new(vec![]), expected: Mutex::new(HashMap::new()) }))
+        .or_insert_with(|| {
+            Arc::new(Group {
+                chat_id,
+                lock: tokio::sync::Mutex::new(()),
+                handoffs: Mutex::new(vec![]),
+                expected: Mutex::new(HashMap::new()),
+            })
+        })
         .clone()
 }
 
@@ -149,13 +156,19 @@ pub async fn on_user(chat: &Value, text: &str, via: &str, attachments: &[Value])
         let l = chat["lead"].as_i64().unwrap_or(0);
         if ids.contains(&l) { l } else { ids[0] }
     });
-    let first: Vec<(i64, &'static str)> = if hit.is_empty() { vec![(lead, "lead")] } else { hit.into_iter().map(|b| (b, "mention")).collect() };
+    let first: Vec<(i64, &'static str)> =
+        if hit.is_empty() { vec![(lead, "lead")] } else { hit.into_iter().map(|b| (b, "mention")).collect() };
     g.run(first, Turn::default()).await;
 }
 
 pub fn handoff(chat_id: i64, from_id: i64, to_id: i64, request: &str) {
-    message(chat_id, "task", &t!("→ {name}：{text}", name = name_of(to_id), text = request), Some(from_id),
-            json!({"kind": "handoff", "to": to_id, "note": request}));
+    message(
+        chat_id,
+        "task",
+        &t!("→ {name}：{text}", name = name_of(to_id), text = request),
+        Some(from_id),
+        json!({"kind": "handoff", "to": to_id, "note": request}),
+    );
     let g = get(chat_id);
     let mut h = g.handoffs.lock();
     if !h.contains(&to_id) {

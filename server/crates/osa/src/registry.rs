@@ -120,10 +120,10 @@ impl Context {
         }
         tool.owner = self.name.clone();
         let mut tools = TOOLS.write();
-        if let Some(old) = tools.get(&tool.name) {
-            if old.owner != self.name {
-                return Err(format!("工具 {} 已经由 {} 注册了，换个名字", tool.name, old.owner));
-            }
+        if let Some(old) = tools.get(&tool.name)
+            && old.owner != self.name
+        {
+            return Err(format!("工具 {} 已经由 {} 注册了，换个名字", tool.name, old.owner));
         }
         let name = tool.name.clone();
         let t = Arc::new(tool);
@@ -311,10 +311,10 @@ impl Context {
         }
         src.owner = self.name.clone();
         let mut all = SOURCES.write();
-        if let Some(old) = all.get(&src.id) {
-            if old.owner != self.name {
-                return Err(format!("事件来源 {} 已经由 {} 登记了，换个名字", src.id, old.owner));
-            }
+        if let Some(old) = all.get(&src.id)
+            && old.owner != self.name
+        {
+            return Err(format!("事件来源 {} 已经由 {} 登记了，换个名字", src.id, old.owner));
         }
         let id = src.id.clone();
         let internal = src.mode == INTERNAL;
@@ -332,10 +332,13 @@ impl Context {
         }));
         if internal {
             let sid = id.clone();
-            self.on(&on, Arc::new(move |kw: Value| -> BoxFuture<'static, ()> {
-                let sid = sid.clone();
-                Box::pin(async move { crate::events::internal(&sid, &kw) })
-            }));
+            self.on(
+                &on,
+                Arc::new(move |kw: Value| -> BoxFuture<'static, ()> {
+                    let sid = sid.clone();
+                    Box::pin(async move { crate::events::internal(&sid, &kw) })
+                }),
+            );
         }
         Ok(())
     }

@@ -33,7 +33,9 @@ pub fn choose(provider: &str, model: &str) {
 /// 能生成视频的模型；default 是现在用的（只收文字时）
 pub async fn models() -> Value {
     let mut out = generation::catalog("video").await;
-    out.sort_by_key(|x| (generation::rank("video", x["model"].as_str().unwrap_or("")), py::str_of(&x["provider"]), py::str_of(&x["model"])));
+    out.sort_by_key(|x| {
+        (generation::rank("video", x["model"].as_str().unwrap_or("")), py::str_of(&x["provider"]), py::str_of(&x["model"]))
+    });
     let c = choice();
     let plain: Vec<&Value> = out.iter().filter(|x| x["needs_ref"] != true).collect();
     let chosen = out.iter().find(|x| x["provider"] == c["provider"] && x["model"] == c["model"]);
@@ -106,13 +108,30 @@ fn refs_of(items: &[Value], need_url: bool) -> Result<Vec<Ref>, String> {
             Some((m, d, _)) => (m, d),
             None => (it["mime"].as_str().unwrap_or("").to_string(), vec![]),
         };
-        out.push(Ref { data, mime, name: py::str_of(&it["name"]), url, role, w: it["w"].as_i64().unwrap_or(0), h: it["h"].as_i64().unwrap_or(0) });
+        out.push(Ref {
+            data,
+            mime,
+            name: py::str_of(&it["name"]),
+            url,
+            role,
+            w: it["w"].as_i64().unwrap_or(0),
+            h: it["h"].as_i64().unwrap_or(0),
+        });
     }
     Ok(out)
 }
 
 fn shape(items: &[Value]) -> Vec<Ref> {
-    items.iter().map(|x| Ref { name: py::str_of(&x["name"]), role: py::str_of(&x["role"]), w: x["w"].as_i64().unwrap_or(0), h: x["h"].as_i64().unwrap_or(0), ..Default::default() }).collect()
+    items
+        .iter()
+        .map(|x| Ref {
+            name: py::str_of(&x["name"]),
+            role: py::str_of(&x["role"]),
+            w: x["w"].as_i64().unwrap_or(0),
+            h: x["h"].as_i64().unwrap_or(0),
+            ..Default::default()
+        })
+        .collect()
 }
 
 fn seconds_for(m: &Value, want: &Value) -> Option<i64> {
@@ -138,14 +157,19 @@ pub async fn generate(bot: &Value, chat_id: i64, private_chat_id: i64, args: &Va
     if prompt.is_empty() {
         return "没生成：描述是空的".into();
     }
-    let (pics, vids) = match async { Ok::<_, String>((images::find_refs(&args["images"]).await?, find_videos(&args["videos"]).await?)) }.await {
-        Ok(x) => x,
-        Err(e) => return format!("没生成：参考素材有问题：{e}"),
-    };
+    let (pics, vids) =
+        match async { Ok::<_, String>((images::find_refs(&args["images"]).await?, find_videos(&args["videos"]).await?)) }.await {
+            Ok(x) => x,
+            Err(e) => return format!("没生成：参考素材有问题：{e}"),
+        };
     let use_ = args["image_use"].as_str().filter(|u| *u == "frames" || *u == "reference").unwrap_or("");
-    let vid_items: Vec<Value> = vids.iter().map(|v| json!({"media": v["id"], "name": v["name"], "mime": v["mime"], "role": "video"})).collect();
+    let vid_items: Vec<Value> =
+        vids.iter().map(|v| json!({"media": v["id"], "name": v["name"], "mime": v["mime"], "role": "video"})).collect();
     let items = |role: &str| -> Vec<Value> {
-        let mut v: Vec<Value> = pics.iter().map(|p| json!({"media": p["id"], "name": p["name"], "mime": p["mime"], "w": p["w"], "h": p["h"], "role": role})).collect();
+        let mut v: Vec<Value> = pics
+            .iter()
+            .map(|p| json!({"media": p["id"], "name": p["name"], "mime": p["mime"], "w": p["w"], "h": p["h"], "role": role}))
+            .collect();
         v.extend(vid_items.clone());
         v
     };
@@ -173,8 +197,23 @@ pub async fn generate(bot: &Value, chat_id: i64, private_chat_id: i64, args: &Va
         if all.is_empty() {
             return NO_MODEL.into();
         }
-        let what: Vec<String> = all.iter().take(8).map(|x| format!("{}（首尾帧 {}、参考图 {}、参考视频 {}）", py::str_of(&x["model"]), py::str_of(&x["frames"]), py::str_of(&x["refs"]), py::str_of(&x["videos"]))).collect();
-        return format!("没生成：现在的视频模型都收不了这些参考素材。能用的模型和它们收什么：{}。照实告诉用户，或者少给几个、换一种用法再试。", what.join("、"));
+        let what: Vec<String> = all
+            .iter()
+            .take(8)
+            .map(|x| {
+                format!(
+                    "{}（首尾帧 {}、参考图 {}、参考视频 {}）",
+                    py::str_of(&x["model"]),
+                    py::str_of(&x["frames"]),
+                    py::str_of(&x["refs"]),
+                    py::str_of(&x["videos"])
+                )
+            })
+            .collect();
+        return format!(
+            "没生成：现在的视频模型都收不了这些参考素材。能用的模型和它们收什么：{}。照实告诉用户，或者少给几个、换一种用法再试。",
+            what.join("、")
+        );
     };
     if chosen.iter().any(|x| x["role"] == "video") && generation::public_base().is_empty() {
         return "没生成：参考视频要给视频服务一个能从外网打开的地址，这台服务器的网页地址外面打不开（比如在自己电脑上用的桌面 App），或者还没填（设置 → 聊天软件 → 网页地址）。照实告诉用户：可以不带参考视频，或者填好外面打得开的网页地址再试。".into();
@@ -188,7 +227,10 @@ pub async fn generate(bot: &Value, chat_id: i64, private_chat_id: i64, args: &Va
     if !approvals::decide(TOOL, None, &Value::Null).0 {
         let mid = start(bot_id, chat_id, &plan, &post).await;
         return if mid != 0 {
-            format!("开始生成了（模型 {model}{}），要几分钟，好了会自动显示在对话里，你不用再回来。简短告诉用户等一会儿。", seconds.map(|s| format!("，{s} 秒")).unwrap_or_default())
+            format!(
+                "开始生成了（模型 {model}{}），要几分钟，好了会自动显示在对话里，你不用再回来。简短告诉用户等一会儿。",
+                seconds.map(|s| format!("，{s} 秒")).unwrap_or_default()
+            )
         } else {
             "没生成：出错了".into()
         };
@@ -224,7 +266,10 @@ pub async fn generate(bot: &Value, chat_id: i64, private_chat_id: i64, args: &Va
             start(bot_id, chat_id, &plan, &post).await;
         }
     });
-    format!("已弹出确认卡片（模型 {model}，{}），用户同意后会开始生成，要几分钟，好了自动显示在对话里，你不用再回来。简短告诉用户确认一下就行，不要说已经生成好了。", price_text(price))
+    format!(
+        "已弹出确认卡片（模型 {model}，{}），用户同意后会开始生成，要几分钟，好了自动显示在对话里，你不用再回来。简短告诉用户确认一下就行，不要说已经生成好了。",
+        price_text(price)
+    )
 }
 
 /// 在对话里放一条“正在生成”，后台提交、等结果。返回那条消息的 id
@@ -233,13 +278,21 @@ pub async fn start(bot_id: i64, chat_id: i64, plan: &Value, post: &PostFn) -> i6
     for k in ["prompt", "provider", "model", "seconds", "ratio", "price"] {
         meta[k] = plan[k].clone();
     }
-    meta["refs"] = json!(plan["refs"].as_array().cloned().unwrap_or_default().iter().map(|x| {
-        let mut o = serde_json::Map::new();
-        for k in ["media", "name", "role", "mime", "w", "h"] {
-            o.insert(k.into(), x.get(k).cloned().unwrap_or(Value::Null));
-        }
-        Value::Object(o)
-    }).collect::<Vec<_>>());
+    meta["refs"] = json!(
+        plan["refs"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default()
+            .iter()
+            .map(|x| {
+                let mut o = serde_json::Map::new();
+                for k in ["media", "name", "role", "mime", "w", "h"] {
+                    o.insert(k.into(), x.get(k).cloned().unwrap_or(Value::Null));
+                }
+                Value::Object(o)
+            })
+            .collect::<Vec<_>>()
+    );
     meta["status"] = json!("running");
     meta["started"] = json!(py::now());
     let mut full = json!({"kind": "video_job"});
@@ -302,7 +355,13 @@ async fn run(mid: i64, chat_id: i64, bot_id: Option<i64>, mut meta: Value) {
             if waited > WAIT_S {
                 return Err(t!("等了 {n} 分钟还没好", n = (WAIT_S / 60.0) as i64));
             }
-            let s = if waited < 60.0 { POLL_S[0] } else if waited < 600.0 { POLL_S[1] } else { POLL_S[2] };
+            let s = if waited < 60.0 {
+                POLL_S[0]
+            } else if waited < 600.0 {
+                POLL_S[1]
+            } else {
+                POLL_S[2]
+            };
             tokio::time::sleep(Duration::from_secs(s)).await;
             match generation::poll(&job).await {
                 Poll::Running(got) => {
@@ -327,7 +386,12 @@ async fn run(mid: i64, chat_id: i64, bot_id: Option<i64>, mut meta: Value) {
                         m["refs"] = meta["refs"].clone();
                     }
                     post_as(bot_id, "task", &format!("[生成视频] {}", py::str_of(&meta["prompt"])), chat_id, m);
-                    update(mid, chat_id, &mut meta, json!({"status": "done", "media": item["id"], "elapsed": py::round0(py::now() - started)}));
+                    update(
+                        mid,
+                        chat_id,
+                        &mut meta,
+                        json!({"status": "done", "media": item["id"], "elapsed": py::round0(py::now() - started)}),
+                    );
                     return Ok(());
                 }
             }
@@ -335,7 +399,12 @@ async fn run(mid: i64, chat_id: i64, bot_id: Option<i64>, mut meta: Value) {
     }
     .await;
     if let Err(e) = r {
-        update(mid, chat_id, &mut meta, json!({"status": "failed", "error": py::head(&e, 300), "elapsed": py::round0(py::now() - started)}));
+        update(
+            mid,
+            chat_id,
+            &mut meta,
+            json!({"status": "failed", "error": py::head(&e, 300), "elapsed": py::round0(py::now() - started)}),
+        );
         post_as(bot_id, "task", &t!("[没生成视频：{error}]", error = e), chat_id, json!({"kind": "note"}));
     }
 }

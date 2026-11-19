@@ -13,7 +13,8 @@ pub const MAX_KEEP: usize = 60_000;
 pub const MAX_DIFF: usize = 3000;
 pub const TIMEOUT: f64 = 20.0;
 
-static META_CHARSET: LazyLock<regex::bytes::Regex> = LazyLock::new(|| regex::bytes::Regex::new(r#"(?i)<meta[^>]+charset\s*=\s*["']?\s*([\w-]+)"#).unwrap());
+static META_CHARSET: LazyLock<regex::bytes::Regex> =
+    LazyLock::new(|| regex::bytes::Regex::new(r#"(?i)<meta[^>]+charset\s*=\s*["']?\s*([\w-]+)"#).unwrap());
 static TITLE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)<title[^>]*>([\s\S]*?)</title>").unwrap());
 
 /// 响应 → 文字。响应头没写编码的，看 <meta charset>
@@ -21,7 +22,10 @@ pub fn page_text(r: &util::Resp) -> String {
     static CS: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#"(?i)charset\s*=\s*["']?([\w.:-]+)"#).unwrap());
     let ct = r.header("content-type");
     let enc = CS.captures(&ct).map(|c| c[1].to_string()).unwrap_or_else(|| {
-        META_CHARSET.captures(&r.body[..r.body.len().min(4096)]).map(|m| String::from_utf8_lossy(&m[1]).into_owned()).unwrap_or_else(|| "utf-8".into())
+        META_CHARSET
+            .captures(&r.body[..r.body.len().min(4096)])
+            .map(|m| String::from_utf8_lossy(&m[1]).into_owned())
+            .unwrap_or_else(|| "utf-8".into())
     });
     util::decode(&r.body, &enc)
 }
@@ -118,7 +122,12 @@ pub fn diff(old: &str, new: &str, limit: usize) -> String {
 
 fn around(text: &str, ws: &[String], n: usize) -> String {
     let low: Vec<String> = ws.iter().map(|w| w.to_lowercase()).collect();
-    text.split('\n').filter(|ln| low.iter().any(|w| ln.to_lowercase().contains(w))).map(|ln| oneline(ln, 200)).take(n).collect::<Vec<_>>().join("\n")
+    text.split('\n')
+        .filter(|ln| low.iter().any(|w| ln.to_lowercase().contains(w)))
+        .map(|ln| oneline(ln, 200))
+        .take(n)
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn has(text: &str, ws: &[String]) -> Vec<String> {
@@ -145,7 +154,8 @@ async fn check_change(params: Value, state: Value) -> Result<(Vec<Value>, Value)
         _ => host(&url),
     };
     let keyj = json!([url, mode, ws, ignore]);
-    let key: String = sha1::Sha1::digest(py::dumps_u(&keyj).as_bytes()).iter().map(|b| format!("{b:02x}")).collect::<String>()[..16].to_string();
+    let key: String =
+        sha1::Sha1::digest(py::dumps_u(&keyj).as_bytes()).iter().map(|b| format!("{b:02x}")).collect::<String>()[..16].to_string();
     let hits = has(&text, &ws);
     let kept = cap(&text);
     let hash: String = sha2::Sha256::digest(text.as_bytes()).iter().map(|b| format!("{b:02x}")).collect::<String>()[..32].to_string();
@@ -177,13 +187,19 @@ async fn check_change(params: Value, state: Value) -> Result<(Vec<Value>, Value)
     let was = py::truthy(&state["found"]);
     if mode == "appear" && !hits.is_empty() && !was {
         let d = diff(&old, &kept, 1500);
-        return Ok((vec![json!({"title": format!("网页上出现了{}：{name}", quote(&hits)), "url": url,
-            "text": format!("含这个词的行：\n{}{}", around(&text, &hits, 5), if d.is_empty() { String::new() } else { format!("\n\n{d}") })})], new_state));
+        return Ok((
+            vec![json!({"title": format!("网页上出现了{}：{name}", quote(&hits)), "url": url,
+            "text": format!("含这个词的行：\n{}{}", around(&text, &hits, 5), if d.is_empty() { String::new() } else { format!("\n\n{d}") })})],
+            new_state,
+        ));
     }
     if mode == "disappear" && was && hits.is_empty() {
         let d = diff(&old, &kept, 1500);
-        return Ok((vec![json!({"title": format!("网页上的{}不见了：{name}", quote(&ws)), "url": url,
-            "text": format!("{}\n\n页面开头：\n{}", if d.is_empty() { "页面上找不到这个词了".to_string() } else { d }, short(&text, 600))})], new_state));
+        return Ok((
+            vec![json!({"title": format!("网页上的{}不见了：{name}", quote(&ws)), "url": url,
+            "text": format!("{}\n\n页面开头：\n{}", if d.is_empty() { "页面上找不到这个词了".to_string() } else { d }, short(&text, 600))})],
+            new_state,
+        ));
     }
     Ok((vec![], new_state))
 }
@@ -235,7 +251,9 @@ pub async fn probe(url: &str, expect: &str) -> Value {
     let t0 = std::time::Instant::now();
     let ms = || t0.elapsed().as_millis() as i64;
     match util::get(url, TIMEOUT, 10_000_000, &[], &[]).await {
-        Err(FetchErr::Status(r)) => json!({"ok": false, "status": r.status, "ms": ms(), "error": format!("HTTP {} {}", r.status, r.reason).trim().to_string()}),
+        Err(FetchErr::Status(r)) => {
+            json!({"ok": false, "status": r.status, "ms": ms(), "error": format!("HTTP {} {}", r.status, r.reason).trim().to_string()})
+        }
         Err(FetchErr::Value(e)) => json!({"ok": false, "status": 0, "ms": ms(), "error": e}),
         Err(e) => json!({"ok": false, "status": 0, "ms": ms(), "error": neterr(&e), "timeout": matches!(e, FetchErr::Timeout)}),
         Ok(r) => {
@@ -280,8 +298,13 @@ async fn check_down(params: Value, state: Value) -> Result<(Vec<Value>, Value), 
     }
     let took = if p["timeout"] == true { format!("超过 {} 秒", TIMEOUT as i64) } else { secs(p["ms"].as_i64().unwrap_or(0)) };
     let err = p["error"].as_str().unwrap_or("").to_string();
-    Ok((vec![json!({"id": format!("down-{}", since as i64), "title": format!("网站打不开了：{}（{}）", host(&url), oneline(&err, 60)), "url": url,
-        "text": format!("地址：{url}\n情况：{err}\n响应时间：{took}\n从 {} 开始，连续 {fails} 次检查都失败", clock(since))})], new_state))
+    Ok((
+        vec![
+            json!({"id": format!("down-{}", since as i64), "title": format!("网站打不开了：{}（{}）", host(&url), oneline(&err, 60)), "url": url,
+        "text": format!("地址：{url}\n情况：{err}\n响应时间：{took}\n从 {} 开始，连续 {fails} 次检查都失败", clock(since))}),
+        ],
+        new_state,
+    ))
 }
 
 pub fn sources() -> Vec<Source> {

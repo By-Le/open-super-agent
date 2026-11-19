@@ -35,12 +35,19 @@ type F = fn(Call) -> BoxFuture<'static, Out>;
 fn reg(name: &str, run: F, progress: Option<fn(&Value) -> String>, when: Option<fn(&Value) -> bool>) {
     let info = assets::tool_info(name);
     let mut tool = Tool::new(name, info["schema"].clone(), Arc::new(run));
-    tool.where_ = info["where"].as_array().map(|a| a.iter().filter_map(|w| match w.as_str() {
-        Some("router") => Some(crate::registry::ROUTER),
-        Some("worker") => Some(crate::registry::WORKER),
-        Some("applet") => Some(crate::registry::APPLET),
-        _ => None,
-    }).collect()).unwrap_or_default();
+    tool.where_ = info["where"]
+        .as_array()
+        .map(|a| {
+            a.iter()
+                .filter_map(|w| match w.as_str() {
+                    Some("router") => Some(crate::registry::ROUTER),
+                    Some("worker") => Some(crate::registry::WORKER),
+                    Some("applet") => Some(crate::registry::APPLET),
+                    _ => None,
+                })
+                .collect()
+        })
+        .unwrap_or_default();
     tool.gated = info["gated"] == true;
     tool.parallel = info["parallel"].as_u64().unwrap_or(0) as usize;
     tool.describe = info["describe"].as_str().unwrap_or("").to_string();
@@ -55,19 +62,57 @@ fn reg(name: &str, run: F, progress: Option<fn(&Value) -> String>, when: Option<
 
 pub fn load() {
     LOADED.call_once(|| {
-        reg("web_search", |c| Box::pin(crate::tools::tool_web_search(c)), Some(|a| t!("搜索：{what}", what = py::head(&arg_s(a, "query"), 60))), None);
-        reg("search_posts", |c| Box::pin(crate::tools::tool_search_posts(c)),
-            Some(|a| t!("搜 {platform}：{what}", platform = arg_s(a, "platform"), what = py::head(&arg_s(a, "query"), 60))), None);
-        reg("fetch_url", |c| Box::pin(crate::tools::tool_fetch_url(c)), Some(|a| t!("读取网页：{what}", what = py::head(&arg_s(a, "url"), 60))), None);
-        reg("save_page", |c| Box::pin(crate::library::tool_save_page(c)), Some(|a| t!("保存页面：{title}", title = py::head(&arg_s(a, "title"), 40))), Some(not_draft));
+        reg(
+            "web_search",
+            |c| Box::pin(crate::tools::tool_web_search(c)),
+            Some(|a| t!("搜索：{what}", what = py::head(&arg_s(a, "query"), 60))),
+            None,
+        );
+        reg(
+            "search_posts",
+            |c| Box::pin(crate::tools::tool_search_posts(c)),
+            Some(|a| t!("搜 {platform}：{what}", platform = arg_s(a, "platform"), what = py::head(&arg_s(a, "query"), 60))),
+            None,
+        );
+        reg(
+            "fetch_url",
+            |c| Box::pin(crate::tools::tool_fetch_url(c)),
+            Some(|a| t!("读取网页：{what}", what = py::head(&arg_s(a, "url"), 60))),
+            None,
+        );
+        reg(
+            "save_page",
+            |c| Box::pin(crate::library::tool_save_page(c)),
+            Some(|a| t!("保存页面：{title}", title = py::head(&arg_s(a, "title"), 40))),
+            Some(not_draft),
+        );
         reg("read_page", |c| Box::pin(crate::library::tool_read_page(c)), Some(|a| t!("读页面 #{id}", id = a["page_id"].clone())), None);
-        reg("page_data", |c| Box::pin(crate::library::tool_page_data(c)), Some(|a| t!("小应用 #{id} 的数据", id = a["page_id"].clone())), None);
-        reg("send_file", |c| Box::pin(crate::media::tool_send_file(c)), Some(|a| t!("发文件：{path}", path = py::head(&arg_s(a, "path"), 60))), Some(not_draft));
+        reg(
+            "page_data",
+            |c| Box::pin(crate::library::tool_page_data(c)),
+            Some(|a| t!("小应用 #{id} 的数据", id = a["page_id"].clone())),
+            None,
+        );
+        reg(
+            "send_file",
+            |c| Box::pin(crate::media::tool_send_file(c)),
+            Some(|a| t!("发文件：{path}", path = py::head(&arg_s(a, "path"), 60))),
+            Some(not_draft),
+        );
         reg("generate_image", |c| Box::pin(crate::images::tool_generate_image(c)), None, None);
         reg("generate_video", |c| Box::pin(crate::videos::tool_generate_video(c)), None, None);
-        reg("search_memory", |c| Box::pin(crate::search::tool_search_memory(c)), Some(|a| t!("查记忆和资料库：{query}", query = py::head(&arg_s(a, "query"), 40))), None);
-        reg("use_skill", |c| Box::pin(crate::skills::tool_use_skill(c)),
-            Some(|a| t!("看技能 /{name}", name = py::head(arg_s(a, "name").trim_start_matches('/'), 40))), None);
+        reg(
+            "search_memory",
+            |c| Box::pin(crate::search::tool_search_memory(c)),
+            Some(|a| t!("查记忆和资料库：{query}", query = py::head(&arg_s(a, "query"), 40))),
+            None,
+        );
+        reg(
+            "use_skill",
+            |c| Box::pin(crate::skills::tool_use_skill(c)),
+            Some(|a| t!("看技能 /{name}", name = py::head(arg_s(a, "name").trim_start_matches('/'), 40))),
+            None,
+        );
         reg("create_routine", |c| Box::pin(crate::routines::tool_create(c)), None, None);
         reg("create_event", |c| Box::pin(crate::routines::tool_create_event(c)), None, None);
         reg("list_routines", |c| Box::pin(crate::routines::tool_list(c)), None, None);

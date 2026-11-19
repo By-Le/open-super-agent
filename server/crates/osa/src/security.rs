@@ -160,7 +160,8 @@ pub fn from_market(cfg: &Value) -> bool {
             && matches(&or_empty(&tpl["args"], json!([])), &or_empty(&cfg["args"], json!([])), false)
             && matches(&or_empty(&tpl["env"], json!({})), &or_empty(&cfg["env"], json!({})), false);
     }
-    matches(&tpl["url"], &or_empty(&cfg["url"], json!("")), false) && matches(&or_empty(&tpl["headers"], json!({})), &or_empty(&cfg["headers"], json!({})), false)
+    matches(&tpl["url"], &or_empty(&cfg["url"], json!("")), false)
+        && matches(&or_empty(&tpl["headers"], json!({})), &or_empty(&cfg["headers"], json!({})), false)
 }
 
 fn connect_of(c: &Value) -> Value {

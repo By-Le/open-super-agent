@@ -32,7 +32,12 @@ fn fatal(code: u16) -> Option<&'static str> {
 }
 
 fn api() -> String {
-    std::env::var("OSA_DISCORD_API").ok().filter(|s| !s.is_empty()).unwrap_or_else(|| "https://discord.com/api/v10".into()).trim_end_matches('/').to_string()
+    std::env::var("OSA_DISCORD_API")
+        .ok()
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "https://discord.com/api/v10".into())
+        .trim_end_matches('/')
+        .to_string()
 }
 
 #[derive(Debug)]
@@ -59,7 +64,8 @@ async fn call(c: &reqwest::Client, token: &str, method: reqwest::Method, path: &
         let status = r.status().as_u16();
         let text = r.text().await.unwrap_or_default();
         if status == 429 && attempt < 2 {
-            let wait = serde_json::from_str::<Value>(&text).ok().and_then(|d| d["retry_after"].as_f64()).filter(|w| *w > 0.0).unwrap_or(1.0);
+            let wait =
+                serde_json::from_str::<Value>(&text).ok().and_then(|d| d["retry_after"].as_f64()).filter(|w| *w > 0.0).unwrap_or(1.0);
             tokio::time::sleep(Duration::from_secs_f64(wait.min(30.0))).await;
             continue;
         }
@@ -68,7 +74,9 @@ async fn call(c: &reqwest::Client, token: &str, method: reqwest::Method, path: &
         }
         let d: Value = serde_json::from_str(&text).unwrap_or(json!({}));
         if status >= 400 {
-            return Err(DiscordError { status, msg: d["message"].as_str().map(String::from).unwrap_or_else(|| py::head(&text, 200)) }.into());
+            return Err(
+                DiscordError { status, msg: d["message"].as_str().map(String::from).unwrap_or_else(|| py::head(&text, 200)) }.into()
+            );
         }
         return Ok(d);
     }
@@ -94,7 +102,11 @@ pub async fn check(fields: &Value) -> Result<Value, String> {
         Ok(x) => x,
         Err(e) => {
             if let Some(d) = e.downcast_ref::<DiscordError>() {
-                return Err(if d.status == 401 { t!("token 不对，或者已经被重置") } else { t!("Discord 返回错误：{error}", error = d.msg.clone()) });
+                return Err(if d.status == 401 {
+                    t!("token 不对，或者已经被重置")
+                } else {
+                    t!("Discord 返回错误：{error}", error = d.msg.clone())
+                });
             }
             let n = e.downcast_ref::<reqwest::Error>().map(err_name).unwrap_or("HTTPError");
             return Err(t!("连不上 Discord（{error}）。服务器在国内的话，要给 open-super-agent 设置 HTTPS_PROXY", error = n));
@@ -102,7 +114,9 @@ pub async fn check(fields: &Value) -> Result<Value, String> {
     };
     let name = [&me["username"], &app["name"]].into_iter().find(|v| py::truthy(v)).map(py::str_of).unwrap_or_else(|| t!("Discord 机器人"));
     let app_id = if py::truthy(&app["id"]) { app["id"].clone() } else { me["id"].clone() };
-    Ok(json!({"name": name, "config": {"bot_id": me["id"], "app_id": app_id, "username": me["username"].as_str().unwrap_or("")}, "secret": token}))
+    Ok(
+        json!({"name": name, "config": {"bot_id": me["id"], "app_id": app_id, "username": me["username"].as_str().unwrap_or("")}, "secret": token}),
+    )
 }
 
 #[derive(Clone)]
@@ -114,7 +128,11 @@ pub struct Discord {
 
 impl Discord {
     pub fn new() -> Discord {
-        Discord { http: super::http(30), session: Arc::new(Mutex::new((String::new(), String::new(), Value::Null))), acked: Arc::new(AtomicBool::new(true)) }
+        Discord {
+            http: super::http(30),
+            session: Arc::new(Mutex::new((String::new(), String::new(), Value::Null))),
+            acked: Arc::new(AtomicBool::new(true)),
+        }
     }
 
     async fn call(&self, ch: &Chan, method: reqwest::Method, path: &str, body: Option<&Value>) -> anyhow::Result<Value> {
@@ -231,8 +249,18 @@ impl Discord {
         let peer = m["channel_id"].as_str().unwrap_or("").to_string();
         let who = [&author["global_name"], &author["username"]].into_iter().find(|v| py::truthy(v)).map(py::str_of).unwrap_or_default();
         let text = m["content"].as_str().unwrap_or("").to_string();
-        let files: Vec<(String, Value)> = m["attachments"].as_array().cloned().unwrap_or_default().iter().filter(|a| py::truthy(&a["url"]))
-            .map(|a| (if py::truthy(&a["filename"]) { py::str_of(&a["filename"]) } else { format!("file_{}", py::str_of(&a["id"])) }, a["url"].clone()))
+        let files: Vec<(String, Value)> = m["attachments"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default()
+            .iter()
+            .filter(|a| py::truthy(&a["url"]))
+            .map(|a| {
+                (
+                    if py::truthy(&a["filename"]) { py::str_of(&a["filename"]) } else { format!("file_{}", py::str_of(&a["id"])) },
+                    a["url"].clone(),
+                )
+            })
             .collect();
         if m["flags"].as_i64().unwrap_or(0) & 8192 != 0 {
             if peer == ch.peer() {
@@ -259,8 +287,13 @@ impl Discord {
             Ok(Ok(t)) => t,
             _ => t!("收到，正在处理"),
         };
-        self.call(ch, reqwest::Method::POST, &format!("/interactions/{}/{}/callback", py::str_of(&d["id"]), py::str_of(&d["token"])),
-                  Some(&json!({"type": 4, "data": {"content": py::head(&toast, 2000), "flags": 64}}))).await?;
+        self.call(
+            ch,
+            reqwest::Method::POST,
+            &format!("/interactions/{}/{}/callback", py::str_of(&d["id"]), py::str_of(&d["token"])),
+            Some(&json!({"type": 4, "data": {"content": py::head(&toast, 2000), "flags": 64}})),
+        )
+        .await?;
         Ok(())
     }
 
@@ -271,14 +304,24 @@ impl Discord {
             body += &format!("\n\n**{done}**");
         }
         let id = py::str_of(&card["id"]);
-        let mut btns: Vec<Value> = card["buttons"].as_array().cloned().unwrap_or_default().iter().map(|b| {
-            let style = match b[2].as_str() { Some("primary") => 1, Some("danger") => 4, _ => 2 };
-            json!({"type": 2, "style": style, "label": b[0], "custom_id": format!("ap:{id}:{}", py::str_of(&b[1]))})
-        }).collect();
-        if let Some(l) = card["link"].as_array() {
-            if l[1].as_str().is_some_and(|u| u.starts_with("https://") || u.starts_with("http://")) {
-                btns.push(json!({"type": 2, "style": 5, "label": l[0], "url": l[1]}));
-            }
+        let mut btns: Vec<Value> = card["buttons"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default()
+            .iter()
+            .map(|b| {
+                let style = match b[2].as_str() {
+                    Some("primary") => 1,
+                    Some("danger") => 4,
+                    _ => 2,
+                };
+                json!({"type": 2, "style": style, "label": b[0], "custom_id": format!("ap:{id}:{}", py::str_of(&b[1]))})
+            })
+            .collect();
+        if let Some(l) = card["link"].as_array()
+            && l[1].as_str().is_some_and(|u| u.starts_with("https://") || u.starts_with("http://"))
+        {
+            btns.push(json!({"type": 2, "style": 5, "label": l[0], "url": l[1]}));
         }
         let mut rows = vec![];
         if !btns.is_empty() {
@@ -287,6 +330,12 @@ impl Discord {
         }
         json!({"embeds": [{"title": py::head(card["title"].as_str().unwrap_or(""), 256), "description": py::head(&body, 4096), "color": if done.is_empty() { ORANGE } else { GREY }}],
                "components": rows, "allowed_mentions": {"parse": []}})
+    }
+}
+
+impl Default for Discord {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -333,7 +382,13 @@ impl Platform for Discord {
                         ch.set_state("error", Some(Later::new("Discord 返回错误：{error}，稍后自动重试", &[("error", json!(d.msg))])));
                     } else {
                         let n = e.downcast_ref::<reqwest::Error>().map(err_name).unwrap_or("OSError");
-                        ch.set_state("error", Some(Later::new("连不上 Discord（{error}），稍后自动重试。服务器在国内的话，要设置 HTTPS_PROXY", &[("error", json!(n))])));
+                        ch.set_state(
+                            "error",
+                            Some(Later::new(
+                                "连不上 Discord（{error}），稍后自动重试。服务器在国内的话，要设置 HTTPS_PROXY",
+                                &[("error", json!(n))],
+                            )),
+                        );
                     }
                 }
             }
@@ -348,12 +403,21 @@ impl Platform for Discord {
     }
 
     async fn send_text(&self, ch: &Arc<Chan>, peer: &str, md: &str) -> anyhow::Result<()> {
-        self.call(ch, reqwest::Method::POST, &format!("/channels/{peer}/messages"), Some(&json!({"content": py::head(&fmt::discord_md(md), 2000), "allowed_mentions": {"parse": []}}))).await?;
+        self.call(
+            ch,
+            reqwest::Method::POST,
+            &format!("/channels/{peer}/messages"),
+            Some(&json!({"content": py::head(&fmt::discord_md(md), 2000), "allowed_mentions": {"parse": []}})),
+        )
+        .await?;
         Ok(())
     }
 
     async fn send_card(&self, ch: &Arc<Chan>, peer: &str, card: &Card) -> anyhow::Result<String> {
-        Ok(self.call(ch, reqwest::Method::POST, &format!("/channels/{peer}/messages"), Some(&Self::card(card))).await?["id"].as_str().unwrap_or("").to_string())
+        Ok(self.call(ch, reqwest::Method::POST, &format!("/channels/{peer}/messages"), Some(&Self::card(card))).await?["id"]
+            .as_str()
+            .unwrap_or("")
+            .to_string())
     }
 
     async fn edit_card(&self, ch: &Arc<Chan>, peer: &str, msg_id: &str, card: &Card) -> anyhow::Result<()> {

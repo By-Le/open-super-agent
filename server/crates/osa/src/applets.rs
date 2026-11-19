@@ -90,7 +90,8 @@ pub async fn call(page: &Value, tool: &str, args: &Value) -> Result<String, (u16
     if !allowed {
         return Err((403, t!("这个小应用不能用工具 {tool}", tool = tool)));
     }
-    let tl = registry::available(tool, APPLET, &json!({})).ok_or_else(|| (404, t!("现在没有工具 {tool}（应用可能没连接）", tool = tool)))?;
+    let tl =
+        registry::available(tool, APPLET, &json!({})).ok_or_else(|| (404, t!("现在没有工具 {tool}（应用可能没连接）", tool = tool)))?;
     if !args.is_object() {
         return Err((400, t!("参数要是一个对象")));
     }

@@ -158,7 +158,9 @@ fn pair_link(r: &Value) -> String {
 
 fn setup_link(r: &Value) -> String {
     match r["kind"].as_str().unwrap_or("") {
-        "discord" => format!("https://discord.com/oauth2/authorize?client_id={}&scope=bot&permissions=0", py::str_of(&r["config"]["app_id"])),
+        "discord" => {
+            format!("https://discord.com/oauth2/authorize?client_id={}&scope=bot&permissions=0", py::str_of(&r["config"]["app_id"]))
+        }
         _ => String::new(),
     }
 }
@@ -375,7 +377,13 @@ impl Chan {
                 self.carding.lock().insert(aid);
                 self.send_card(peer, card_for(ev));
             } else if status != "pending" && self.carding.lock().contains(&aid) {
-                let st = if py::truthy(&ev["always"]) { "always" } else if ev["scope"] == "task" { "task" } else { status };
+                let st = if py::truthy(&ev["always"]) {
+                    "always"
+                } else if ev["scope"] == "task" {
+                    "task"
+                } else {
+                    status
+                };
                 self.finish_card(peer, aid, st.to_string());
             }
         } else if t == "stream_start" && mine {
@@ -429,7 +437,11 @@ impl Chan {
             return;
         }
         let chat_id = r["chat_id"].as_i64().unwrap_or(0);
-        let cmd = if text.starts_with('/') { text.split_whitespace().next().unwrap_or("").split('@').next().unwrap_or("").to_lowercase() } else { String::new() };
+        let cmd = if text.starts_with('/') {
+            text.split_whitespace().next().unwrap_or("").split('@').next().unwrap_or("").to_lowercase()
+        } else {
+            String::new()
+        };
         if cmd == "/start" || cmd == "/help" {
             return self.say(&t!(HELP, name = chat_title(Some(chat_id))), None);
         }
@@ -439,14 +451,14 @@ impl Chan {
             }
             return self.say(&t!("已开始新话题，之前的对话不再带进上下文（长期记忆还在）。"), None);
         }
-        if let Some((act, aid)) = word_cmd(&text.replace('’', "'")) {
-            if self.carding.lock().contains(&aid) {
-                let (okd, toast) = self.press_inner(peer, &format!("ap:{aid}:{act}")).await;
-                if !okd {
-                    self.say(&toast, None);
-                }
-                return;
+        if let Some((act, aid)) = word_cmd(&text.replace('’', "'"))
+            && self.carding.lock().contains(&aid)
+        {
+            let (okd, toast) = self.press_inner(peer, &format!("ap:{aid}:{act}")).await;
+            if !okd {
+                self.say(&toast, None);
             }
+            return;
         }
         if cmd == "/stop" {
             let done: Vec<String> = router::tasks()
@@ -454,7 +466,14 @@ impl Chan {
                 .filter(|tk| tk.chat_id == chat_id && tk.status() == "running")
                 .map(|tk| router::cancel(tk.id, &t!("用户在聊天软件里停止")))
                 .collect();
-            return self.say(&if done.is_empty() { t!("现在没有正在做的任务。") } else { t!("已停止：{tasks}", tasks = done.join(&t!("、"))) }, None);
+            return self.say(
+                &if done.is_empty() {
+                    t!("现在没有正在做的任务。")
+                } else {
+                    t!("已停止：{tasks}", tasks = done.join(&t!("、")))
+                },
+                None,
+            );
         }
         let Some(chat) = bots::chat(chat_id) else {
             return self.say(&t!("绑定的对话不存在了，请在网页的 设置 → 聊天软件 里重新选择。"), None);
@@ -469,10 +488,11 @@ impl Chan {
                 }
             };
             let mut att = json!({"name": name, "size": data.len()});
-            if media::sniff(&data).is_some() && data.len() <= media::MAX_BYTES {
-                if let Ok(m) = media::save(&data, &name, media::MAX_BYTES, false) {
-                    att["media"] = m["id"].clone();
-                }
+            if media::sniff(&data).is_some()
+                && data.len() <= media::MAX_BYTES
+                && let Ok(m) = media::save(&data, &name, media::MAX_BYTES, false)
+            {
+                att["media"] = m["id"].clone();
             }
             match save_upload(&name, &data).await {
                 Ok(p) => att["path"] = json!(p),
@@ -496,9 +516,14 @@ impl Chan {
         let r = self.row.lock().clone();
         let code = CODE.captures(text).ok().flatten().and_then(|c| c.get(1).map(|m| m.as_str().to_string()));
         let pc = r["pair_code"].as_str().unwrap_or("").to_string();
-        let valid = !pc.is_empty() && r["pair_expires"].as_f64().unwrap_or(0.0) > py::now() && r["pair_fails"].as_i64().unwrap_or(0) < PAIR_MAX_FAILS;
+        let valid = !pc.is_empty()
+            && r["pair_expires"].as_f64().unwrap_or(0.0) > py::now()
+            && r["pair_fails"].as_i64().unwrap_or(0) < PAIR_MAX_FAILS;
         if valid && code.as_deref().is_some_and(|c| eq(c.as_bytes(), pc.as_bytes())) {
-            db::exec("update channels set peer=?, peer_name=?, pair_code='', pair_fails=0 where id=?", params![peer, py::head(who, 80), self.id]);
+            db::exec(
+                "update channels set peer=?, peer_name=?, pair_code='', pair_fails=0 where id=?",
+                params![peer, py::head(who, 80), self.id],
+            );
             if let Some(nr) = row(self.id) {
                 *self.row.lock() = nr;
             }
@@ -596,7 +621,9 @@ pub fn public(r: &Value) -> Value {
         "enabled": enabled, "state": state, "error": if enabled { ch.as_ref().map(|c| c.error_text()).unwrap_or_default() } else { String::new() },
         "paired": py::truthy(&r["peer"]), "peer_name": r["peer_name"], "created": r["created"]});
     if !py::truthy(&r["peer"]) {
-        let okc = py::truthy(&r["pair_code"]) && r["pair_expires"].as_f64().unwrap_or(0.0) > py::now() && r["pair_fails"].as_i64().unwrap_or(0) < PAIR_MAX_FAILS;
+        let okc = py::truthy(&r["pair_code"])
+            && r["pair_expires"].as_f64().unwrap_or(0.0) > py::now()
+            && r["pair_fails"].as_i64().unwrap_or(0) < PAIR_MAX_FAILS;
         out["pair_code"] = if okc { r["pair_code"].clone() } else { json!("") };
         out["pair_expires"] = if okc { r["pair_expires"].clone() } else { json!(0) };
         out["pair_link"] = json!(if okc { pair_link(r) } else { String::new() });
@@ -667,10 +694,11 @@ pub async fn update(cid: i64, data: &Value) -> Result<Value, ApiError> {
         }
     }
     refresh(cid);
-    if data.get("chat_id").is_some() && py::truthy(&r["peer"]) {
-        if let Some(ch) = RUNNING.lock().get(&cid).cloned() {
-            ch.say(&t!("已改成和「{title}」对话。", title = chat_title(r["chat_id"].as_i64())), None);
-        }
+    if data.get("chat_id").is_some()
+        && py::truthy(&r["peer"])
+        && let Some(ch) = RUNNING.lock().get(&cid).cloned()
+    {
+        ch.say(&t!("已改成和「{title}」对话。", title = chat_title(r["chat_id"].as_i64())), None);
     }
     changed();
     Ok(public(&r))
@@ -694,10 +722,10 @@ pub fn chat_removed(chat_id: i64) {
         let id = r["id"].as_i64().unwrap_or(0);
         db::exec("update channels set chat_id=? where id=?", params![to, id]);
         refresh(id);
-        if py::truthy(&r["peer"]) {
-            if let Some(ch) = RUNNING.lock().get(&id).cloned() {
-                ch.say(&t!("原来绑定的对话被删除了，改成和「{title}」对话。", title = chat_title(to)), None);
-            }
+        if py::truthy(&r["peer"])
+            && let Some(ch) = RUNNING.lock().get(&id).cloned()
+        {
+            ch.say(&t!("原来绑定的对话被删除了，改成和「{title}」对话。", title = chat_title(to)), None);
         }
     }
     changed();
@@ -767,7 +795,8 @@ fn duration(s: &Value) -> String {
 /// 把站内链接补成完整地址
 pub fn absolute(md: &str) -> String {
     static A: LazyLock<fancy_regex::Regex> = LazyLock::new(|| fancy_regex::Regex::new(r"\]\((/(?!/)[^)\s]*)\)").unwrap());
-    static B: LazyLock<fancy_regex::Regex> = LazyLock::new(|| fancy_regex::Regex::new(r"(?<![\w\]\(/.:])(/(?:library/pages|s)/[\w-]+)").unwrap());
+    static B: LazyLock<fancy_regex::Regex> =
+        LazyLock::new(|| fancy_regex::Regex::new(r"(?<![\w\]\(/.:])(/(?:library/pages|s)/[\w-]+)").unwrap());
     let base = public_url();
     if base.is_empty() {
         return md.to_string();
@@ -831,7 +860,12 @@ pub fn render(m: &Value, group: bool) -> Option<String> {
         "image" => Some(t!("🎨 {name} 画好了一张图：{prompt}", name = name, prompt = ms("prompt")) + &fl),
         "video" => Some(t!("🎬 {name} 生成好了一段视频：{prompt}", name = name, prompt = ms("prompt")) + &fl),
         "cancel" => Some(format!("⏹ {}", strip_brackets(&content))),
-        "handoff" => Some(t!("{name} → {to}：{note}", name = name, to = bot_name(&meta["to"]), note = if py::truthy(&meta["note"]) { py::str_of(&meta["note"]) } else { content.clone() })),
+        "handoff" => Some(t!(
+            "{name} → {to}：{note}",
+            name = name,
+            to = bot_name(&meta["to"]),
+            note = if py::truthy(&meta["note"]) { py::str_of(&meta["note"]) } else { content.clone() }
+        )),
         "dm" => Some(t!("✉️ {name} 私信 {to}：{text}", name = name, to = bot_name(&meta["to"]), text = content)),
         "dm_reply" => {
             if py::truthy(&meta["sent"]) {
@@ -855,7 +889,12 @@ fn bot_card(tool: &str, d: &Value, who: &str, args: &str) -> (String, String) {
         let duty = if s("职责").is_empty() { args.to_string() } else { s("职责") };
         return (
             t!("🤖 {name} 想新建一个 Bot", name = who),
-            format!("**{}**\n{}{}", s("名字"), py::head(&duty, 600), if skills.is_empty() { String::new() } else { format!("\n\n{}", py::head(&skills, 400)) }),
+            format!(
+                "**{}**\n{}{}",
+                s("名字"),
+                py::head(&duty, 600),
+                if skills.is_empty() { String::new() } else { format!("\n\n{}", py::head(&skills, 400)) }
+            ),
         );
     }
     let bot = s("Bot");
@@ -873,25 +912,28 @@ fn bot_card(tool: &str, d: &Value, who: &str, args: &str) -> (String, String) {
         for (key, label) in [("新技能", t!("新技能：")), ("改技能", t!("改技能：")), ("删技能", t!("删技能："))] {
             let l = list(key);
             if !l.is_empty() {
-                lines.push(format!("{label} {}", l.iter().map(|x| x.split('：').next().unwrap_or("").to_string()).collect::<Vec<_>>().join(" ")));
+                lines.push(format!(
+                    "{label} {}",
+                    l.iter().map(|x| x.split('：').next().unwrap_or("").to_string()).collect::<Vec<_>>().join(" ")
+                ));
             }
         }
         let body = if lines.is_empty() { args.to_string() } else { lines.join("\n\n") };
         return (t!("✏️ {name} 想修改 Bot「{bot}」", name = who, bot = bot), body);
     }
     let n = &d["会删掉"];
-    let lost: Vec<String> = [
-        ("消息", "私聊里的 {n} 条消息"),
-        ("技能", "{n} 个技能"),
-        ("定时任务", "{n} 个定时任务"),
-        ("记忆", "它自己的 {n} 条记忆"),
-    ]
-    .iter()
-    .filter(|(k, _)| py::truthy(&n[*k]))
-    .map(|(k, zh)| i18n::t(zh, &[("n", n[*k].clone())]))
-    .collect();
+    let lost: Vec<String> =
+        [("消息", "私聊里的 {n} 条消息"), ("技能", "{n} 个技能"), ("定时任务", "{n} 个定时任务"), ("记忆", "它自己的 {n} 条记忆")]
+            .iter()
+            .filter(|(k, _)| py::truthy(&n[*k]))
+            .map(|(k, zh)| i18n::t(zh, &[("n", n[*k].clone())]))
+            .collect();
     let mut lines = if py::truthy(&d["原因"]) { vec![s("原因")] } else { vec![] };
-    lines.push(if lost.is_empty() { t!("它还没有聊天记录、技能、定时任务和记忆") } else { t!("会一起删掉：{what}", what = lost.join(&sep)) });
+    lines.push(if lost.is_empty() {
+        t!("它还没有聊天记录、技能、定时任务和记忆")
+    } else {
+        t!("会一起删掉：{what}", what = lost.join(&sep))
+    });
     let groups = list("群聊");
     if !groups.is_empty() {
         lines.push(t!("会退出群聊：{groups}", groups = groups.iter().map(|g| format!("「{g}」")).collect::<Vec<_>>().join(&sep)));
@@ -941,7 +983,13 @@ pub fn card_for(ev: &Value) -> Card {
     let mut buttons = vec![btn(t!("允许一次"), "ok", "primary"), btn(t!("拒绝"), "no", "danger")];
     let scopes: Vec<String> = match ev["scopes"].as_array().filter(|a| !a.is_empty()) {
         Some(a) => a.iter().filter_map(|x| x.as_str().map(String::from)).collect(),
-        None => if py::truthy(&ev["once"]) { vec![] } else { vec!["always".into()] },
+        None => {
+            if py::truthy(&ev["once"]) {
+                vec![]
+            } else {
+                vec!["always".into()]
+            }
+        }
     };
     let has = |s: &str| scopes.iter().any(|x| x == s);
     if has("task") {
@@ -991,7 +1039,8 @@ pub fn card_for(ev: &Value) -> Card {
     json!({"id": ev["id"], "kind": "approval", "title": t!("⚠️ {name} 需要你确认", name = who), "body": body, "buttons": buttons, "link": null, "done": ""})
 }
 
-const ACTS: [(&str, &str); 6] = [("ok", "允许一次"), ("no", "拒绝"), ("always", "总是允许"), ("task", "本次任务内允许"), ("done", "处理完了"), ("fail", "处理不了")];
+const ACTS: [(&str, &str); 6] =
+    [("ok", "允许一次"), ("no", "拒绝"), ("always", "总是允许"), ("task", "本次任务内允许"), ("done", "处理完了"), ("fail", "处理不了")];
 
 fn act_word(act: &str) -> Option<&'static str> {
     ACTS.iter().find(|(a, _)| *a == act).map(|(_, w)| *w)

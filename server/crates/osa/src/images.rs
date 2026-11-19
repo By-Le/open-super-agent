@@ -43,7 +43,12 @@ fn sort_key(kind: &str) -> impl Fn(&Value) -> (usize, String, String) + '_ {
 }
 
 fn pick_of(items: &[Value], c: &Value) -> Value {
-    items.iter().find(|x| x["provider"] == c["provider"] && x["model"] == c["model"]).cloned().or_else(|| items.first().cloned()).unwrap_or(Value::Null)
+    items
+        .iter()
+        .find(|x| x["provider"] == c["provider"] && x["model"] == c["model"])
+        .cloned()
+        .or_else(|| items.first().cloned())
+        .unwrap_or(Value::Null)
 }
 
 /// 能画图的模型：models、default（直接画的）；edit_models、edit_default（能照着图片画的）
@@ -64,7 +69,13 @@ pub async fn current(refs: usize) -> Option<Value> {
     if refs == 0 {
         return Some(d["default"].clone()).filter(|v| !v.is_null());
     }
-    let ok: Vec<Value> = d["edit_models"].as_array().cloned().unwrap_or_default().into_iter().filter(|x| x["refs"].as_i64().unwrap_or(0) >= refs as i64).collect();
+    let ok: Vec<Value> = d["edit_models"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|x| x["refs"].as_i64().unwrap_or(0) >= refs as i64)
+        .collect();
     let c = choice(true);
     ok.iter().find(|x| x["provider"] == c["provider"] && x["model"] == c["model"]).cloned().or_else(|| ok.first().cloned())
 }
@@ -96,10 +107,10 @@ fn name_of(prompt: &str) -> String {
 /// 消息附件里存过的这张图（按路径）
 pub fn by_path(path: &str, video: bool) -> Option<Value> {
     let mut cands = vec![path.to_string()];
-    if let Ok(n) = library::norm(path, None) {
-        if !cands.contains(&n) {
-            cands.push(n);
-        }
+    if let Ok(n) = library::norm(path, None)
+        && !cands.contains(&n)
+    {
+        cands.push(n);
     }
     for p in cands {
         let r = db::row(
@@ -108,10 +119,10 @@ pub fn by_path(path: &str, video: bool) -> Option<Value> {
             order by m.id desc limit 1",
             params![p],
         );
-        if let Some(got) = r.and_then(|r| media::info(&r[0])) {
-            if !video || got["mime"].as_str().unwrap_or("").starts_with("video/") {
-                return Some(got);
-            }
+        if let Some(got) = r.and_then(|r| media::info(&r[0]))
+            && (!video || got["mime"].as_str().unwrap_or("").starts_with("video/"))
+        {
+            return Some(got);
         }
     }
     None
@@ -166,8 +177,17 @@ pub async fn find_refs(items: &Value) -> Result<Vec<Value>, String> {
 fn load(refs: &[Value]) -> Result<Vec<Ref>, String> {
     refs.iter()
         .map(|r| {
-            let (mime, data, _) = media::get(r["id"].as_str().unwrap_or("")).ok_or_else(|| t!("参考图已经被清理掉了：{name}", name = py::str_of(&r["name"])))?;
-            Ok(Ref { data, mime, name: py::str_of(&r["name"]), role: "image".into(), w: r["w"].as_i64().unwrap_or(0), h: r["h"].as_i64().unwrap_or(0), ..Default::default() })
+            let (mime, data, _) = media::get(r["id"].as_str().unwrap_or(""))
+                .ok_or_else(|| t!("参考图已经被清理掉了：{name}", name = py::str_of(&r["name"])))?;
+            Ok(Ref {
+                data,
+                mime,
+                name: py::str_of(&r["name"]),
+                role: "image".into(),
+                w: r["w"].as_i64().unwrap_or(0),
+                h: r["h"].as_i64().unwrap_or(0),
+                ..Default::default()
+            })
         })
         .collect()
 }
@@ -177,7 +197,8 @@ async fn make(chat_id: i64, prompt: &str, m: &Value, post: &PostFn, refs: &[Valu
     let (data, _) = draw(prompt, &provider, &model, &load(refs)?).await?;
     let item = media::save(&data, &name_of(prompt), generation::MAX_IMAGE, false)?;
     let price = generation::image_price(&provider, &model);
-    let att = json!({"name": item["name"], "size": item["size"], "media": item["id"], "mime": item["mime"], "w": item["w"], "h": item["h"]});
+    let att =
+        json!({"name": item["name"], "size": item["size"], "media": item["id"], "mime": item["mime"], "w": item["w"], "h": item["h"]});
     let mut meta = json!({"kind": "image", "prompt": prompt, "model": model, "provider": provider, "price": price, "attachments": [att]});
     if !refs.is_empty() {
         meta["refs"] = json!(refs.iter().map(|r| json!({"media": r["id"], "name": r["name"]})).collect::<Vec<_>>());
@@ -200,11 +221,15 @@ pub async fn generate(bot: &Value, chat_id: i64, private_chat_id: i64, prompt: &
         if refs.is_empty() {
             return NO_MODEL.into();
         }
-        let most = models().await["edit_models"].as_array().map(|a| a.iter().filter_map(|x| x["refs"].as_i64()).max().unwrap_or(0)).unwrap_or(0);
+        let most =
+            models().await["edit_models"].as_array().map(|a| a.iter().filter_map(|x| x["refs"].as_i64()).max().unwrap_or(0)).unwrap_or(0);
         if most == 0 {
             return NO_REF_MODEL.into();
         }
-        return format!("没画：能用的画图模型最多参考 {most} 张图，你给了 {} 张。挑最要紧的 {most} 张再画，或者问用户用哪几张。", refs.len());
+        return format!(
+            "没画：能用的画图模型最多参考 {most} 张图，你给了 {} 张。挑最要紧的 {most} 张再画，或者问用户用哪几张。",
+            refs.len()
+        );
     };
     let price = generation::image_price(&py::str_of(&m["provider"]), &py::str_of(&m["model"]));
     if !approvals::decide(TOOL, None, &Value::Null).0 {
@@ -238,7 +263,11 @@ pub async fn generate(bot: &Value, chat_id: i64, private_chat_id: i64, prompt: &
             post("task".into(), t!("[没画成：{error}]", error = e), chat_id, json!({"kind": "note"})).await;
         }
     });
-    format!("已弹出确认卡片（模型 {}，{}），用户同意后会自动画好、显示在对话里，你不用再回来。简短告诉用户确认一下就行，不要说已经画好。", py::str_of(&m["model"]), price_text(price))
+    format!(
+        "已弹出确认卡片（模型 {}，{}），用户同意后会自动画好、显示在对话里，你不用再回来。简短告诉用户确认一下就行，不要说已经画好。",
+        py::str_of(&m["model"]),
+        price_text(price)
+    )
 }
 
 pub async fn tool_generate_image(c: Call) -> Out {

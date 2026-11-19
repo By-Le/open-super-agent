@@ -264,7 +264,11 @@ pub fn detail(task_id: i64) -> Option<Value> {
             t["elapsed"] = res.j(1).get("elapsed").cloned().unwrap_or(Value::Null);
         }
     }
-    let c = db::row("select coalesce(sum(cost), 0), coalesce(sum(cache_hit+cache_miss+output), 0) from llm_calls where task_id=?", params![task_id]).unwrap_or_default();
+    let c = db::row(
+        "select coalesce(sum(cost), 0), coalesce(sum(cache_hit+cache_miss+output), 0) from llm_calls where task_id=?",
+        params![task_id],
+    )
+    .unwrap_or_default();
     t["cost"] = json!(py::round_n(c.f(0), 4));
     t["tokens"] = c[1].clone();
     t["currency"] = config::get("pricing.currency");
@@ -274,7 +278,9 @@ pub fn detail(task_id: i64) -> Option<Value> {
 pub fn startup() {
     db::exec("update task_steps set status='interrupted' where status in ('running', 'waiting')", []);
     db::exec(
-        &format!("update messages set meta=json_set(meta, '$.status', 'interrupted') where {DISPATCH} and json_extract(meta, '$.status')='running'"),
+        &format!(
+            "update messages set meta=json_set(meta, '$.status', 'interrupted') where {DISPATCH} and json_extract(meta, '$.status')='running'"
+        ),
         [],
     );
     prune();

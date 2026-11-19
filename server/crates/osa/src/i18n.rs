@@ -8,9 +8,8 @@ use std::sync::LazyLock;
 
 pub const LANGS: [&str; 2] = ["zh", "en"];
 
-static EN: LazyLock<serde_json::Map<String, Value>> = LazyLock::new(|| {
-    serde_json::from_str(include_str!("../../../../osa/locales/en.json")).expect("en.json")
-});
+static EN: LazyLock<serde_json::Map<String, Value>> =
+    LazyLock::new(|| serde_json::from_str(include_str!("../../../../osa/locales/en.json")).expect("en.json"));
 
 static LANG: Mutex<Option<String>> = Mutex::new(None);
 
@@ -86,10 +85,10 @@ pub fn t_in(zh: &str, in_lang: Option<&str>, kw: Kw) -> String {
             Some(Value::String(v)) if !v.is_empty() => s = v.clone(),
             Some(Value::Array(a)) => {
                 let one = kw.iter().any(|(k, v)| *k == "n" && crate::py::as_int(v) == Some(1));
-                if let Some(Value::String(v)) = a.get(if one { 0 } else { 1 }) {
-                    if !v.is_empty() {
-                        s = v.clone();
-                    }
+                if let Some(Value::String(v)) = a.get(if one { 0 } else { 1 })
+                    && !v.is_empty()
+                {
+                    s = v.clone();
                 }
             }
             _ => {}

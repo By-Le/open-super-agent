@@ -32,10 +32,13 @@ pub const EVENT_START: &str = "<<<事件原文开始>>>";
 pub const EVENT_END: &str = "<<<事件原文结束>>>";
 
 fn quiet_hint() -> String {
-    format!("这次没有值得告诉用户的新内容时（比如没有新邮件、和上次一样、事件不需要处理），结果只写 {QUIET} 这几个字，不写别的，用户就不会被打扰。")
+    format!(
+        "这次没有值得告诉用户的新内容时（比如没有新邮件、和上次一样、事件不需要处理），结果只写 {QUIET} 这几个字，不写别的，用户就不会被打扰。"
+    )
 }
 
-static QUIET_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)^\s*[\[【]?\s*(无新内容|没有新内容|nothing new)\s*[\]】]?\s*[。.!！]?\s*$").unwrap());
+static QUIET_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?i)^\s*[\[【]?\s*(无新内容|没有新内容|nothing new)\s*[\]】]?\s*[。.!！]?\s*$").unwrap());
 
 /// routine_id -> 正在跑的 run id
 static RUNNING: LazyLock<Mutex<HashMap<i64, i64>>> = LazyLock::new(Default::default);
@@ -57,7 +60,10 @@ pub fn migrate() {
     for r in db::rows("select id, name, trigger from routines", []) {
         let t = r.j(2);
         if t["kind"] == "webhook" {
-            db::exec("update routines set trigger=?, next_run=null where id=?", params![py::dumps_u(&events::migrate_legacy(&t, &r.s(1))), r.i(0)]);
+            db::exec(
+                "update routines set trigger=?, next_run=null where id=?",
+                params![py::dumps_u(&events::migrate_legacy(&t, &r.s(1))), r.i(0)],
+            );
         }
     }
 }
@@ -99,16 +105,22 @@ fn run_out(r: &[Value]) -> Value {
 }
 
 pub fn last_run(rid: i64) -> Value {
-    db::row("select id, ts, source, status, task_id, detail, finished from routine_runs where routine_id=? order by id desc limit 1", params![rid])
-        .map(|r| run_out(&r))
-        .unwrap_or(Value::Null)
+    db::row(
+        "select id, ts, source, status, task_id, detail, finished from routine_runs where routine_id=? order by id desc limit 1",
+        params![rid],
+    )
+    .map(|r| run_out(&r))
+    .unwrap_or(Value::Null)
 }
 
 pub fn runs(rid: i64) -> Vec<Value> {
-    db::rows("select id, ts, source, status, task_id, detail, finished from routine_runs where routine_id=? order by id desc limit ?", params![rid, KEEP_RUNS])
-        .iter()
-        .map(|r| run_out(r))
-        .collect()
+    db::rows(
+        "select id, ts, source, status, task_id, detail, finished from routine_runs where routine_id=? order by id desc limit ?",
+        params![rid, KEEP_RUNS],
+    )
+    .iter()
+    .map(|r| run_out(r))
+    .collect()
 }
 
 // ---------- 时间计算 ----------
@@ -177,7 +189,11 @@ pub fn clean_trigger(t: &Value, old: &Value) -> Result<Value, String> {
             Ok(json!({"kind": "monthly", "month_days": md, "times": times_of(&t)?}))
         }
         "every" => {
-            let m = if py::truthy(&t["minutes"]) { py::to_int(&t["minutes"]).ok_or_else(|| format!("invalid literal for int() with base 10: {}", py::repr(&t["minutes"])))? } else { 0 };
+            let m = if py::truthy(&t["minutes"]) {
+                py::to_int(&t["minutes"]).ok_or_else(|| format!("invalid literal for int() with base 10: {}", py::repr(&t["minutes"])))?
+            } else {
+                0
+            };
             if m < 5 {
                 return Err(t!("间隔至少 5 分钟"));
             }
@@ -229,10 +245,10 @@ pub fn next_after(trig: &Value, now: f64) -> Option<f64> {
             for d in days_ahead(trig, now, if k == "daily" { 8 } else { 63 }) {
                 for hm in &times {
                     let (h, m) = hm.split_once(':').unwrap_or(("0", "0"));
-                    if let Some(ts) = local_ts(d, h.parse().unwrap_or(0), m.parse().unwrap_or(0)) {
-                        if ts > now {
-                            return Some(ts);
-                        }
+                    if let Some(ts) = local_ts(d, h.parse().unwrap_or(0), m.parse().unwrap_or(0))
+                        && ts > now
+                    {
+                        return Some(ts);
                     }
                 }
             }
@@ -265,10 +281,13 @@ pub fn describe(trig: &Value, in_lang: Option<&str>) -> String {
             let d = if days.is_empty() || days.len() == 7 {
                 tl("每天", &[])
             } else {
-                let names: Vec<String> = days.iter().map(|d| {
-                    let s = tl(DAYS[(*d - 1).clamp(0, 6) as usize], &[]);
-                    s.strip_prefix("周").map(String::from).unwrap_or(s)
-                }).collect();
+                let names: Vec<String> = days
+                    .iter()
+                    .map(|d| {
+                        let s = tl(DAYS[(*d - 1).clamp(0, 6) as usize], &[]);
+                        s.strip_prefix("周").map(String::from).unwrap_or(s)
+                    })
+                    .collect();
                 tl("每周{days}", &[("days", json!(names.join(&sep)))])
             };
             tl("{days} {times}", &[("days", json!(d)), ("times", json!(strs("times").join(&sep)))])
@@ -394,7 +413,10 @@ pub fn record(rid: i64, source: &str, status: &str, detail: &str, task_id: Optio
 }
 
 fn finish(run_id: i64, status: &str, detail: &str) {
-    db::exec("update routine_runs set status=?, detail=?, finished=? where id=?", params![status, py::head(detail, 300), py::now(), run_id]);
+    db::exec(
+        "update routine_runs set status=?, detail=?, finished=? where id=?",
+        params![status, py::head(detail, 300), py::now(), run_id],
+    );
 }
 
 pub fn changed(r: &Value) {
@@ -420,9 +442,18 @@ pub async fn llm_filter(rule: &str, text: &str, bot_id: Option<i64>) -> Result<(
         {"role": "user", "content": format!("规则：{rule}\n\n事件：\n{}", py::head(text, 6000))}
     ]);
     let who = memory::Who { bot_id, ..memory::who() };
-    let resp = memory::WHO.scope(who, providers::complete_role("filter", &msgs, Some(json!({"type": "json_object"})))).await.map_err(|e| e.to_string())?;
+    let resp = memory::WHO
+        .scope(who, providers::complete_role("filter", &msgs, Some(json!({"type": "json_object"}))))
+        .await
+        .map_err(|e| e.to_string())?;
     match serde_json::from_str::<Value>(&resp.content) {
-        Ok(d) if d.is_object() => Ok((py::truthy(&d["handle"]), d["reason"].as_str().map(String::from).unwrap_or_else(|| if d["reason"].is_null() { String::new() } else { py::str_of(&d["reason"]) }))),
+        Ok(d) if d.is_object() => Ok((
+            py::truthy(&d["handle"]),
+            d["reason"]
+                .as_str()
+                .map(String::from)
+                .unwrap_or_else(|| if d["reason"].is_null() { String::new() } else { py::str_of(&d["reason"]) }),
+        )),
         _ => Ok((true, t!("过滤结果解析失败，默认放行"))),
     }
 }
@@ -443,10 +474,10 @@ pub fn goal_for(r: &Value, event: &str) -> String {
         format!("这是定时任务「{name}」（{}）的一次运行。", describe(&r["trigger"], Some("zh")))
     }];
     let skill = r["skill"].as_str().unwrap_or("");
-    if !skill.is_empty() {
-        if let Some(s) = skill_find(r["bot_id"].as_i64().unwrap_or(0), skill) {
-            parts.push(format!("按技能 /{} 的做法执行：\n{}{}", py::str_of(&s["name"]), s["body"].as_str().unwrap_or(""), files_hint(&s)));
-        }
+    if !skill.is_empty()
+        && let Some(s) = skill_find(r["bot_id"].as_i64().unwrap_or(0), skill)
+    {
+        parts.push(format!("按技能 /{} 的做法执行：\n{}{}", py::str_of(&s["name"]), s["body"].as_str().unwrap_or(""), files_hint(&s)));
     }
     let prompt = r["prompt"].as_str().unwrap_or("");
     if !prompt.is_empty() {
@@ -478,7 +509,10 @@ pub fn is_quiet(result: &str) -> bool {
 }
 
 pub fn last_result(rid: i64) -> String {
-    let Some(row) = db::row("select task_id from routine_runs where routine_id=? and status='done' and task_id is not null order by id desc limit 1", params![rid]) else {
+    let Some(row) = db::row(
+        "select task_id from routine_runs where routine_id=? and status='done' and task_id is not null order by id desc limit 1",
+        params![rid],
+    ) else {
         return String::new();
     };
     let m = db::row(
@@ -590,7 +624,11 @@ pub fn import_legacy(bot_id: i64) {
         };
         let p = if py::truthy(&t["prompt"]) { py::str_of(&t["prompt"]) } else { py::str_of(&t["name"]) };
         let prompt = p.replace("{event}", "").trim().to_string();
-        let _ = save(bot_id, &json!({"name": t["name"], "prompt": prompt, "trigger": trig, "enabled": t.get("enabled").cloned().unwrap_or(json!(true))}), None);
+        let _ = save(
+            bot_id,
+            &json!({"name": t["name"], "prompt": prompt, "trigger": trig, "enabled": t.get("enabled").cloned().unwrap_or(json!(true))}),
+            None,
+        );
     }
     memory::set_setting_raw("triggers_imported", "1");
 }
@@ -667,7 +705,8 @@ fn when(r: &Value, full: bool) -> String {
 
 fn run_line(run: &Value, full: bool) -> String {
     let status = run["status"].as_str().unwrap_or("");
-    let mut s = format!("{} {} {}", hm(run["ts"].as_f64().unwrap_or(0.0)), source_word(run["source"].as_str().unwrap_or("")), status_word(status));
+    let mut s =
+        format!("{} {} {}", hm(run["ts"].as_f64().unwrap_or(0.0)), source_word(run["source"].as_str().unwrap_or("")), status_word(status));
     let detail = run["detail"].as_str().unwrap_or("");
     if !detail.is_empty() && status != "running" && status != "quiet" && (full || status != "done") {
         s += &format!("：{}", detail.replace('\n', " "));
@@ -679,7 +718,11 @@ fn run_line(run: &Value, full: bool) -> String {
 }
 
 fn not_mine(me: &Value) -> String {
-    if me["is_primary"] == true { String::new() } else { format!("（只能管你自己的，别的 Bot 的归主 Bot「{}」管）", bots::primary_name()) }
+    if me["is_primary"] == true {
+        String::new()
+    } else {
+        format!("（只能管你自己的，别的 Bot 的归主 Bot「{}」管）", bots::primary_name())
+    }
 }
 
 fn mine(me: &Value, rid: &Value) -> Option<Value> {
@@ -721,7 +764,14 @@ fn summary(r: &Value, full: bool) -> String {
     let p = r["prompt"].as_str().unwrap_or("");
     if !p.is_empty() {
         let n = py::char_len(p);
-        lines.push(format!("做什么：{}", if full || n <= BRIEF_PROMPT { p.to_string() } else { format!("{}……（共 {n} 字，看全文用 list_routines 填 id）", py::head(p, BRIEF_PROMPT)) }));
+        lines.push(format!(
+            "做什么：{}",
+            if full || n <= BRIEF_PROMPT {
+                p.to_string()
+            } else {
+                format!("{}……（共 {n} 字，看全文用 list_routines 填 id）", py::head(p, BRIEF_PROMPT))
+            }
+        ));
     }
     let sk = r["skill"].as_str().unwrap_or("");
     if !sk.is_empty() {
@@ -733,7 +783,11 @@ fn summary(r: &Value, full: bool) -> String {
             lines.push(format!("参数：{}", py::dumps_u(&t["params"])));
         }
         let join = |k: &str| t[k].as_array().map(|a| a.iter().map(py::str_of).collect::<Vec<_>>().join("、")).unwrap_or_default();
-        for (k, v) in [("只处理含这些词的", join("include")), ("含这些词的不处理", join("exclude")), ("LLM 过滤规则", t["llm_filter"].as_str().unwrap_or("").to_string())] {
+        for (k, v) in [
+            ("只处理含这些词的", join("include")),
+            ("含这些词的不处理", join("exclude")),
+            ("LLM 过滤规则", t["llm_filter"].as_str().unwrap_or("").to_string()),
+        ] {
             if !v.is_empty() {
                 lines.push(format!("{k}：{v}"));
             }
@@ -741,7 +795,14 @@ fn summary(r: &Value, full: bool) -> String {
     }
     if full {
         let rs: Vec<Value> = runs(r["id"].as_i64().unwrap_or(0)).into_iter().take(5).collect();
-        lines.push(format!("最近运行：{}", if rs.is_empty() { "还没跑过".to_string() } else { format!("\n{}", rs.iter().map(|x| format!("- {}", run_line(x, true))).collect::<Vec<_>>().join("\n")) }));
+        lines.push(format!(
+            "最近运行：{}",
+            if rs.is_empty() {
+                "还没跑过".to_string()
+            } else {
+                format!("\n{}", rs.iter().map(|x| format!("- {}", run_line(x, true))).collect::<Vec<_>>().join("\n"))
+            }
+        ));
     } else if py::truthy(&r["last_run"]) {
         lines.push(format!("上次：{}", run_line(&r["last_run"], false)));
     }
@@ -845,7 +906,8 @@ pub async fn tool_create_event(c: Call) -> Out {
         let head = if py::truthy(&a["source"]) { format!("没有 {sid} 这种事件来源。") } else { "要填 source。".into() };
         return format!("没建成：{head}能用的事件来源和参数：\n{}", events::brief_sources()).into();
     };
-    let mut trig = json!({"kind": "event", "source": src.id, "params": if py::truthy(&a["params"]) { a["params"].clone() } else { json!({}) }});
+    let mut trig =
+        json!({"kind": "event", "source": src.id, "params": if py::truthy(&a["params"]) { a["params"].clone() } else { json!({}) }});
     for k in ["every", "include", "exclude", "llm_filter"] {
         if a.get(k).is_some_and(|v| !v.is_null()) {
             trig[k] = a[k].clone();
@@ -855,7 +917,18 @@ pub async fn tool_create_event(c: Call) -> Out {
     let r = match save(b["id"].as_i64().unwrap_or(0), &data, None) {
         Ok(r) => r,
         Err(e) => {
-            let fs: Vec<String> = src.fields().iter().map(|f| format!("{}（{}{}）", py::str_of(&f["key"]), f["label"].as_str().unwrap_or(""), if py::truthy(&f["required"]) { "，必填" } else { "" })).collect();
+            let fs: Vec<String> = src
+                .fields()
+                .iter()
+                .map(|f| {
+                    format!(
+                        "{}（{}{}）",
+                        py::str_of(&f["key"]),
+                        f["label"].as_str().unwrap_or(""),
+                        if py::truthy(&f["required"]) { "，必填" } else { "" }
+                    )
+                })
+                .collect();
             let fs = fs.join("、");
             return format!("没建成：{e}{}", if fs.is_empty() { String::new() } else { format!("\n{} 的参数：{fs}", src.id) }).into();
         }
@@ -906,7 +979,11 @@ pub async fn tool_update(c: Call) -> Out {
         let mut d = Value::Object(data.clone());
         let ev = is_event(&r);
         if (ev && !skeys.is_empty()) || (!ev && !ekeys.is_empty()) {
-            out.push(format!("没改 #{}：{}，要换就新建一个、再删掉这个", py::str_of(&rid), if ev { "事件不能改成按时间跑" } else { "定时任务不能改成事件" }));
+            out.push(format!(
+                "没改 #{}：{}，要换就新建一个、再删掉这个",
+                py::str_of(&rid),
+                if ev { "事件不能改成按时间跑" } else { "定时任务不能改成事件" }
+            ));
             continue;
         }
         if !skeys.is_empty() {
@@ -951,10 +1028,10 @@ pub async fn tool_delete(c: Call) -> Out {
     delete(rid);
     changed(&r);
     let mut keep = vec![];
-    if r["bot_id"] != me["id"] {
-        if let Some(b) = r["bot_id"].as_i64().and_then(bots::get) {
-            keep.push(format!("Bot：{}", py::str_of(&b["name"])));
-        }
+    if r["bot_id"] != me["id"]
+        && let Some(b) = r["bot_id"].as_i64().and_then(bots::get)
+    {
+        keep.push(format!("Bot：{}", py::str_of(&b["name"])));
     }
     keep.push(format!("触发：{}", py::dumps_u(&events::portable(&r["trigger"]))));
     if let Some(p) = r["prompt"].as_str().filter(|s| !s.is_empty()) {
@@ -1050,7 +1127,8 @@ async fn routine_action(Path((rid, action)): Path<(i64, String)>) -> Res {
         }
         "check" if is_event(&r) => {
             let res = events::poll(r.clone()).await;
-            note = if res["accepted"] == true { t!("有新的，已经交给 Bot") } else { res["reason"].as_str().unwrap_or("").to_string() };
+            note =
+                if res["accepted"] == true { t!("有新的，已经交给 Bot") } else { res["reason"].as_str().unwrap_or("").to_string() };
             r = get(rid).unwrap_or(r);
         }
         "rekey" if py::truthy(&r["trigger"]["key"]) => r = rekey(rid),
@@ -1076,7 +1154,13 @@ async fn routine_runs(Path(rid): Path<i64>) -> Res {
 }
 
 // ---------- Webhook ----------
-async fn webhook(Path(name): Path<String>, h: HeaderMap, peer: Peer, q: crate::web::Q, body: axum::body::Bytes) -> axum::response::Response {
+async fn webhook(
+    Path(name): Path<String>,
+    h: HeaderMap,
+    peer: Peer,
+    q: crate::web::Q,
+    body: axum::body::Bytes,
+) -> axum::response::Response {
     let r = if name.chars().count() >= 16 { events::by_key(&name) } else { None };
     let r = match r {
         Some(r) => r,
@@ -1102,7 +1186,8 @@ async fn webhook(Path(name): Path<String>, h: HeaderMap, peer: Peer, q: crate::w
     if clen > events::MAX_BODY || body.len() > events::MAX_BODY {
         return ApiError::new(413, t!("内容太大")).into_response();
     }
-    let headers: HashMap<String, String> = h.iter().filter_map(|(k, v)| v.to_str().ok().map(|v| (k.as_str().to_string(), v.to_string()))).collect();
+    let headers: HashMap<String, String> =
+        h.iter().filter_map(|(k, v)| v.to_str().ok().map(|v| (k.as_str().to_string(), v.to_string()))).collect();
     let bot_id = r["bot_id"].clone();
     match events::on_push(r, headers, body.to_vec(), q.0).await {
         Err(e) => ApiError::new(401, e).into_response(),

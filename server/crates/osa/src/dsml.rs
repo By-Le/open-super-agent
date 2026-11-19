@@ -28,8 +28,7 @@ static PARAM: LazyLock<Regex> = LazyLock::new(|| {
     .unwrap()
 });
 static LAST: LazyLock<Regex> = LazyLock::new(|| Regex::new(&tag(r"/?\s*", r"[^>]*>")).unwrap());
-static PARTIAL: LazyLock<regex::Regex> =
-    LazyLock::new(|| regex::Regex::new(r"^<\s*/?\s*[｜|]*\s*(?:D(?:S(?:M(?:L)?)?)?)?\s*$").unwrap());
+static PARTIAL: LazyLock<regex::Regex> = LazyLock::new(|| regex::Regex::new(r"^<\s*/?\s*[｜|]*\s*(?:D(?:S(?:M(?:L)?)?)?)?\s*$").unwrap());
 static CLOSE: LazyLock<regex::Regex> = LazyLock::new(|| regex::Regex::new(r"^<\s*/").unwrap());
 
 /// 边收边显示时，text 里前多少个字节可以先给用户看
@@ -44,10 +43,10 @@ pub fn visible(text: &str) -> usize {
 }
 
 fn value(raw: &str, is_string: Option<&str>) -> Value {
-    if is_string == Some("false") {
-        if let Ok(v) = serde_json::from_str::<Value>(raw) {
-            return v;
-        }
+    if is_string == Some("false")
+        && let Ok(v) = serde_json::from_str::<Value>(raw)
+    {
+        return v;
     }
     Value::String(raw.to_string())
 }

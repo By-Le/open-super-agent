@@ -38,7 +38,11 @@ async fn list_apps(h: HeaderMap) -> Res {
 
 /// 授权弹窗要回到的地址（和 /api/apps 给前端看的 oauth_callback 一样）
 fn callback_url(h: &HeaderMap) -> String {
-    crate::server::apps_out(h).into_iter().find(|(k, _)| *k == "oauth_callback").and_then(|(_, v)| v.as_str().map(String::from)).unwrap_or_default()
+    crate::server::apps_out(h)
+        .into_iter()
+        .find(|(k, _)| *k == "oauth_callback")
+        .and_then(|(_, v)| v.as_str().map(String::from))
+        .unwrap_or_default()
 }
 
 fn app_out(name: &str) -> Res {
@@ -87,7 +91,13 @@ async fn save_app(Path(name): Path<String>, Body(mut d): Body) -> Res {
     }
     let old = mcp_hub::get(&name).unwrap_or(json!({}));
     let mut owned: Vec<String> = old["owned"].as_array().map(|a| a.iter().map(py::str_of).collect()).unwrap_or_default();
-    let mut env = if py::truthy(&d["env"]) { d["env"].clone() } else if py::truthy(&old["env"]) { old["env"].clone() } else { json!({}) };
+    let mut env = if py::truthy(&d["env"]) {
+        d["env"].clone()
+    } else if py::truthy(&old["env"]) {
+        old["env"].clone()
+    } else {
+        json!({})
+    };
     let secrets = d.as_object_mut().and_then(|o| o.remove("secrets")).unwrap_or(Value::Null);
     for (k, v) in secrets.as_object().cloned().unwrap_or_default() {
         if py::truthy(&v) {
@@ -102,7 +112,13 @@ async fn save_app(Path(name): Path<String>, Body(mut d): Body) -> Res {
     if !token.is_empty() {
         let r = ref_of(&name, "TOKEN");
         vault::put(&r, &token)?;
-        let mut headers = if py::truthy(&d["headers"]) { d["headers"].clone() } else if py::truthy(&old["headers"]) { old["headers"].clone() } else { json!({}) };
+        let mut headers = if py::truthy(&d["headers"]) {
+            d["headers"].clone()
+        } else if py::truthy(&old["headers"]) {
+            old["headers"].clone()
+        } else {
+            json!({})
+        };
         headers["Authorization"] = json!(format!("Bearer {{vault:{r}}}"));
         d["headers"] = headers;
         owned.push(r);
@@ -310,4 +326,3 @@ async fn mcp_app_say(Path(app): Path<String>, Body(d): Body) -> Res {
     crate::applets::send(bot_id, &text, json!({"app": app, "title": format!("@{app}")})).map_err(mcp_err)?;
     ok(json!({"ok": true}))
 }
-

@@ -51,7 +51,11 @@ pub fn rank(kind: &str, model: &str) -> usize {
 }
 
 pub fn base(provider: &str) -> String {
-    providers::provider(provider).and_then(|p| p["base_url"].as_str().map(String::from)).unwrap_or_default().trim_end_matches('/').to_string()
+    providers::provider(provider)
+        .and_then(|p| p["base_url"].as_str().map(String::from))
+        .unwrap_or_default()
+        .trim_end_matches('/')
+        .to_string()
 }
 
 fn re_i(pat: &str, text: &str) -> bool {
@@ -128,7 +132,12 @@ async fn listed(provider: &str, path: &str) -> Vec<String> {
         rb = rb.header("Authorization", format!("Bearer {key}"));
     }
     let ids: Vec<String> = match rb.send().await {
-        Ok(r) if r.status().as_u16() < 400 => r.json::<Value>().await.ok().and_then(|d| d["data"].as_array().map(|a| a.iter().filter_map(|m| m["id"].as_str().map(String::from)).collect())).unwrap_or_default(),
+        Ok(r) if r.status().as_u16() < 400 => r
+            .json::<Value>()
+            .await
+            .ok()
+            .and_then(|d| d["data"].as_array().map(|a| a.iter().filter_map(|m| m["id"].as_str().map(String::from)).collect()))
+            .unwrap_or_default(),
         _ => vec![],
     };
     LISTS.lock().insert(k, (py::now(), ids.clone()));
@@ -256,7 +265,8 @@ impl Ref {
 /// 参考素材合不合这个模型：合适返回空，不合适返回原因
 pub fn check(c: &Caps, refs: &[Ref], what: &str) -> String {
     let count = |role: &str| refs.iter().filter(|x| x.role == role).count() as i64;
-    let n: [(&str, i64, i64); 3] = [("frames", count("frame"), c.frames), ("images", count("image"), c.images), ("videos", count("video"), c.videos)];
+    let n: [(&str, i64, i64); 3] =
+        [("frames", count("frame"), c.frames), ("images", count("image"), c.images), ("videos", count("video"), c.videos)];
     let label = |k: &str| match k {
         "frames" => t!("首尾帧"),
         "images" => t!("参考图"),
@@ -266,7 +276,11 @@ pub fn check(c: &Caps, refs: &[Ref], what: &str) -> String {
     };
     for (k, got, most) in n {
         if got > most {
-            return if most == 0 { t!("{model} 不收{what}", model = what, what = label(k)) } else { t!("{model} 最多收 {n} 个{what}", model = what, what = label(k), n = most) };
+            return if most == 0 {
+                t!("{model} 不收{what}", model = what, what = label(k))
+            } else {
+                t!("{model} 最多收 {n} 个{what}", model = what, what = label(k), n = most)
+            };
         }
     }
     let (nf, ni, nv) = (n[0].1, n[1].1, n[2].1);
@@ -357,7 +371,9 @@ pub fn pick(d: &Value, path: &str) -> Value {
     let mut cur = d;
     for k in path.split('.') {
         match cur {
-            Value::Array(a) if !k.is_empty() && k.chars().all(|c| c.is_ascii_digit()) && k.parse::<usize>().is_ok_and(|i| i < a.len()) => cur = &a[k.parse::<usize>().unwrap()],
+            Value::Array(a) if !k.is_empty() && k.chars().all(|c| c.is_ascii_digit()) && k.parse::<usize>().is_ok_and(|i| i < a.len()) => {
+                cur = &a[k.parse::<usize>().unwrap()]
+            }
             Value::Object(o) if o.contains_key(k) => cur = &o[k],
             _ => return Value::Null,
         }
@@ -400,10 +416,10 @@ fn nearest_str(want: Option<&str>, allowed: &[String], default: Option<&str>) ->
     if allowed.is_empty() {
         return None;
     }
-    if let Some(w) = want {
-        if allowed.iter().any(|a| a == w) {
-            return Some(w.to_string());
-        }
+    if let Some(w) = want
+        && allowed.iter().any(|a| a == w)
+    {
+        return Some(w.to_string());
     }
     match default {
         Some(d) if allowed.iter().any(|a| a == d) => Some(d.to_string()),
@@ -425,7 +441,9 @@ fn like(frame: &Ref, allowed: &[String]) -> Option<String> {
         let (x, y) = a.split_once(':').unwrap();
         x.parse::<f64>().unwrap_or(1.0) / y.parse::<f64>().unwrap_or(1.0)
     };
-    nums.into_iter().min_by(|a, b| (ratio(a) - want).abs().partial_cmp(&(ratio(b) - want).abs()).unwrap_or(std::cmp::Ordering::Equal)).cloned()
+    nums.into_iter()
+        .min_by(|a, b| (ratio(a) - want).abs().partial_cmp(&(ratio(b) - want).abs()).unwrap_or(std::cmp::Ordering::Equal))
+        .cloned()
 }
 
 pub fn origin_of(url: &str) -> String {
@@ -441,7 +459,15 @@ pub fn origin_of(url: &str) -> String {
     }
 }
 
-pub fn variables(r: &Value, provider: &str, model: &str, prompt: &str, refs: &[Ref], seconds: Option<i64>, ratio: Option<&str>) -> Map<String, Value> {
+pub fn variables(
+    r: &Value,
+    provider: &str,
+    model: &str,
+    prompt: &str,
+    refs: &[Ref],
+    seconds: Option<i64>,
+    ratio: Option<&str>,
+) -> Map<String, Value> {
     let sizes = r["sizes"].as_object().cloned().unwrap_or_default();
     let allowed: Vec<String> = match r["ratios"].as_array().filter(|a| !a.is_empty()) {
         Some(a) => a.iter().map(py::str_of).collect(),
@@ -462,16 +488,25 @@ pub fn variables(r: &Value, provider: &str, model: &str, prompt: &str, refs: &[R
     v.insert("prompt".into(), json!(prompt));
     v.insert("origin".into(), json!(origin_of(&base(provider))));
     v.insert("ratio".into(), ratio.clone().map(Value::String).unwrap_or(Value::Null));
-    v.insert("size".into(), match &ratio {
-        Some(r) => sizes.get(r).cloned().unwrap_or(Value::Null),
-        None => r.get("size").cloned().unwrap_or(Value::Null),
-    });
-    v.insert("seconds".into(), if secs.is_empty() {
-        Value::Null
-    } else {
-        let want = seconds.filter(|s| *s != 0).unwrap_or_else(|| { let d = int_of(&r["default_seconds"]); if d != 0 { d } else { 5 } });
-        json!(nearest_int(want, &secs))
-    });
+    v.insert(
+        "size".into(),
+        match &ratio {
+            Some(r) => sizes.get(r).cloned().unwrap_or(Value::Null),
+            None => r.get("size").cloned().unwrap_or(Value::Null),
+        },
+    );
+    v.insert(
+        "seconds".into(),
+        if secs.is_empty() {
+            Value::Null
+        } else {
+            let want = seconds.filter(|s| *s != 0).unwrap_or_else(|| {
+                let d = int_of(&r["default_seconds"]);
+                if d != 0 { d } else { 5 }
+            });
+            json!(nearest_int(want, &secs))
+        },
+    );
     let images: Vec<Value> = imgs.iter().map(|x| json!(if as_url { x.url.clone() } else { x.data_url() })).collect();
     for (i, x) in images.iter().enumerate() {
         v.insert(format!("image{}", i + 1), x.clone());
@@ -546,7 +581,10 @@ async fn call(c: &reqwest::Client, provider: &str, req: &Value, v: &Map<String, 
             }
             for (i, x) in refs.iter().filter(|y| y.kind() == "image").enumerate() {
                 let ext = x.mime.split('/').nth(1).unwrap_or("png").replace("jpeg", "jpg");
-                let part = reqwest::multipart::Part::bytes(x.data.clone()).file_name(format!("image{}.{ext}", i + 1)).mime_str(&x.mime).unwrap_or_else(|_| reqwest::multipart::Part::bytes(x.data.clone()));
+                let part = reqwest::multipart::Part::bytes(x.data.clone())
+                    .file_name(format!("image{}.{ext}", i + 1))
+                    .mime_str(&x.mime)
+                    .unwrap_or_else(|_| reqwest::multipart::Part::bytes(x.data.clone()));
                 form = form.part(fname.clone(), part);
             }
         }
@@ -554,7 +592,10 @@ async fn call(c: &reqwest::Client, provider: &str, req: &Value, v: &Map<String, 
     } else if req.get("json").is_some() {
         rb = rb.json(&render(&req["json"], v));
     }
-    let r = rb.send().await.map_err(|e| if e.is_timeout() { t!("连接超时：{url}", url = b.clone()) } else { t!("连不上 {url}", url = b.clone()) })?;
+    let r = rb
+        .send()
+        .await
+        .map_err(|e| if e.is_timeout() { t!("连接超时：{url}", url = b.clone()) } else { t!("连不上 {url}", url = b.clone()) })?;
     let status = r.status().as_u16();
     let text = r.text().await.unwrap_or_default();
     if status >= 400 {
@@ -601,7 +642,8 @@ fn usable(provider: &str) -> Result<(), String> {
 /// 画一张，返回 (原图, mime)
 pub async fn draw(prompt: &str, provider: &str, model: &str, refs: &[Ref]) -> Result<(Vec<u8>, String), String> {
     let prompt = py::head(prompt.trim(), 1000);
-    let refs: Vec<Ref> = refs.iter().map(|x| if x.role.is_empty() { Ref { role: "image".into(), ..x.clone() } } else { x.clone() }).collect();
+    let refs: Vec<Ref> =
+        refs.iter().map(|x| if x.role.is_empty() { Ref { role: "image".into(), ..x.clone() } } else { x.clone() }).collect();
     if prompt.is_empty() {
         return Err(t!("写一句想要画什么"));
     }
@@ -615,7 +657,13 @@ pub async fn draw(prompt: &str, provider: &str, model: &str, refs: &[Ref]) -> Re
     let c = client(180.0);
     let got = async {
         let d = call(&c, provider, &req, &variables(&r, provider, model, &prompt, &refs, None, None), &refs).await?;
-        let paths = if py::truthy(&req["result"]) { req["result"].clone() } else if py::truthy(&r["result"]) { r["result"].clone() } else { json!([]) };
+        let paths = if py::truthy(&req["result"]) {
+            req["result"].clone()
+        } else if py::truthy(&r["result"]) {
+            r["result"].clone()
+        } else {
+            json!([])
+        };
         fetch_result(&c, &first(&d, &paths), MAX_IMAGE).await
     }
     .await
@@ -626,7 +674,14 @@ pub async fn draw(prompt: &str, provider: &str, model: &str, refs: &[Ref]) -> Re
 }
 
 /// 提交一个视频任务，返回 job
-pub async fn submit(provider: &str, model: &str, prompt: &str, refs: &[Ref], seconds: Option<i64>, ratio: Option<&str>) -> Result<Value, String> {
+pub async fn submit(
+    provider: &str,
+    model: &str,
+    prompt: &str,
+    refs: &[Ref],
+    seconds: Option<i64>,
+    ratio: Option<&str>,
+) -> Result<Value, String> {
     usable(provider)?;
     let r = recipe("video", provider, model).ok_or_else(|| t!("{model} 不是生成视频的模型", model = model))?;
     let why = check(&caps("video", provider, model), refs, model);
@@ -667,7 +722,8 @@ pub async fn poll(job: &Value) -> Poll {
         Err(e) => return Poll::Running(Some(e)),
     };
     let status = py::str_of(&pick(&d, p["status"].as_str().filter(|s| !s.is_empty()).unwrap_or("status")));
-    let status = if pick(&d, p["status"].as_str().filter(|s| !s.is_empty()).unwrap_or("status")).is_null() { String::new() } else { status };
+    let status =
+        if pick(&d, p["status"].as_str().filter(|s| !s.is_empty()).unwrap_or("status")).is_null() { String::new() } else { status };
     let list = |k: &str| -> Vec<String> { p[k].as_array().map(|a| a.iter().map(py::str_of).collect()).unwrap_or_default() };
     if list("failed").contains(&status) {
         let e = first(&d, &p.get("error").cloned().unwrap_or(json!([])));
@@ -684,7 +740,11 @@ pub async fn poll(job: &Value) -> Poll {
 
 /// 画了一张、生成了一段：费用统计里记一行（0 token）
 pub fn record(kind: &str, provider: &str, model: &str, cost: Option<f64>) {
-    memory::add_usage(kind, model, memory::UsageRec { provider: Some(provider.to_string()), cost: cost.unwrap_or(0.0), ..Default::default() });
+    memory::add_usage(
+        kind,
+        model,
+        memory::UsageRec { provider: Some(provider.to_string()), cost: cost.unwrap_or(0.0), ..Default::default() },
+    );
 }
 
 // ---------- 临时公网地址 ----------
@@ -710,7 +770,8 @@ pub fn verify(mid: &str, exp: i64, sig: &str) -> bool {
 /// 网页的公网地址（设置 → 聊天软件 → 网页地址）；外面打不开的返回空
 pub fn public_base() -> String {
     let u = crate::channels::public_url();
-    let host = reqwest::Url::parse(&u).ok().and_then(|x| x.host_str().map(|h| h.trim_matches(['[', ']']).to_lowercase())).unwrap_or_default();
+    let host =
+        reqwest::Url::parse(&u).ok().and_then(|x| x.host_str().map(|h| h.trim_matches(['[', ']']).to_lowercase())).unwrap_or_default();
     if host.is_empty() || host == "localhost" || host.ends_with(".local") {
         return String::new();
     }

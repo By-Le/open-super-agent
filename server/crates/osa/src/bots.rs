@@ -2,8 +2,8 @@
 //! 讨论串（thread）是挂在私聊或群聊某条消息下面的子对话（kind='thread'），chat() 按上级对话的样子返回。对应 osa/bots.py。
 
 use crate::db::{self, RowExt};
+use crate::memory;
 use crate::py::{self, dumps_u};
-use crate::{memory};
 use rusqlite::params;
 use serde_json::{Value, json};
 use std::collections::HashMap;
@@ -90,9 +90,15 @@ fn valid_color(s: &str) -> bool {
 /// 头像：形状加颜色，可以再加一张图片
 pub fn clean_avatar(avatar: &Value, n: i64) -> Result<Value, String> {
     let a = if avatar.is_object() { avatar.clone() } else { json!({}) };
-    let shape = a["shape"].as_str().filter(|s| SHAPES.contains(s)).map(String::from)
+    let shape = a["shape"]
+        .as_str()
+        .filter(|s| SHAPES.contains(s))
+        .map(String::from)
         .unwrap_or_else(|| SHAPES[(n.rem_euclid(SHAPES.len() as i64)) as usize].to_string());
-    let color = a["color"].as_str().filter(|s| valid_color(s)).map(String::from)
+    let color = a["color"]
+        .as_str()
+        .filter(|s| valid_color(s))
+        .map(String::from)
         .unwrap_or_else(|| COLORS[(n.rem_euclid(COLORS.len() as i64)) as usize].to_string());
     let mut out = json!({"shape": shape, "color": color});
     if py::truthy(&a["image"]) {
@@ -107,10 +113,7 @@ pub fn clean_avatar(avatar: &Value, n: i64) -> Result<Value, String> {
 
 fn next_id() -> i64 {
     let hw = memory::setting_raw("bot_id_hw").and_then(|s| s.trim().parse::<i64>().ok()).unwrap_or(0);
-    let used = db::scalar_i64(
-        "select max(coalesce((select max(id) from bots), 0), coalesce((select max(bot_id) from messages), 0))",
-        [],
-    );
+    let used = db::scalar_i64("select max(coalesce((select max(id) from bots), 0), coalesce((select max(bot_id) from messages), 0))", []);
     let bid = hw.max(used) + 1;
     memory::set_setting_raw("bot_id_hw", &bid.to_string());
     bid
@@ -205,7 +208,8 @@ fn chat_out(r: &[Value]) -> Value {
     let i = r.i(0);
     let kind = r.s(1);
     let last = db::row("select content, role from messages where chat_id=? order by id desc limit 1", params![i]);
-    let threads = if kind == "thread" { 0 } else { db::scalar_i64("select count(*) from chats where kind='thread' and parent=?", params![i]) };
+    let threads =
+        if kind == "thread" { 0 } else { db::scalar_i64("select count(*) from chats where kind='thread' and parent=?", params![i]) };
     let ids: Value = serde_json::from_str(&if r.s(3).is_empty() { "[]".into() } else { r.s(3) }).unwrap_or(json!([]));
     json!({"id": i, "kind": kind, "title": r[2], "bot_ids": ids, "pinned": if py::truthy(&r[4]) { r[4].clone() } else { json!(0) },
            "updated": r[5], "preview": last.map(|l| py::head(&l.s(0), 80)).unwrap_or_default(), "lead": r[6], "image": r[9],
@@ -351,7 +355,9 @@ pub fn thread_list(parent: Option<i64>, unread_only: bool) -> Vec<Value> {
             out.push(o);
         }
     }
-    out.sort_by(|a, b| b["last"].as_f64().unwrap_or(0.0).partial_cmp(&a["last"].as_f64().unwrap_or(0.0)).unwrap_or(std::cmp::Ordering::Equal));
+    out.sort_by(|a, b| {
+        b["last"].as_f64().unwrap_or(0.0).partial_cmp(&a["last"].as_f64().unwrap_or(0.0)).unwrap_or(std::cmp::Ordering::Equal)
+    });
     out
 }
 

@@ -74,7 +74,15 @@ fn clean_title(title: &str) -> String {
 }
 
 /// 新建，或者给 pid 时更新内容。app 是小应用的清单，只对 html 有效；更新时不给就保留原来的
-pub fn save_page(bot_id: Option<i64>, title: &str, content: &str, fmt: &str, pid: Option<i64>, task_id: Option<i64>, app: &Value) -> Result<Value, String> {
+pub fn save_page(
+    bot_id: Option<i64>,
+    title: &str,
+    content: &str,
+    fmt: &str,
+    pid: Option<i64>,
+    task_id: Option<i64>,
+    app: &Value,
+) -> Result<Value, String> {
     let title = clean_title(title);
     let fmt = if FORMATS.contains(&fmt) { fmt } else { "markdown" };
     let mut app = if fmt == "html" { applets::manifest(app)? } else { None };
@@ -92,7 +100,10 @@ pub fn save_page(bot_id: Option<i64>, title: &str, content: &str, fmt: &str, pid
                 app = Some(old["app"].clone());
             }
             let a = app.as_ref().map(py::dumps_u);
-            db::exec("update pages set title=?, format=?, content=?, updated=?, app=? where id=?", params![title, fmt, content, now, a, pid]);
+            db::exec(
+                "update pages set title=?, format=?, content=?, updated=?, app=? where id=?",
+                params![title, fmt, content, now, a, pid],
+            );
             pid
         }
         None => {
@@ -154,7 +165,10 @@ pub fn set_data(pid: i64, updates: &Value) -> Result<Map<String, Value>, String>
     }
     for (k, v) in &new {
         if cur.get(k) != Some(v) {
-            db::exec("insert or replace into page_data(page_id, key, value, updated) values(?,?,?,?)", params![pid, k, py::dumps_u(v), now]);
+            db::exec(
+                "insert or replace into page_data(page_id, key, value, updated) values(?,?,?,?)",
+                params![pid, k, py::dumps_u(v), now],
+            );
         }
     }
     Ok(new)
@@ -231,13 +245,20 @@ pub fn save_page_text(bot_id: i64, args: &Value, task_id: Option<i64>) -> String
         }
     }
     let app = &args["app"];
-    if py::truthy(app) {
-        if let Some(o) = app.as_object() {
-            let unknown: Vec<String> = o.get("tools").and_then(|t| t.as_array()).into_iter().flatten()
-                .filter_map(|t| t.as_str()).filter(|t| !applets::known(t)).map(String::from).collect();
-            if !unknown.is_empty() {
-                return format!("没保存：app.tools 里有现在没有的工具 {}，只能列你这一轮能用的工具", unknown.join(", "));
-            }
+    if py::truthy(app)
+        && let Some(o) = app.as_object()
+    {
+        let unknown: Vec<String> = o
+            .get("tools")
+            .and_then(|t| t.as_array())
+            .into_iter()
+            .flatten()
+            .filter_map(|t| t.as_str())
+            .filter(|t| !applets::known(t))
+            .map(String::from)
+            .collect();
+        if !unknown.is_empty() {
+            return format!("没保存：app.tools 里有现在没有的工具 {}，只能列你这一轮能用的工具", unknown.join(", "));
         }
     }
     let s = |k: &str| args[k].as_str().unwrap_or("").to_string();
@@ -306,7 +327,11 @@ pub fn check_name(name: &str) -> Result<String, String> {
 
 pub fn pins() -> Vec<String> {
     let base = format!("{}/", root().trim_end_matches('/'));
-    db::rows("select path from file_pins order by ts", []).into_iter().map(|r| r.s(0)).filter(|p| format!("{p}/").starts_with(&base)).collect()
+    db::rows("select path from file_pins order by ts", [])
+        .into_iter()
+        .map(|r| r.s(0))
+        .filter(|p| format!("{p}/").starts_with(&base))
+        .collect()
 }
 
 pub fn pin(path: &str) -> Result<(), String> {
@@ -439,7 +464,11 @@ async fn api_shared_raw(Path(token): Path<String>) -> Response {
 
 async fn api_pin(Body(d): Body) -> Res {
     let path = d["path"].as_str().unwrap_or("");
-    if py::truthy(&d["on"]) { pin(path)? } else { unpin(path)? }
+    if py::truthy(&d["on"]) {
+        pin(path)?
+    } else {
+        unpin(path)?
+    }
     ok(json!({"ok": true, "pins": pins()}))
 }
 

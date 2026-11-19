@@ -130,7 +130,10 @@ fn add(kind: &str, r#ref: i64, bot_id: &Value, sub: &str, updated: &Value, title
             "insert into search_docs(kind, ref, chunk, bot_id, sub, src_updated, title, text) values(?,?,?,?,?,?,?,?)",
             rusqlite::params![kind, r#ref, n as i64, db::J(bot_id), sub, db::J(updated), title, text],
         );
-        db::exec("insert into search_fts(rowid, tokens) values(?, ?)", rusqlite::params![did, tokens(&format!("{title} {text}")).join(" ")]);
+        db::exec(
+            "insert into search_fts(rowid, tokens) values(?, ?)",
+            rusqlite::params![did, tokens(&format!("{title} {text}")).join(" ")],
+        );
     }
 }
 
@@ -201,7 +204,13 @@ pub async fn embed(texts: &[String]) -> anyhow::Result<Vec<Vec<f32>>> {
     let e = embed_config().ok_or_else(|| anyhow::anyhow!("没配 embedding"))?;
     let mut c = providers::Client::for_provider(e["provider"].as_str().unwrap_or(""))?;
     c.timeout = Some(Duration::from_secs(60));
-    let input: Vec<String> = texts.iter().map(|t| { let s = py::head(t, 8000); if s.is_empty() { " ".into() } else { s } }).collect();
+    let input: Vec<String> = texts
+        .iter()
+        .map(|t| {
+            let s = py::head(t, 8000);
+            if s.is_empty() { " ".into() } else { s }
+        })
+        .collect();
     let r = c.post_json("embeddings", &json!({"model": e["model"], "input": input})).await?;
     let mut data: Vec<Value> = r["data"].as_array().cloned().unwrap_or_default();
     data.sort_by_key(|d| d["index"].as_i64().unwrap_or(0));
@@ -221,7 +230,7 @@ fn pack(v: &[f32]) -> Vec<u8> {
 }
 
 fn unpack(b: &[u8]) -> Vec<f32> {
-    b.chunks_exact(4).map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]])).collect()
+    b.as_chunks::<4>().0.iter().map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]])).collect()
 }
 
 fn vec_rows(sql: &str, args: Vec<Value>) -> Vec<(i64, Vec<u8>)> {
@@ -238,7 +247,10 @@ pub async fn embed_loop() {
         let _ = tokio::time::timeout(Duration::from_secs(300), WAKE.notified()).await;
         while let Some(e) = embed_config() {
             let model = e["model"].as_str().unwrap_or("").to_string();
-            let rows = db::rows("select id, title, text from search_docs where model != ? or vec is null limit ?", rusqlite::params![model, BATCH]);
+            let rows = db::rows(
+                "select id, title, text from search_docs where model != ? or vec is null limit ?",
+                rusqlite::params![model, BATCH],
+            );
             if rows.is_empty() {
                 break;
             }
@@ -283,7 +295,9 @@ pub fn info() -> Value {
     let e = embed_config();
     let total = db::scalar_i64("select count(*) from search_docs", []);
     let done = match &e {
-        Some(e) => db::scalar_i64("select count(*) from search_docs where vec is not null and model=?", [e["model"].as_str().unwrap_or("")]),
+        Some(e) => {
+            db::scalar_i64("select count(*) from search_docs where vec is not null and model=?", [e["model"].as_str().unwrap_or("")])
+        }
         None => 0,
     };
     let error = if e.is_some() { STATUS.lock().error.clone() } else { String::new() };
@@ -294,11 +308,11 @@ pub fn info() -> Value {
 fn visible(kinds: &[&str], bot_id: Option<i64>) -> (String, Vec<Value>) {
     let mut wh = vec![format!("d.kind in ({})", vec!["?"; kinds.len()].join(","))];
     let mut args: Vec<Value> = kinds.iter().map(|k| json!(k)).collect();
-    if let Some(b) = bot_id {
-        if kinds.contains(&"memory") {
-            wh.push("(d.kind != 'memory' or d.bot_id is null or d.bot_id = ?)".into());
-            args.push(json!(b));
-        }
+    if let Some(b) = bot_id
+        && kinds.contains(&"memory")
+    {
+        wh.push("(d.kind != 'memory' or d.bot_id is null or d.bot_id = ?)".into());
+        args.push(json!(b));
     }
     (wh.join(" and "), args)
 }
@@ -321,7 +335,9 @@ pub async fn search(q: &str, bot_id: Option<i64>, kinds: &[&str], limit: usize, 
         let mut a = vec![json!(m)];
         a.extend(args.clone());
         let rows = db::rows(
-            &format!("select d.id from search_fts f join search_docs d on d.id = f.rowid where search_fts match ? and {wh} order by bm25(search_fts) limit 60"),
+            &format!(
+                "select d.id from search_fts f join search_docs d on d.id = f.rowid where search_fts match ? and {wh} order by bm25(search_fts) limit 60"
+            ),
             params_from_iter(a.iter().map(db::J)),
         );
         for (i, r) in rows.iter().enumerate() {
@@ -337,7 +353,8 @@ pub async fn search(q: &str, bot_id: Option<i64>, kinds: &[&str], limit: usize, 
                     let qv = v.into_iter().next().unwrap_or_default();
                     let mut a = vec![json!(model)];
                     a.extend(args.clone());
-                    let rows = vec_rows(&format!("select d.id, d.vec from search_docs d where d.vec is not null and d.model = ? and {wh}"), a);
+                    let rows =
+                        vec_rows(&format!("select d.id, d.vec from search_docs d where d.vec is not null and d.model = ? and {wh}"), a);
                     let mut scored: Vec<(f64, i64)> = rows
                         .iter()
                         .map(|(did, b)| (qv.iter().zip(unpack(b)).map(|(x, y)| (*x as f64) * (y as f64)).sum::<f64>(), *did))
@@ -378,8 +395,10 @@ pub async fn search(q: &str, bot_id: Option<i64>, kinds: &[&str], limit: usize, 
             continue;
         }
         let text = d.s(4);
-        out.push(json!({"kind": kind, "ref": r#ref, "title": d[3], "snippet": if kind == "memory" { text } else { snippet(&text, q, 120) },
-                        "bot_id": d[5], "sub": d[6], "score": py::round_n(ranks[&did], 5)}));
+        out.push(
+            json!({"kind": kind, "ref": r#ref, "title": d[3], "snippet": if kind == "memory" { text } else { snippet(&text, q, 120) },
+                        "bot_id": d[5], "sub": d[6], "score": py::round_n(ranks[&did], 5)}),
+        );
         if out.len() >= limit {
             break;
         }
@@ -403,7 +422,12 @@ pub fn snippet(text: &str, q: &str, width: usize) -> String {
         Some(pos) if n > width => {
             let start = pos.saturating_sub(width / 3);
             let end = (start + width).min(n);
-            format!("{}{}{}", if start > 0 { "…" } else { "" }, chars[start.min(n)..end].iter().collect::<String>(), if start + width < n { "…" } else { "" })
+            format!(
+                "{}{}{}",
+                if start > 0 { "…" } else { "" },
+                chars[start.min(n)..end].iter().collect::<String>(),
+                if start + width < n { "…" } else { "" }
+            )
         }
         _ => format!("{}{}", chars.iter().take(width).collect::<String>(), if n > width { "…" } else { "" }),
     }
@@ -425,10 +449,22 @@ pub async fn tool_search_memory(c: Call) -> Out {
     hits.iter()
         .map(|h| {
             if h["kind"] == "memory" {
-                let who = if h["bot_id"].is_null() { "所有 Bot 共享" } else if h["sub"] == "work" { "做过的事" } else { "你的记忆" };
+                let who = if h["bot_id"].is_null() {
+                    "所有 Bot 共享"
+                } else if h["sub"] == "work" {
+                    "做过的事"
+                } else {
+                    "你的记忆"
+                };
                 format!("- 记忆 #{}（{who}）：{}", py::str_of(&h["ref"]), py::str_of(&h["snippet"]))
             } else {
-                format!("- 页面 #{}《{}》{}：{}", py::str_of(&h["ref"]), py::str_of(&h["title"]), library::link(h["ref"].as_i64().unwrap_or(0)), py::str_of(&h["snippet"]))
+                format!(
+                    "- 页面 #{}《{}》{}：{}",
+                    py::str_of(&h["ref"]),
+                    py::str_of(&h["title"]),
+                    library::link(h["ref"].as_i64().unwrap_or(0)),
+                    py::str_of(&h["snippet"])
+                )
             }
         })
         .collect::<Vec<_>>()

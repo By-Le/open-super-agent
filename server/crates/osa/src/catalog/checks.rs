@@ -19,7 +19,16 @@ pub fn signature(name: &str) -> Option<(&'static [&'static str], &'static [&'sta
 pub async fn run(name: &str, params: &Value) -> Result<(), String> {
     let s = |k: &str| params[k].as_str().map(String::from);
     match name {
-        "imap" => imap(&s("host").unwrap_or_default(), &s("user").unwrap_or_default(), &s("password").unwrap_or_default(), &s("port").unwrap_or_else(|| "993".into()), &s("hint").unwrap_or_default()).await,
+        "imap" => {
+            imap(
+                &s("host").unwrap_or_default(),
+                &s("user").unwrap_or_default(),
+                &s("password").unwrap_or_default(),
+                &s("port").unwrap_or_else(|| "993".into()),
+                &s("hint").unwrap_or_default(),
+            )
+            .await
+        }
         _ => Ok(()),
     }
 }

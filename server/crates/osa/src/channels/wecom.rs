@@ -46,7 +46,7 @@ pub fn decrypt(data: &[u8], aeskey: &str) -> anyhow::Result<Vec<u8>> {
     use aes::cipher::{BlockDecryptMut, KeyIvInit};
     let pad = (4 - aeskey.len() % 4) % 4;
     let key = crate::util::b64_decode(&format!("{aeskey}{}", "=".repeat(pad))).ok_or_else(|| anyhow::anyhow!(t!("文件解密失败")))?;
-    if key.len() != 32 || data.len() % 16 != 0 {
+    if key.len() != 32 || !data.len().is_multiple_of(16) {
         anyhow::bail!(t!("文件解密失败"));
     }
     let mut buf = data.to_vec();
@@ -78,12 +78,17 @@ fn filename(disposition: &str) -> String {
     String::new()
 }
 
-type Sink = futures::stream::SplitSink<tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>, Message>;
+type Sink =
+    futures::stream::SplitSink<tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>, Message>;
 type Stream = futures::stream::SplitStream<tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>>;
 
 async fn subscribe(sink: &mut Sink, stream: &mut Stream, bot_id: &str, secret: &str, timeout: f64) -> anyhow::Result<()> {
     let rid = req_id("aibot_subscribe");
-    sink.send(Message::Text(py::dumps(&json!({"cmd": "aibot_subscribe", "headers": {"req_id": rid}, "body": {"bot_id": bot_id, "secret": secret}}), true).into())).await?;
+    sink.send(Message::Text(
+        py::dumps(&json!({"cmd": "aibot_subscribe", "headers": {"req_id": rid}, "body": {"bot_id": bot_id, "secret": secret}}), true)
+            .into(),
+    ))
+    .await?;
     let end = std::time::Instant::now() + Duration::from_secs_f64(timeout);
     loop {
         let left = end.saturating_duration_since(std::time::Instant::now()).max(Duration::from_millis(100));
@@ -101,7 +106,9 @@ async fn subscribe(sink: &mut Sink, stream: &mut Stream, bot_id: &str, secret: &
 }
 
 async fn connect() -> anyhow::Result<(Sink, Stream)> {
-    let (ws, _) = tokio::time::timeout(Duration::from_secs(15), tokio_tungstenite::connect_async(ws_url())).await.map_err(|_| anyhow::anyhow!("TimeoutError"))??;
+    let (ws, _) = tokio::time::timeout(Duration::from_secs(15), tokio_tungstenite::connect_async(ws_url()))
+        .await
+        .map_err(|_| anyhow::anyhow!("TimeoutError"))??;
     Ok(ws.split())
 }
 
@@ -120,9 +127,15 @@ pub async fn check(fields: &Value) -> Result<Value, String> {
     .await;
     if let Err(e) = r {
         if let Some(w) = e.downcast_ref::<WecomError>() {
-            return Err(t!("Bot ID 或 Secret 不对，或者机器人的 API 模式没选“长连接”（{error}）", error = if w.msg.is_empty() { py::str_of(&w.code) } else { w.msg.clone() }));
+            return Err(t!(
+                "Bot ID 或 Secret 不对，或者机器人的 API 模式没选“长连接”（{error}）",
+                error = if w.msg.is_empty() { py::str_of(&w.code) } else { w.msg.clone() }
+            ));
         }
-        return Err(t!("连不上企业微信（{error}）", error = if e.to_string() == "TimeoutError" { "TimeoutError".to_string() } else { "WebSocketException".to_string() }));
+        return Err(t!(
+            "连不上企业微信（{error}）",
+            error = if e.to_string() == "TimeoutError" { "TimeoutError".to_string() } else { "WebSocketException".to_string() }
+        ));
     }
     let name = py::head(fields["name"].as_str().unwrap_or("").trim(), 40);
     Ok(json!({"name": if name.is_empty() { bot_id.clone() } else { name }, "config": {"bot_id": bot_id}, "secret": secret}))
@@ -156,7 +169,8 @@ impl WeCom {
         let rid = rid.unwrap_or_else(|| req_id(cmd));
         let (tx, rx) = oneshot::channel();
         self.acks.lock().insert(rid.clone(), tx);
-        let sent = ws.lock().await.send(Message::Text(py::dumps_u(&json!({"cmd": cmd, "headers": {"req_id": rid}, "body": body})).into())).await;
+        let sent =
+            ws.lock().await.send(Message::Text(py::dumps_u(&json!({"cmd": cmd, "headers": {"req_id": rid}, "body": body})).into())).await;
         let r = match sent {
             Ok(()) => tokio::time::timeout(Duration::from_secs(10), rx).await,
             Err(e) => {
@@ -190,7 +204,11 @@ impl WeCom {
                     return;
                 }
                 me.missed.fetch_add(1, Ordering::Relaxed);
-                let _ = s2.lock().await.send(Message::Text(py::dumps(&json!({"cmd": "ping", "headers": {"req_id": req_id("ping")}}), true).into())).await;
+                let _ = s2
+                    .lock()
+                    .await
+                    .send(Message::Text(py::dumps(&json!({"cmd": "ping", "headers": {"req_id": req_id("ping")}}), true).into()))
+                    .await;
             }
         });
         let mut kicked = false;
@@ -359,6 +377,12 @@ impl WeCom {
     }
 }
 
+impl Default for WeCom {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[async_trait]
 impl Platform for WeCom {
     fn max_len(&self) -> usize {
@@ -372,13 +396,24 @@ impl Platform for WeCom {
             match self.session(&ch).await {
                 Ok(true) => {
                     pause = 120.0;
-                    ch.set_state("error", Some(Later::plain("这个机器人在别处也连上了（比如另一台服务器上的 open-super-agent），同一个机器人只能一处用，2 分钟后重试")));
+                    ch.set_state(
+                        "error",
+                        Some(Later::plain(
+                            "这个机器人在别处也连上了（比如另一台服务器上的 open-super-agent），同一个机器人只能一处用，2 分钟后重试",
+                        )),
+                    );
                 }
                 Ok(false) => ch.set_state("error", Some(Later::plain("长连接断了，正在重连"))),
                 Err(e) => {
                     if let Some(w) = e.downcast_ref::<WecomError>() {
                         let err = if w.msg.is_empty() { w.code.clone() } else { json!(w.msg) };
-                        ch.set_state("error", Some(Later::new("企业微信拒绝了连接（{error}）。Secret 重置过或者机器人改成了回调模式的话，删掉这个连接重新添加", &[("error", err)])));
+                        ch.set_state(
+                            "error",
+                            Some(Later::new(
+                                "企业微信拒绝了连接（{error}）。Secret 重置过或者机器人改成了回调模式的话，删掉这个连接重新添加",
+                                &[("error", err)],
+                            )),
+                        );
                         pause = 300.0;
                     } else {
                         let n = if e.to_string() == "TimeoutError" { "TimeoutError" } else { "OSError" };
@@ -404,7 +439,8 @@ impl Platform for WeCom {
     }
 
     async fn send_text(&self, _ch: &Arc<Chan>, peer: &str, md: &str) -> anyhow::Result<()> {
-        self.request("aibot_send_msg", json!({"chatid": peer, "chat_type": 1, "msgtype": "markdown", "markdown": {"content": md}}), None).await?;
+        self.request("aibot_send_msg", json!({"chatid": peer, "chat_type": 1, "msgtype": "markdown", "markdown": {"content": md}}), None)
+            .await?;
         Ok(())
     }
 
@@ -414,26 +450,51 @@ impl Platform for WeCom {
             self.send_text(ch, peer, &format!("**{}**\n\n{body}", py::str_of(&card["title"]))).await?;
         }
         let task_id = format!("osa{}_{}_{}", ch.id, py::str_of(&card["id"]), crate::util::token_hex(4));
-        match self.request("aibot_send_msg", json!({"chatid": peer, "chat_type": 1, "msgtype": "template_card", "template_card": Self::card(card, &task_id)}), None).await {
+        match self
+            .request(
+                "aibot_send_msg",
+                json!({"chatid": peer, "chat_type": 1, "msgtype": "template_card", "template_card": Self::card(card, &task_id)}),
+                None,
+            )
+            .await
+        {
             Ok(_) => return Ok(task_id),
             Err(e) if e.downcast_ref::<WecomError>().is_some() => eprintln!("[聊天软件 {} 企业微信] 卡片发送失败，改发文字：{e}", ch.id),
             Err(e) => return Err(e),
         }
         let btns = card["buttons"].as_array().cloned().unwrap_or_default();
-        let say = btns.iter().map(|b| t!("“{text}”", text = word_command(b[1].as_str().unwrap_or(""), &card["id"]))).collect::<Vec<_>>().join(&t!("、"));
+        let say = btns
+            .iter()
+            .map(|b| t!("“{text}”", text = word_command(b[1].as_str().unwrap_or(""), &card["id"])))
+            .collect::<Vec<_>>()
+            .join(&t!("、"));
         let link = card["link"].as_array().map(|l| format!("\n\n[{}]({})", py::str_of(&l[0]), py::str_of(&l[1]))).unwrap_or_default();
-        self.send_text(ch, peer, &format!("**{}**\n\n{body}{link}\n\n{}", py::str_of(&card["title"]), t!("回复{say}。", say = say))).await?;
+        self.send_text(ch, peer, &format!("**{}**\n\n{body}{link}\n\n{}", py::str_of(&card["title"]), t!("回复{say}。", say = say)))
+            .await?;
         Ok(String::new())
     }
 
     async fn edit_card(&self, ch: &Arc<Chan>, peer: &str, msg_id: &str, card: &Card) -> anyhow::Result<()> {
         let (rid, t0) = self.events.lock().remove(msg_id).unwrap_or_default();
-        if !rid.is_empty() && py::now() - t0 < 4.5 {
-            if self.request("aibot_respond_update_msg", json!({"response_type": "update_template_card", "template_card": Self::card(card, msg_id)}), Some(rid)).await.is_ok() {
-                return Ok(());
-            }
+        if !rid.is_empty()
+            && py::now() - t0 < 4.5
+            && self
+                .request(
+                    "aibot_respond_update_msg",
+                    json!({"response_type": "update_template_card", "template_card": Self::card(card, msg_id)}),
+                    Some(rid),
+                )
+                .await
+                .is_ok()
+        {
+            return Ok(());
         }
         let what = fmt::title_line(card["body"].as_str().unwrap_or(""), 40);
-        self.send_text(ch, peer, &format!("**{}**{}", py::str_of(&card["done"]), t!("（#{id} {what}）", id = card["id"].clone(), what = what))).await
+        self.send_text(
+            ch,
+            peer,
+            &format!("**{}**{}", py::str_of(&card["done"]), t!("（#{id} {what}）", id = card["id"].clone(), what = what)),
+        )
+        .await
     }
 }

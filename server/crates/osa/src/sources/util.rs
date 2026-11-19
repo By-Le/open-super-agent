@@ -54,12 +54,17 @@ pub async fn blocked(url: &str) -> Option<String> {
     crate::tools::blocked(url).await
 }
 
-static CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
-    reqwest::Client::builder().redirect(reqwest::redirect::Policy::none()).user_agent(UA).build().expect("http client")
-});
+static CLIENT: LazyLock<reqwest::Client> =
+    LazyLock::new(|| reqwest::Client::builder().redirect(reqwest::redirect::Policy::none()).user_agent(UA).build().expect("http client"));
 
 /// GET 一个公网地址。跳转自己跟，每一跳都检查
-pub async fn get(url: &str, timeout: f64, max_bytes: usize, headers: &[(&str, String)], params: &[(&str, String)]) -> Result<Resp, FetchErr> {
+pub async fn get(
+    url: &str,
+    timeout: f64,
+    max_bytes: usize,
+    headers: &[(&str, String)],
+    params: &[(&str, String)],
+) -> Result<Resp, FetchErr> {
     let mut url = url.to_string();
     let mut params: Vec<(String, String)> = params.iter().map(|(k, v)| (k.to_string(), v.clone())).collect();
     for _ in 0..=MAX_REDIRECTS {
@@ -76,12 +81,12 @@ pub async fn get(url: &str, timeout: f64, max_bytes: usize, headers: &[(&str, St
         params.clear();
         let r = rb.send().await.map_err(|e| if e.is_timeout() { FetchErr::Timeout } else { FetchErr::Request(e.to_string()) })?;
         let status = r.status();
-        if status.is_redirection() {
-            if let Some(loc) = r.headers().get("location").and_then(|v| v.to_str().ok()) {
-                let base = r.url().clone();
-                url = base.join(loc).map(|u| u.to_string()).unwrap_or_else(|_| loc.to_string());
-                continue;
-            }
+        if status.is_redirection()
+            && let Some(loc) = r.headers().get("location").and_then(|v| v.to_str().ok())
+        {
+            let base = r.url().clone();
+            url = base.join(loc).map(|u| u.to_string()).unwrap_or_else(|_| loc.to_string());
+            continue;
         }
         let final_url = r.url().to_string();
         let hs = r.headers().clone();
@@ -100,7 +105,13 @@ pub async fn get(url: &str, timeout: f64, max_bytes: usize, headers: &[(&str, St
                 }
             }
         }
-        let resp = Resp { status: status.as_u16(), reason: status.canonical_reason().unwrap_or("").to_string(), headers: hs, body, url: final_url };
+        let resp = Resp {
+            status: status.as_u16(),
+            reason: status.canonical_reason().unwrap_or("").to_string(),
+            headers: hs,
+            body,
+            url: final_url,
+        };
         if status.is_client_error() || status.is_server_error() {
             return Err(FetchErr::Status(resp));
         }
@@ -109,9 +120,12 @@ pub async fn get(url: &str, timeout: f64, max_bytes: usize, headers: &[(&str, St
     Err(FetchErr::Value(format!("跳转超过 {MAX_REDIRECTS} 次")))
 }
 
-static SCRIPT: LazyLock<fancy_regex::Regex> = LazyLock::new(|| fancy_regex::Regex::new(r"(?i)<(script|style|noscript|svg|template)[\s\S]*?</\1>").unwrap());
+static SCRIPT: LazyLock<fancy_regex::Regex> =
+    LazyLock::new(|| fancy_regex::Regex::new(r"(?i)<(script|style|noscript|svg|template)[\s\S]*?</\1>").unwrap());
 static COMMENT: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"<!--[\s\S]*?-->").unwrap());
-static BLOCK: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)</?(p|div|br|li|tr|h[1-6]|section|article|header|footer|ul|ol|table|blockquote|pre)\b[^>]*>").unwrap());
+static BLOCK: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?i)</?(p|div|br|li|tr|h[1-6]|section|article|header|footer|ul|ol|table|blockquote|pre)\b[^>]*>").unwrap()
+});
 static TAG: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"<[^>]+>").unwrap());
 static SPACES: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"[ \t\r\x0c\x0b\u{a0}\u{3000}]+").unwrap());
 

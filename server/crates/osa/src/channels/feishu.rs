@@ -189,11 +189,19 @@ pub fn decode_frame(b: &[u8]) -> Option<Frame> {
 
 // ---------- 接口 ----------
 async fn tenant_token(c: &reqwest::Client, domain: &str, app_id: &str, secret: &str) -> anyhow::Result<(String, u64)> {
-    let r = c.post(format!("{}/open-apis/auth/v3/tenant_access_token/internal", base(domain))).json(&json!({"app_id": app_id, "app_secret": secret})).send().await?;
+    let r = c
+        .post(format!("{}/open-apis/auth/v3/tenant_access_token/internal", base(domain)))
+        .json(&json!({"app_id": app_id, "app_secret": secret}))
+        .send()
+        .await?;
     let text = r.text().await?;
     let d: Value = serde_json::from_str(&text)?;
     if d["code"] != 0 {
-        return Err(FeishuError { code: d["code"].clone(), msg: d["msg"].as_str().map(String::from).unwrap_or_else(|| py::head(&text, 200)) }.into());
+        return Err(FeishuError {
+            code: d["code"].clone(),
+            msg: d["msg"].as_str().map(String::from).unwrap_or_else(|| py::head(&text, 200)),
+        }
+        .into());
     }
     Ok((py::str_of(&d["tenant_access_token"]), d["expire"].as_u64().unwrap_or(7200)))
 }
@@ -202,7 +210,10 @@ async fn tenant_token(c: &reqwest::Client, domain: &str, app_id: &str, secret: &
 fn post_text(content: &Value) -> (String, Vec<String>) {
     let body = match content["content"].as_array() {
         Some(a) if !a.is_empty() => a.clone(),
-        _ => content.as_object().and_then(|o| o.values().find_map(|v| v["content"].as_array().filter(|a| !a.is_empty()).cloned())).unwrap_or_default(),
+        _ => content
+            .as_object()
+            .and_then(|o| o.values().find_map(|v| v["content"].as_array().filter(|a| !a.is_empty()).cloned()))
+            .unwrap_or_default(),
     };
     let mut lines = vec![];
     let mut images = vec![];
@@ -243,7 +254,9 @@ pub async fn check(fields: &Value) -> Result<Value, String> {
         return Err(t!("请填 App Secret"));
     }
     let c = super::http(20);
-    let unreachable = |n: &str| if domain == "feishu" { t!("连不上飞书（{error}）", error = n) } else { t!("连不上 Lark（{error}）", error = n) };
+    let unreachable = |n: &str| {
+        if domain == "feishu" { t!("连不上飞书（{error}）", error = n) } else { t!("连不上 Lark（{error}）", error = n) }
+    };
     let tok = match tenant_token(&c, &domain, &app_id, &secret).await {
         Ok((t, _)) => t,
         Err(e) => {
@@ -259,11 +272,16 @@ pub async fn check(fields: &Value) -> Result<Value, String> {
         Err(e) => return Err(unreachable(err_name(&e))),
     };
     if d["code"] != 0 {
-        return Err(t!("应用还没开启机器人能力：在开发者后台“添加应用能力”里添加“机器人”，再发布一个版本（{error}）", error = d["msg"].clone()));
+        return Err(t!(
+            "应用还没开启机器人能力：在开发者后台“添加应用能力”里添加“机器人”，再发布一个版本（{error}）",
+            error = d["msg"].clone()
+        ));
     }
     let bot = &d["bot"];
     let name = bot["app_name"].as_str().filter(|s| !s.is_empty()).map(String::from).unwrap_or_else(|| app_id.clone());
-    Ok(json!({"name": name, "config": {"app_id": app_id, "domain": domain, "open_id": bot["open_id"].as_str().unwrap_or("")}, "secret": secret}))
+    Ok(
+        json!({"name": name, "config": {"app_id": app_id, "domain": domain, "open_id": bot["open_id"].as_str().unwrap_or("")}, "secret": secret}),
+    )
 }
 
 pub fn pair_link(r: &Value) -> String {
@@ -308,7 +326,14 @@ impl Feishu {
         Ok(t)
     }
 
-    async fn api(&self, ch: &Chan, method: reqwest::Method, path: &str, query: &[(&str, &str)], body: Option<Value>) -> anyhow::Result<Value> {
+    async fn api(
+        &self,
+        ch: &Chan,
+        method: reqwest::Method,
+        path: &str,
+        query: &[(&str, &str)],
+        body: Option<Value>,
+    ) -> anyhow::Result<Value> {
         for attempt in 0..2 {
             let tok = self.token(ch).await?;
             let mut rb = self.http.request(method.clone(), format!("{}{path}", base(&self.domain))).bearer_auth(tok).query(query);
@@ -323,7 +348,11 @@ impl Feishu {
                 continue;
             }
             if code != 0 {
-                return Err(FeishuError { code: d["code"].clone(), msg: d["msg"].as_str().map(String::from).unwrap_or_else(|| py::head(&text, 200)) }.into());
+                return Err(FeishuError {
+                    code: d["code"].clone(),
+                    msg: d["msg"].as_str().map(String::from).unwrap_or_else(|| py::head(&text, 200)),
+                }
+                .into());
             }
             return Ok(d.get("data").cloned().filter(|v| !v.is_null()).unwrap_or(json!({})));
         }
@@ -331,17 +360,30 @@ impl Feishu {
     }
 
     async fn endpoint(&self, ch: &Chan) -> anyhow::Result<(String, Value)> {
-        let r = self.http.post(format!("{}/callback/ws/endpoint", base(&self.domain))).header("locale", "zh").json(&json!({"AppID": self.app_id, "AppSecret": ch.secret})).send().await?;
+        let r = self
+            .http
+            .post(format!("{}/callback/ws/endpoint", base(&self.domain)))
+            .header("locale", "zh")
+            .json(&json!({"AppID": self.app_id, "AppSecret": ch.secret}))
+            .send()
+            .await?;
         let d: Value = r.json().await?;
         if d["code"] != 0 {
-            return Err(FeishuError { code: d["code"].clone(), msg: d["msg"].as_str().map(String::from).unwrap_or_else(|| t!("拿不到长连接地址")) }.into());
+            return Err(FeishuError {
+                code: d["code"].clone(),
+                msg: d["msg"].as_str().map(String::from).unwrap_or_else(|| t!("拿不到长连接地址")),
+            }
+            .into());
         }
         Ok((py::str_of(&d["data"]["URL"]), d["data"].get("ClientConfig").cloned().filter(|v| v.is_object()).unwrap_or(json!({}))))
     }
 
     async fn session(&self, ch: &Arc<Chan>) -> anyhow::Result<()> {
         let (url, conf) = self.endpoint(ch).await?;
-        let service: u64 = reqwest::Url::parse(&url).ok().and_then(|u| u.query_pairs().find(|(k, _)| k == "service_id").and_then(|(_, v)| v.parse().ok())).unwrap_or(0);
+        let service: u64 = reqwest::Url::parse(&url)
+            .ok()
+            .and_then(|u| u.query_pairs().find(|(k, _)| k == "service_id").and_then(|(_, v)| v.parse().ok()))
+            .unwrap_or(0);
         let (ws, _) = tokio_tungstenite::connect_async(&url).await?;
         ch.set_state("connected", None);
         let (sink, mut stream) = ws.split();
@@ -428,7 +470,8 @@ impl Feishu {
                 }
                 let peer = msg["chat_id"].as_str().unwrap_or("").to_string();
                 let mid = msg["message_id"].as_str().unwrap_or("").to_string();
-                let content: Value = serde_json::from_str(msg["content"].as_str().filter(|s| !s.is_empty()).unwrap_or("{}")).unwrap_or(json!({}));
+                let content: Value =
+                    serde_json::from_str(msg["content"].as_str().filter(|s| !s.is_empty()).unwrap_or("{}")).unwrap_or(json!({}));
                 let tail = |s: &str| py::tail(s, 10);
                 let (mut text, mut files) = (String::new(), vec![]);
                 match msg["message_type"].as_str().unwrap_or("") {
@@ -438,9 +481,16 @@ impl Feishu {
                         text = t;
                         files = images.iter().map(|k| (format!("image_{}.png", tail(k)), json!([mid, k, "image"]))).collect();
                     }
-                    "image" => files = vec![(format!("image_{}.png", tail(&mid)), json!([mid, content["image_key"].as_str().unwrap_or(""), "image"]))],
+                    "image" => {
+                        files =
+                            vec![(format!("image_{}.png", tail(&mid)), json!([mid, content["image_key"].as_str().unwrap_or(""), "image"]))]
+                    }
                     "file" | "media" => {
-                        let name = content["file_name"].as_str().filter(|s| !s.is_empty()).map(String::from).unwrap_or_else(|| format!("file_{}", tail(&mid)));
+                        let name = content["file_name"]
+                            .as_str()
+                            .filter(|s| !s.is_empty())
+                            .map(String::from)
+                            .unwrap_or_else(|| format!("file_{}", tail(&mid)));
                         files = vec![(name, json!([mid, content["file_key"].as_str().unwrap_or(""), "file"]))];
                     }
                     _ => {
@@ -468,8 +518,14 @@ impl Feishu {
     }
 
     async fn create(&self, ch: &Chan, peer: &str, msg_type: &str, content: &Value) -> anyhow::Result<Value> {
-        self.api(ch, reqwest::Method::POST, "/open-apis/im/v1/messages", &[("receive_id_type", "chat_id")],
-                 Some(json!({"receive_id": peer, "msg_type": msg_type, "content": py::dumps_u(content)}))).await
+        self.api(
+            ch,
+            reqwest::Method::POST,
+            "/open-apis/im/v1/messages",
+            &[("receive_id_type", "chat_id")],
+            Some(json!({"receive_id": peer, "msg_type": msg_type, "content": py::dumps_u(content)})),
+        )
+        .await
     }
 
     fn card(card: &Card) -> Value {
@@ -508,7 +564,13 @@ impl Platform for Feishu {
                 Ok(()) => ch.set_state("error", Some(Later::plain("长连接断了，正在重连"))),
                 Err(e) => {
                     if let Some(fe) = e.downcast_ref::<FeishuError>() {
-                        ch.set_state("error", Some(Later::new("飞书拒绝了连接（{error}），稍后自动重试。App Secret 重置过的话，删掉这个连接重新添加", &[("error", json!(fe.msg))])));
+                        ch.set_state(
+                            "error",
+                            Some(Later::new(
+                                "飞书拒绝了连接（{error}），稍后自动重试。App Secret 重置过的话，删掉这个连接重新添加",
+                                &[("error", json!(fe.msg))],
+                            )),
+                        );
                     } else {
                         let n = e.downcast_ref::<reqwest::Error>().map(err_name).unwrap_or("OSError");
                         ch.set_state("error", Some(Later::new("连接飞书失败（{error}），稍后自动重试", &[("error", json!(n))])));
@@ -522,8 +584,14 @@ impl Platform for Feishu {
 
     async fn download(&self, ch: &Arc<Chan>, fref: &Value) -> anyhow::Result<(Vec<u8>, String)> {
         let (mid, key, kind) = (py::str_of(&fref[0]), py::str_of(&fref[1]), py::str_of(&fref[2]));
-        let r = self.http.get(format!("{}/open-apis/im/v1/messages/{mid}/resources/{key}", base(&self.domain)))
-            .query(&[("type", kind.as_str())]).bearer_auth(self.token(ch).await?).timeout(Duration::from_secs(120)).send().await?;
+        let r = self
+            .http
+            .get(format!("{}/open-apis/im/v1/messages/{mid}/resources/{key}", base(&self.domain)))
+            .query(&[("type", kind.as_str())])
+            .bearer_auth(self.token(ch).await?)
+            .timeout(Duration::from_secs(120))
+            .send()
+            .await?;
         if r.headers().get("content-type").and_then(|v| v.to_str().ok()).unwrap_or("").contains("application/json") {
             let d: Value = r.json().await.unwrap_or(json!({}));
             anyhow::bail!(t!("飞书不让下载（{error}），检查应用有没有“获取与上传图片或文件资源”权限", error = d["msg"].clone()));
@@ -532,7 +600,8 @@ impl Platform for Feishu {
     }
 
     async fn send_text(&self, ch: &Arc<Chan>, peer: &str, md: &str) -> anyhow::Result<()> {
-        let rows: Vec<Value> = fmt::fence_segments(&fmt::feishu_md(md)).into_iter().map(|seg| json!([{"tag": "md", "text": seg}])).collect();
+        let rows: Vec<Value> =
+            fmt::fence_segments(&fmt::feishu_md(md)).into_iter().map(|seg| json!([{"tag": "md", "text": seg}])).collect();
         if let Err(e) = self.create(ch, peer, "post", &json!({"zh_cn": {"title": "", "content": rows}})).await {
             if e.downcast_ref::<FeishuError>().is_none() {
                 return Err(e);
@@ -548,7 +617,14 @@ impl Platform for Feishu {
 
     async fn edit_card(&self, ch: &Arc<Chan>, _peer: &str, msg_id: &str, card: &Card) -> anyhow::Result<()> {
         if !msg_id.is_empty() {
-            self.api(ch, reqwest::Method::PATCH, &format!("/open-apis/im/v1/messages/{msg_id}"), &[], Some(json!({"content": py::dumps_u(&Self::card(card))}))).await?;
+            self.api(
+                ch,
+                reqwest::Method::PATCH,
+                &format!("/open-apis/im/v1/messages/{msg_id}"),
+                &[],
+                Some(json!({"content": py::dumps_u(&Self::card(card))})),
+            )
+            .await?;
         }
         Ok(())
     }
@@ -558,11 +634,28 @@ impl Platform for Feishu {
         let mut r = self.reaction.lock();
         if !mid.is_empty() && r.is_none() {
             *r = Some((mid.clone(), String::new()));
-            let me = Feishu { http: self.http.clone(), domain: self.domain.clone(), app_id: self.app_id.clone(), token: Mutex::new(self.token.lock().clone()),
-                              seen: Mutex::new(VecDeque::new()), parts: Mutex::new(HashMap::new()), last_msg: Mutex::new(String::new()), reaction: self.reaction.clone() };
+            let me = Feishu {
+                http: self.http.clone(),
+                domain: self.domain.clone(),
+                app_id: self.app_id.clone(),
+                token: Mutex::new(self.token.lock().clone()),
+                seen: Mutex::new(VecDeque::new()),
+                parts: Mutex::new(HashMap::new()),
+                last_msg: Mutex::new(String::new()),
+                reaction: self.reaction.clone(),
+            };
             let c = ch.clone();
             ch.queue(Box::pin(async move {
-                match me.api(&c, reqwest::Method::POST, &format!("/open-apis/im/v1/messages/{mid}/reactions"), &[], Some(json!({"reaction_type": {"emoji_type": "Typing"}}))).await {
+                match me
+                    .api(
+                        &c,
+                        reqwest::Method::POST,
+                        &format!("/open-apis/im/v1/messages/{mid}/reactions"),
+                        &[],
+                        Some(json!({"reaction_type": {"emoji_type": "Typing"}})),
+                    )
+                    .await
+                {
                     Ok(d) => *me.reaction.lock() = Some((mid, d["reaction_id"].as_str().unwrap_or("").to_string())),
                     Err(_) => *me.reaction.lock() = None,
                 }
@@ -574,8 +667,16 @@ impl Platform for Feishu {
 
     fn stop_typing(&self, ch: &Arc<Chan>) -> bool {
         if self.reaction.lock().is_some() {
-            let me = Feishu { http: self.http.clone(), domain: self.domain.clone(), app_id: self.app_id.clone(), token: Mutex::new(self.token.lock().clone()),
-                              seen: Mutex::new(VecDeque::new()), parts: Mutex::new(HashMap::new()), last_msg: Mutex::new(String::new()), reaction: self.reaction.clone() };
+            let me = Feishu {
+                http: self.http.clone(),
+                domain: self.domain.clone(),
+                app_id: self.app_id.clone(),
+                token: Mutex::new(self.token.lock().clone()),
+                seen: Mutex::new(VecDeque::new()),
+                parts: Mutex::new(HashMap::new()),
+                last_msg: Mutex::new(String::new()),
+                reaction: self.reaction.clone(),
+            };
             let c = ch.clone();
             ch.queue(Box::pin(async move {
                 let hit = me.reaction.lock().take();

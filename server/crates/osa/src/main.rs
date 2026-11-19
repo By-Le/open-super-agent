@@ -42,6 +42,6 @@ async fn main() -> anyhow::Result<()> {
         })
         .await?;
     osa::server::shutdown().await;
-    osa::backup::restart_if_requested();   // 网页上确认了恢复：用同样的命令行重新启动，启动时换上备份
+    osa::backup::restart_if_requested(); // 网页上确认了恢复：用同样的命令行重新启动，启动时换上备份
     Ok(())
 }
