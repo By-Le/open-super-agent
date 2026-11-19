@@ -18,6 +18,7 @@ pub mod outputs;
 pub mod unfurl;
 pub mod templates;
 pub mod sources;
+pub mod events;
 pub mod sandbox;
 pub mod videos;
 pub mod images;
@@ -65,6 +66,8 @@ pub mod worker;
 
 /// 各模块自己的表（Python 版在 import 时建）
 pub fn modules_migrate() {
+    events::migrate();
+    routines::migrate();
     avatars::migrate();
     library::migrate();
     search::migrate();

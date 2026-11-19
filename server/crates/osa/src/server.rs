@@ -512,10 +512,10 @@ pub async fn startup() {
     bots::ensure_default();
     tasklog::startup();
     settings::apply();
+    crate::builtin::load();   // 内置的事件来源要先登记好，导入旧版触发器时要用
     if let Some(p) = bots::primary() {
         routines::import_legacy(p["id"].as_i64().unwrap_or(0));
     }
-    crate::builtin::load();
     mcp_hub::start().await;
     crate::channels::start().await;
     tokio::spawn(crate::watchdog::watchdog());

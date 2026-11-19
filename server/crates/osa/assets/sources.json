@@ -1,0 +1,1546 @@
+[
+ {
+  "id": "webhook",
+  "title": "收到 Webhook",
+  "description": "任何能发 webhook 的服务（表单、监控报警、支付通知、快捷指令……）往这个地址 POST，Bot 就处理一次。",
+  "mode": "push",
+  "fields": [],
+  "category": "通用",
+  "icon": "🪝",
+  "on": "",
+  "every": 30,
+  "min_every": 5,
+  "fire_first": false,
+  "setup": "把地址填进对方的 webhook 设置，用 POST 发 JSON 或文字都行。地址本身就是密钥，别公开；泄露了在编辑里点“换一个地址”。",
+  "sample": {
+   "title": "示例事件",
+   "text": "{\n \"event\": \"test\",\n \"message\": \"这是一条示例事件\"\n}"
+  },
+  "scenarios": [
+   {
+    "title": "收到 Webhook 时处理",
+    "description": "任何服务推过来的消息，按你的要求处理",
+    "name": "Webhook",
+    "prompt": "看看收到的内容是什么，用两三句话告诉我要点；需要我做什么的，列出来。"
+   },
+   {
+    "title": "监控报警时分析",
+    "description": "Grafana、Uptime Kuma、Prometheus 的报警推过来，先分析再告诉你",
+    "name": "监控报警",
+    "prompt": "这是一条监控报警。说清楚是哪个服务、什么问题、从什么时候开始，推测可能的原因，给出排查的第一步。报警已恢复的只用一句话告诉我。"
+   },
+   {
+    "title": "Sentry 报错时排查",
+    "description": "新的报错推过来，Bot 看堆栈、猜原因",
+    "name": "Sentry 报错",
+    "prompt": "这是 Sentry 推来的报错。看错误信息和堆栈，判断可能的原因和受影响的功能，给出修复建议；明显是噪音（爬虫、已知问题）的写 [无新内容]。"
+   },
+   {
+    "title": "表单有人提交时整理",
+    "description": "问卷、报名表（Tally、金数据、腾讯问卷……）有新提交",
+    "name": "表单提交",
+    "prompt": "有人提交了表单。把内容整理成一段清楚的摘要；是投诉或需要尽快回复的，放在最前面提醒我。"
+   },
+   {
+    "title": "付款、订单通知",
+    "description": "Stripe、面包多、爱发电这类付款或订单通知",
+    "name": "订单通知",
+    "prompt": "这是一条付款或订单通知。告诉我谁买了什么、多少钱；退款、拒付这类要我处理的放在最前面。"
+   },
+   {
+    "title": "从快捷指令触发",
+    "description": "iPhone 快捷指令、自动化工具用 POST 发一段文字过来，Bot 照着做",
+    "name": "快捷指令",
+    "prompt": "收到的文字是我从快捷指令发来的要求，照着做，做完简短告诉我结果。"
+   }
+  ],
+  "has_summary": false,
+  "has_validate": false,
+  "has_available": false
+ },
+ {
+  "id": "github",
+  "title": "GitHub 推送",
+  "description": "仓库里有新 issue、PR、评论、发布、Actions 失败时，GitHub 推过来，Bot 处理。要有仓库的管理权限才能配。",
+  "mode": "push",
+  "fields": [
+   {
+    "key": "events",
+    "label": "要哪些事件",
+    "type": "multi",
+    "options": [
+     {
+      "value": "issues",
+      "label": "issue（新开、关闭、重开）"
+     },
+     {
+      "value": "issue_comment",
+      "label": "issue 和 PR 的评论"
+     },
+     {
+      "value": "pull_request",
+      "label": "PR（新开、更新、合并）"
+     },
+     {
+      "value": "pull_request_review",
+      "label": "PR 的审查"
+     },
+     {
+      "value": "push",
+      "label": "推送代码"
+     },
+     {
+      "value": "release",
+      "label": "发布版本"
+     },
+     {
+      "value": "workflow_run",
+      "label": "Actions 跑完"
+     },
+     {
+      "value": "discussion",
+      "label": "讨论区"
+     },
+     {
+      "value": "star",
+      "label": "点星"
+     },
+     {
+      "value": "fork",
+      "label": "fork"
+     }
+    ],
+    "help": "不选就是 GitHub 发来的都要；GitHub 那边也要勾上对应的事件"
+   },
+   {
+    "key": "skip_bots",
+    "label": "忽略机器人（dependabot 之类）",
+    "type": "bool",
+    "default": true
+   },
+   {
+    "key": "only_failed",
+    "label": "Actions 只管失败的",
+    "type": "bool",
+    "default": true
+   },
+   {
+    "key": "secret",
+    "label": "Secret（可选）",
+    "type": "secret",
+    "help": "GitHub 的 webhook 设置里填了 Secret 的话，这里填一样的，会校验签名；留空也行，地址本身就是密钥"
+   }
+  ],
+  "category": "开发",
+  "icon": "🐙",
+  "on": "",
+  "every": 30,
+  "min_every": 5,
+  "fire_first": false,
+  "setup": "在 GitHub 仓库的 Settings → Webhooks → Add webhook：Payload URL 填 {url}，Content type 选 application/json，再选要发哪些事件。保存后 GitHub 会先发一个 ping，运行记录里显示“地址配好了”就通了。",
+  "sample": {
+   "title": "[octo/demo] 新 issue #42：点保存没反应（alice）",
+   "url": "https://github.com/octo/demo/issues/42",
+   "text": "标签：bug\n在设置页改了名字点保存，按钮转一下就没反应了，刷新后名字没变。Chrome 130。"
+  },
+  "scenarios": [
+   {
+    "title": "新 issue 自动分析",
+    "description": "判断是 bug、需求还是提问，给出可能原因和回复草稿",
+    "name": "GitHub issue",
+    "params": {
+     "events": [
+      "issues"
+     ]
+    },
+    "llm_filter": "只有新开的、报告 bug 或故障、或者需要回复的问题才处理；纯通知、关闭、机器人的忽略",
+    "prompt": "看这个 issue：判断是 bug、功能请求还是提问；是 bug 的推测可能原因和要看的代码位置；最后写一段可以直接贴上去的回复草稿。"
+   },
+   {
+    "title": "Actions 失败时排查",
+    "description": "CI 挂了，Bot 看是哪一步、可能为什么",
+    "name": "CI 失败",
+    "params": {
+     "events": [
+      "workflow_run"
+     ],
+     "only_failed": true
+    },
+    "prompt": "GitHub Actions 失败了。打开链接看是哪个任务、哪一步失败，找出最可能的原因（代码问题、依赖、偶发），告诉我怎么修；偶发的建议重跑。"
+   },
+   {
+    "title": "新 PR 先审一遍",
+    "description": "有人提 PR，Bot 先看改动、指出明显问题",
+    "name": "PR 初审",
+    "params": {
+     "events": [
+      "pull_request"
+     ]
+    },
+    "llm_filter": "只处理新开的 PR 和标记为可以审的 PR",
+    "prompt": "有新 PR。打开链接看改动，用三五句话说清楚改了什么，指出明显的问题（缺测试、破坏兼容、安全隐患），给出审查意见草稿。"
+   },
+   {
+    "title": "发版后写更新说明",
+    "description": "发布新版本时整理成给用户看的更新说明",
+    "name": "发版说明",
+    "params": {
+     "events": [
+      "release"
+     ]
+    },
+    "prompt": "仓库发布了新版本。把发布说明改写成给普通用户看的更新说明：新功能、修复、需要注意的变化，各几条，去掉技术细节。"
+   },
+   {
+    "title": "评论里有人问问题",
+    "description": "issue / PR 下面有新评论，需要回复的提醒你",
+    "name": "GitHub 评论",
+    "params": {
+     "events": [
+      "issue_comment"
+     ]
+    },
+    "llm_filter": "只有在提问、求助或者在等维护者回复的评论才处理",
+    "prompt": "有人在 GitHub 上评论。说清楚他在问什么、急不急，写一段回复草稿。"
+   }
+  ],
+  "has_summary": true,
+  "has_validate": false,
+  "has_available": false
+ },
+ {
+  "id": "rss",
+  "title": "订阅源有新文章",
+  "description": "RSS / Atom / JSON Feed 有新文章、新视频、新一期播客时，Bot 处理一次：总结、挑出值得看的、翻译……",
+  "mode": "poll",
+  "fields": [
+   {
+    "key": "url",
+    "label": "订阅源地址",
+    "type": "url",
+    "required": true,
+    "placeholder": "https://sspai.com/feed",
+    "help": "RSS、Atom、JSON Feed 都行；填网站首页也可以，页面里写了订阅源地址的会自动找到。没有 RSS 的网站（微博、B 站、公众号……）很多能用 RSSHub 转成订阅源：https://docs.rsshub.app"
+   }
+  ],
+  "category": "资讯",
+  "icon": "📰",
+  "on": "",
+  "every": 30,
+  "min_every": 10,
+  "fire_first": false,
+  "setup": "",
+  "sample": {
+   "title": "用快捷指令把每天的待办自动发到微信",
+   "url": "https://sspai.com/post/90000",
+   "text": "来自：少数派　作者：王小明　发布：2026-11-09 09:30\n每天早上打开好几个 App 看待办太麻烦了。这篇文章介绍怎么用 iPhone 的快捷指令，每天 8 点把提醒事项里今天要做的事整理好，自动发到微信的文件传输助手，顺便附上天气……"
+  },
+  "scenarios": [
+   {
+    "title": "订阅源有新文章时总结",
+    "description": "任何 RSS：每篇新文章用几句话说清楚讲什么",
+    "name": "订阅源",
+    "prompt": "订阅源有新文章。每篇用三条要点总结，最后一句说值不值得细读；明显是广告、和我关心的事无关的跳过。都不值得看就只写 [无新内容]。"
+   },
+   {
+    "title": "Hacker News 上有关键词的新帖",
+    "description": "hnrss.org 按关键词筛的 Hacker News 新帖，把网址里的 LLM 换成你关心的词",
+    "name": "Hacker News",
+    "params": {
+     "url": "https://hnrss.org/newest?q=LLM"
+    },
+    "every": 60,
+    "prompt": "这些是 Hacker News 上的新帖子。每条用一句话说讲什么、为什么值得看；和关键词关系不大、标题党的跳过。都不值得看就只写 [无新内容]。"
+   },
+   {
+    "title": "V2EX 节点有新帖",
+    "description": "V2EX 某个节点的新主题，把网址里的 create（分享创造）换成别的节点名",
+    "name": "V2EX",
+    "params": {
+     "url": "https://www.v2ex.com/feed/create.xml"
+    },
+    "prompt": "V2EX 有新帖子。挑出有意思的项目或讨论，每条一句话说是什么；求助、广告、水帖跳过。都不值得看就只写 [无新内容]。"
+   },
+   {
+    "title": "YouTube 频道有新视频",
+    "description": "把网址里的 channel_id 换成频道的 ID（频道页面的“分享 → 复制频道 ID”）",
+    "name": "YouTube",
+    "params": {
+     "url": "https://www.youtube.com/feeds/videos.xml?channel_id=UCXUPKJO5MZQN11PqgIvyuvQ"
+    },
+    "prompt": "频道发了新视频。根据标题和简介说清楚视频讲什么、适合谁看，值得看的给出两三个看点。"
+   },
+   {
+    "title": "Reddit 版块有新帖",
+    "description": "Reddit 某个版块的新帖，把网址里的 LocalLLaMA 换成你关注的版块",
+    "name": "Reddit",
+    "params": {
+     "url": "https://www.reddit.com/r/LocalLLaMA/new/.rss"
+    },
+    "every": 60,
+    "prompt": "Reddit 版块有新帖子。挑出有信息量的（新发布、实测结果、教程、重要讨论），每条一两句话说清楚；提问、梗图、重复的跳过。都不值得看就只写 [无新内容]。"
+   },
+   {
+    "title": "arXiv 上有新论文",
+    "description": "按关键词搜 arXiv 最新论文，把网址里的 agent 换成你关心的方向；想看整个分类填 https://rss.arxiv.org/rss/cs.AI（每天上百篇，一次最多列 20 篇）",
+    "name": "arXiv",
+    "every": 720,
+    "params": {
+     "url": "https://export.arxiv.org/api/query?search_query=cat:cs.AI+AND+abs:agent&sortBy=submittedDate&sortOrder=descending&max_results=30"
+    },
+    "prompt": "这些是 arXiv 上的新论文。挑出最值得看的几篇，每篇用一两句话说做了什么、新在哪、结论可不可信；增量很小的跳过。都不值得看就只写 [无新内容]。"
+   },
+   {
+    "title": "播客出了新一期",
+    "description": "播客的 RSS 地址一般在节目主页或 Apple 播客里能找到",
+    "name": "播客",
+    "params": {
+     "url": "https://lexfridman.com/feed/podcast/"
+    },
+    "every": 120,
+    "prompt": "播客出了新一期。根据节目介绍说清楚这期聊什么、嘉宾是谁、多长，列出两三个最值得听的话题。"
+   },
+   {
+    "title": "少数派有新文章",
+    "description": "少数派的 RSS，挑出和效率工具、数码相关的",
+    "name": "少数派",
+    "params": {
+     "url": "https://sspai.com/feed"
+    },
+    "llm_filter": "只处理介绍软件、效率方法、数码产品的文章；纯广告、活动通知忽略",
+    "prompt": "少数派有新文章。每篇用两三句话说清楚介绍了什么、对我有什么用；值得马上试的工具单独列出来。"
+   },
+   {
+    "title": "关注的博客更新了",
+    "description": "个人博客、公司技术博客有新文章（例子是阮一峰的网络日志）",
+    "name": "博客更新",
+    "params": {
+     "url": "https://www.ruanyifeng.com/blog/atom.xml"
+    },
+    "every": 120,
+    "prompt": "关注的博客有新文章。用三条要点总结，摘出一句最有意思的话，最后说值不值得花时间读全文。"
+   },
+   {
+    "title": "B 站 UP 主有新视频（RSSHub）",
+    "description": "B 站没有 RSS，用 RSSHub 转；把网址里的数字换成 UP 主的 uid。公共的 rsshub.app 常常限流，最好自己部署一个",
+    "name": "B 站更新",
+    "params": {
+     "url": "https://rsshub.app/bilibili/user/video/946974"
+    },
+    "every": 60,
+    "prompt": "UP 主发了新视频。根据标题和简介说清楚讲什么，值不值得看。"
+   }
+  ],
+  "has_summary": true,
+  "has_validate": false,
+  "has_available": false
+ },
+ {
+  "id": "web_change",
+  "title": "网页变了",
+  "description": "隔一段时间看一次网页，文字变了、或者某个词出现 / 消失了（到货、售罄、开放报名……），Bot 处理一次。只看得到网页上直接写着的文字，要登录、用 JavaScript 加载的内容看不到。",
+  "mode": "poll",
+  "fields": [
+   {
+    "key": "url",
+    "label": "网址",
+    "type": "url",
+    "required": true,
+    "placeholder": "https://"
+   },
+   {
+    "key": "mode",
+    "label": "什么时候算",
+    "type": "select",
+    "default": "change",
+    "options": [
+     {
+      "value": "change",
+      "label": "文字有变化"
+     },
+     {
+      "value": "appear",
+      "label": "出现了关键词"
+     },
+     {
+      "value": "disappear",
+      "label": "关键词不见了"
+     }
+    ]
+   },
+   {
+    "key": "keyword",
+    "label": "关键词",
+    "type": "text",
+    "placeholder": "加入购物车",
+    "help": "选了“出现”或“消失”时要填。多个词用逗号分开：任意一个出现就算出现，全都不见了才算消失；不分大小写"
+   },
+   {
+    "key": "ignore",
+    "label": "忽略含这些词的行",
+    "type": "list",
+    "help": "一行一个。计数、时间、广告这类每次都变的行填进来，免得误报，比如“阅读”“更新于”“广告”"
+   }
+  ],
+  "category": "通用",
+  "icon": "🔍",
+  "on": "",
+  "every": 60,
+  "min_every": 10,
+  "fire_first": false,
+  "setup": "",
+  "sample": {
+   "title": "网页变了：通知公告 - 某某大学教务处",
+   "url": "https://jwc.example.edu.cn/tzgg.htm",
+   "text": "多了 2 行，少了 1 行（+ 是新出现的，- 是没了的）：\n+ 关于 2026-2027 学年第一学期期末考试安排的通知 2026-11-09\n+ 关于开展 2027 届毕业生图像信息采集工作的通知 2026-11-08\n- 关于 2026 年秋季学期补考报名的通知 2026-09-01"
+  },
+  "scenarios": [
+   {
+    "title": "网页内容变了就告诉我",
+    "description": "任何网页：文档、价格表、服务条款、项目主页……",
+    "name": "网页变化",
+    "params": {
+     "mode": "change"
+    },
+    "prompt": "网页变了。根据列出的变化说清楚改了什么、对我有什么影响；只是日期、计数、广告这类无关紧要的变化，只写 [无新内容]。"
+   },
+   {
+    "title": "商品到货提醒",
+    "description": "商品页出现“加入购物车”“立即购买”时提醒（缺货时没有这些按钮）",
+    "name": "到货提醒",
+    "params": {
+     "mode": "appear",
+     "keyword": "加入购物车,立即购买"
+    },
+    "every": 30,
+    "prompt": "商品好像到货了。告诉我是什么商品、现在的价格（页面上有的话），提醒我尽快去买。"
+   },
+   {
+    "title": "缺货的商品补货了",
+    "description": "商品页上的“缺货”“售罄”不见了时提醒",
+    "name": "补货提醒",
+    "params": {
+     "mode": "disappear",
+     "keyword": "缺货,售罄,暂时无货"
+    },
+    "every": 30,
+    "prompt": "商品页上的缺货提示不见了，可能补货了。说清楚是什么商品、现在的价格，提醒我尽快去看；看着是页面坏了的写 [无新内容]。"
+   },
+   {
+    "title": "降价提醒",
+    "description": "商品页的文字变了，价格比之前低了才告诉你",
+    "name": "降价提醒",
+    "params": {
+     "mode": "change",
+     "ignore": [
+      "评价",
+      "销量",
+      "已售"
+     ]
+    },
+    "llm_filter": "只有商品价格比之前低了才处理；涨价、价格没变、别的文字变化都忽略",
+    "prompt": "商品降价了。说清楚商品、原价、现价、降了多少（百分之几），有优惠券、限时之类的条件也写上。"
+   },
+   {
+    "title": "公告页有新通知",
+    "description": "学校教务处、政府部门、公司官网的通知公告页",
+    "name": "新通知",
+    "params": {
+     "mode": "change"
+    },
+    "prompt": "公告页更新了。列出新增的通知：每条一句话说是什么事、跟谁有关、有没有截止日期，和我相关、要动手办的放前面。只有删掉的旧通知或者排版变化，只写 [无新内容]。"
+   },
+   {
+    "title": "招聘页有新职位",
+    "description": "公司的招聘页、职位列表有新职位",
+    "name": "新职位",
+    "params": {
+     "mode": "change"
+    },
+    "prompt": "招聘页有变化。列出新增的职位（名称、地点、要求要点），和我背景相符的标出来；只是职位下架或者无关变化，只写 [无新内容]。"
+   },
+   {
+    "title": "成绩、报名开放了",
+    "description": "考试院、学校的页面出现“成绩查询”“报名入口”时提醒",
+    "name": "成绩查询",
+    "params": {
+     "mode": "appear",
+     "keyword": "成绩查询,报名入口"
+    },
+    "every": 30,
+    "prompt": "页面上出现了查成绩或报名的入口。告诉我入口在哪、要准备什么、有没有截止时间。"
+   }
+  ],
+  "has_summary": true,
+  "has_validate": true,
+  "has_available": false
+ },
+ {
+  "id": "site_down",
+  "title": "网站挂了",
+  "description": "隔几分钟访问一次网站，连续几次打不开（报错、超时、页面不对）时告诉你，恢复了也说一声，顺便说挂了多久。",
+  "mode": "poll",
+  "fields": [
+   {
+    "key": "url",
+    "label": "网址",
+    "type": "url",
+    "required": true,
+    "placeholder": "https://"
+   },
+   {
+    "key": "expect",
+    "label": "页面上应该有的字（可选）",
+    "type": "text",
+    "help": "填了的话，页面打得开但上面没有这几个字也算挂了（报错页、空白页、被劫持）。健康检查接口可以填 ok"
+   },
+   {
+    "key": "fails",
+    "label": "连续失败几次才报",
+    "type": "number",
+    "default": 2,
+    "min": 1,
+    "max": 20,
+    "help": "偶尔一次超时不打扰。检查间隔 × 次数，就是最快多久能发现"
+   },
+   {
+    "key": "notify_recover",
+    "label": "恢复了也告诉我",
+    "type": "bool",
+    "default": true
+   }
+  ],
+  "category": "系统",
+  "icon": "🚨",
+  "on": "",
+  "every": 5,
+  "min_every": 2,
+  "fire_first": true,
+  "setup": "",
+  "sample": {
+   "title": "网站打不开了：shop.example.com（HTTP 502 Bad Gateway）",
+   "url": "https://shop.example.com/",
+   "text": "地址：https://shop.example.com/\n情况：HTTP 502 Bad Gateway\n响应时间：0.35 秒\n从 11-09 14:20 开始，连续 2 次检查都失败"
+  },
+  "scenarios": [
+   {
+    "title": "网站挂了提醒",
+    "description": "自己的网站、博客、常用的服务打不开时告诉你",
+    "name": "网站监控",
+    "params": {
+     "fails": 2,
+     "notify_recover": true
+    },
+    "prompt": "网站打不开了或者恢复了。一两句话说清楚是哪个网站、什么情况、挂了多久；打不开的，按情况给出排查的第一步（5xx 看服务器和日志、超时看网络和负载、证书错误看证书有没有过期、DNS 解析不了看域名）。"
+   },
+   {
+    "title": "API 健康检查",
+    "description": "定时访问健康检查接口，状态码不对或者返回里没有 ok 就报",
+    "name": "API 健康检查",
+    "params": {
+     "expect": "ok",
+     "fails": 3,
+     "notify_recover": true
+    },
+    "every": 2,
+    "prompt": "健康检查失败了。说清楚是状态码不对、超时、还是返回的内容不对，推测可能的原因；恢复了的只用一句话告诉我。"
+   },
+   {
+    "title": "关键页面打不开时排查",
+    "description": "登录页、支付页这类关键页面挂了，Bot 先自己查一查",
+    "name": "关键页面",
+    "params": {
+     "fails": 2,
+     "notify_recover": true
+    },
+    "prompt": "这个关键页面打不开了。用 fetch_url 再打开一次确认，看看现在是报错页、空白页还是跳到了别处，再搜一下是不是服务商大面积故障；告诉我最可能的原因、影响多大、该先找谁。恢复了的一句话告诉我。"
+   }
+  ],
+  "has_summary": true,
+  "has_validate": false,
+  "has_available": false
+ },
+ {
+  "id": "github_repo",
+  "title": "GitHub 仓库有新动态",
+  "description": "盯任何一个 GitHub 仓库的新版本、新标签、新提交、新 issue 或新 PR，不用配 webhook，别人的项目也能盯。",
+  "mode": "poll",
+  "fields": [
+   {
+    "key": "repo",
+    "label": "仓库",
+    "type": "text",
+    "required": true,
+    "placeholder": "owner/repo",
+    "help": "写成 owner/repo，比如 ollama/ollama；直接贴仓库的网址也行"
+   },
+   {
+    "key": "what",
+    "label": "看什么",
+    "type": "select",
+    "default": "releases",
+    "required": true,
+    "options": [
+     {
+      "value": "releases",
+      "label": "新版本（Release）"
+     },
+     {
+      "value": "tags",
+      "label": "新标签（Tag）"
+     },
+     {
+      "value": "commits",
+      "label": "新提交"
+     },
+     {
+      "value": "issues",
+      "label": "新 issue"
+     },
+     {
+      "value": "pulls",
+      "label": "新 PR"
+     }
+    ]
+   },
+   {
+    "key": "branch",
+    "label": "分支（可选）",
+    "type": "text",
+    "placeholder": "main",
+    "help": "只在看“新提交”时有用，不填就是仓库的默认分支"
+   },
+   {
+    "key": "token",
+    "label": "GitHub token（可选）",
+    "type": "secret",
+    "help": "不填也能用，但 GitHub 每小时只让调 60 次；填了能到 5000 次，私有仓库也能看。在 GitHub 的 Settings → Developer settings → Personal access tokens 里建一个只读的"
+   }
+  ],
+  "category": "开发",
+  "icon": "📦",
+  "on": "",
+  "every": 60,
+  "min_every": 15,
+  "fire_first": false,
+  "setup": "",
+  "sample": {
+   "title": "[ollama/ollama] 发布了 v0.12.0",
+   "url": "https://github.com/ollama/ollama/releases/tag/v0.12.0",
+   "text": "发布时间：2026-11-08 09:12　发布人：jmorganca\n## What's Changed\n- New models: Qwen4, Gemma 4\n- Faster model loading on Apple Silicon\n- **Breaking:** the `/api/generate` `context` field has been removed, use `/api/chat` instead\n- Fixed a crash when the GPU runs out of memory"
+  },
+  "scenarios": [
+   {
+    "title": "关注的项目发新版本",
+    "description": "用的开源项目发版时，总结更新内容，把不兼容的改动挑出来",
+    "name": "新版本",
+    "params": {
+     "repo": "ollama/ollama",
+     "what": "releases"
+    },
+    "prompt": "这个项目发布了新版本。用三五条要点总结更新了什么；不兼容的改动（breaking changes）、要手动迁移的放在最前面提醒我；只修了些小问题的一句话带过。"
+   },
+   {
+    "title": "有人给项目提 issue（不用配 webhook）",
+    "description": "没有管理权限也能用：新 issue 来了先分析一遍",
+    "name": "新 issue",
+    "params": {
+     "what": "issues"
+    },
+    "every": 30,
+    "prompt": "项目有新 issue。判断是 bug、功能请求还是提问，急不急；是 bug 的推测可能原因；最后写一段可以直接回复的草稿。明显是广告、重复的写 [无新内容]。"
+   },
+   {
+    "title": "仓库有新提交",
+    "description": "某个分支有新提交时，总结改了什么（不填分支就是默认分支）",
+    "name": "新提交",
+    "params": {
+     "what": "commits"
+    },
+    "exclude": [
+     "dependabot",
+     "chore(deps)",
+     "renovate"
+    ],
+    "prompt": "仓库有新提交。按新功能、修复、重构、其他归类，总结改了什么，重要的改动说清楚影响；只改了文档、格式的一句话带过。"
+   },
+   {
+    "title": "有新 PR",
+    "description": "有人提了新 PR，先看一眼值不值得优先审",
+    "name": "新 PR",
+    "params": {
+     "what": "pulls"
+    },
+    "every": 30,
+    "prompt": "项目有新 PR。说清楚想改什么、改动大不大、有没有关联的 issue，值得我优先看的标出来；机器人提的依赖升级只写 [无新内容]。"
+   },
+   {
+    "title": "项目打了新标签",
+    "description": "不发 Release、只打标签的项目，用这个盯新版本",
+    "name": "新标签",
+    "params": {
+     "what": "tags"
+    },
+    "prompt": "项目打了新标签，可能是发了新版本。打开链接看看这个版本附近改了什么，简单总结；看着不是版本号的标签写 [无新内容]。"
+   }
+  ],
+  "has_summary": true,
+  "has_validate": true,
+  "has_available": false
+ },
+ {
+  "id": "mail",
+  "title": "收到新邮件",
+  "description": "用 IMAP 看你的邮箱（QQ、163、Gmail、Outlook、iCloud……），有新邮件时 Bot 处理一次：总结、挑出重要的、提醒你回复。只读，不会把邮件标成已读。",
+  "mode": "poll",
+  "fields": [
+   {
+    "key": "provider",
+    "label": "邮箱服务商",
+    "type": "select",
+    "default": "auto",
+    "options": [
+     {
+      "value": "auto",
+      "label": "按邮箱地址自动判断"
+     },
+     {
+      "value": "qq",
+      "label": "QQ 邮箱"
+     },
+     {
+      "value": "163",
+      "label": "163 邮箱"
+     },
+     {
+      "value": "126",
+      "label": "126 邮箱"
+     },
+     {
+      "value": "gmail",
+      "label": "Gmail"
+     },
+     {
+      "value": "outlook",
+      "label": "Outlook / Hotmail"
+     },
+     {
+      "value": "icloud",
+      "label": "iCloud"
+     },
+     {
+      "value": "aliyun",
+      "label": "阿里邮箱"
+     },
+     {
+      "value": "139",
+      "label": "139 邮箱"
+     },
+     {
+      "value": "feishu",
+      "label": "飞书邮箱"
+     },
+     {
+      "value": "custom",
+      "label": "其他（自己填服务器）"
+     }
+    ],
+    "help": "常见的邮箱选了就行；企业邮箱选“其他”自己填服务器（腾讯企业邮是 imap.exmail.qq.com，阿里企业邮是 imap.qiye.aliyun.com）"
+   },
+   {
+    "key": "user",
+    "label": "邮箱地址",
+    "type": "text",
+    "required": true,
+    "placeholder": "you@qq.com"
+   },
+   {
+    "key": "password",
+    "label": "授权码",
+    "type": "secret",
+    "required": true,
+    "help": "大多数邮箱要用授权码（也叫应用专用密码），不是登录密码：QQ 邮箱在“设置 → 账号”里开启 IMAP 服务后生成；163 / 126 在“设置 → POP3/SMTP/IMAP”里开启后生成；Gmail 要先开两步验证再生成应用专用密码；iCloud 在 Apple 账户里生成 App 专用密码。会存进保险库"
+   },
+   {
+    "key": "host",
+    "label": "IMAP 服务器（选“其他”时填）",
+    "type": "text",
+    "placeholder": "imap.example.com"
+   },
+   {
+    "key": "port",
+    "label": "端口",
+    "type": "number",
+    "default": 993,
+    "min": 1,
+    "max": 65535,
+    "help": "一般是 993（SSL）；填 143 会用 STARTTLS 加密"
+   },
+   {
+    "key": "folder",
+    "label": "文件夹",
+    "type": "text",
+    "default": "INBOX",
+    "help": "默认看收件箱（INBOX）；也可以写别的文件夹名，比如“工作”"
+   }
+  ],
+  "category": "生活",
+  "icon": "📬",
+  "on": "",
+  "every": 5,
+  "min_every": 2,
+  "fire_first": false,
+  "setup": "",
+  "sample": {
+   "title": "张三 来信：下周三的方案评审",
+   "text": "发件人：张三 <zhangsan@example.com>\n收件人：me@qq.com\n时间：2026-11-09 10:32\n附件：方案-v2.pdf\n\n正文：\n你好，方案第二版放在附件里了。下周三下午 2 点评审，麻烦周二前看一下，有问题直接在文档里批注。谢谢！"
+  },
+  "scenarios": [
+   {
+    "title": "收到新邮件时总结",
+    "description": "每封新邮件用一两句话说清楚是谁、什么事",
+    "name": "邮件总结",
+    "prompt": "有新邮件。每封用一两句话说清楚是谁发的、什么事、要不要我做什么；需要回复或处理的放在最前面。广告和订阅一句带过。"
+   },
+   {
+    "title": "重要邮件提醒",
+    "description": "只在真人写来、需要你回复或处理的邮件到了时提醒",
+    "name": "重要邮件",
+    "llm_filter": "只有真人写来、需要我回复或者处理的邮件才处理；广告、订阅、群发的通知、系统自动发的邮件都忽略",
+    "prompt": "这封邮件需要我处理。说清楚谁、什么事、有没有截止时间，再写一段可以直接用的回复草稿。"
+   },
+   {
+    "title": "账单、快递通知整理",
+    "description": "信用卡账单、扣费、快递发货的邮件，整理出金额、日期、单号",
+    "name": "账单快递",
+    "llm_filter": "只处理账单、扣费、付款、退款、快递物流相关的邮件；验证码、广告、其他邮件忽略",
+    "prompt": "这是账单或快递的邮件。账单的说清楚多少钱、什么时候要还或者已经扣了；快递的说清楚是什么东西、哪家快递、单号、大概哪天到。一封一两行。"
+   },
+   {
+    "title": "某人来信提醒",
+    "description": "指定的人来信时马上告诉你（关键词里填对方的邮箱地址）",
+    "name": "某人来信",
+    "include": [
+     "boss@example.com"
+    ],
+    "prompt": "这个人来信了。用两三句话告诉我他说了什么、要我做什么、急不急，需要回复的写一段回复草稿。"
+   },
+   {
+    "title": "简历、求职邮件筛选",
+    "description": "收到简历时，Bot 先看一遍，整理出要点",
+    "name": "简历筛选",
+    "llm_filter": "只处理投递简历、求职、应聘的邮件",
+    "prompt": "有人投了简历。整理出姓名、应聘什么岗位、几年经验、主要技能和亮点；看得出和岗位匹配不匹配的给一句判断。附件里的简历能打开就看，打不开就按正文说。"
+   }
+  ],
+  "has_summary": true,
+  "has_validate": true,
+  "has_available": false
+ },
+ {
+  "id": "calendar",
+  "title": "日程快开始了",
+  "description": "订阅你的日历（Google、iCloud、Outlook、飞书、钉钉、企业微信都能导出订阅地址），日程开始前几分钟提醒一次。重复的日程、改期、取消都认。",
+  "mode": "poll",
+  "fields": [
+   {
+    "key": "url",
+    "label": "日历订阅地址（ICS）",
+    "type": "secret",
+    "required": true,
+    "placeholder": "https://… 或 webcal://…",
+    "help": "Google 日历：设置 → 选中日历 → “iCal 格式的私密地址”；iCloud：日历 App 里把日历共享成“公开日历”，拷贝链接；Outlook：设置 → 日历 → 共享日历 → 发布日历，拷贝 ICS 链接；飞书、钉钉、企业微信：在日历设置里找订阅 / 导出的 ICS 地址。地址本身就是密钥，会存进保险库"
+   },
+   {
+    "key": "minutes_before",
+    "label": "提前几分钟提醒",
+    "type": "number",
+    "default": 15,
+    "min": 0,
+    "max": 1440
+   },
+   {
+    "key": "all_day",
+    "label": "全天日程也提醒（当天早上 9 点）",
+    "type": "bool",
+    "default": false
+   }
+  ],
+  "category": "生活",
+  "icon": "📅",
+  "on": "",
+  "every": 5,
+  "min_every": 2,
+  "fire_first": true,
+  "setup": "",
+  "sample": {
+   "title": "「产品周会」15 分钟后开始（10:00）",
+   "text": "时间：2026-11-10 周二 10:00–11:00\n地点：3 楼大会议室\n组织者：王芳 <wangfang@example.com>\n参加的人：张三 <zhang@example.com>、李四 <li@example.com>\n说明：\n过一下本周的上线计划和 bug 列表"
+  },
+  "scenarios": [
+   {
+    "title": "日程开始前提醒",
+    "description": "开始前 15 分钟提醒你，带上地点和要准备的东西",
+    "name": "日程提醒",
+    "params": {
+     "minutes_before": 15
+    },
+    "prompt": "日程快开始了。用一两句话提醒我几点开始、在哪（线上会议给出会议链接）；根据标题和说明提醒一句要准备什么。"
+   },
+   {
+    "title": "会议前准备资料",
+    "description": "开会前半小时，Bot 查查参会的人和议题，整理几条要点",
+    "name": "会前准备",
+    "params": {
+     "minutes_before": 30
+    },
+    "llm_filter": "只处理和别人一起开的会（有参加的人、会议链接或者看得出是会议）；私人提醒、全天日程忽略",
+    "prompt": "马上要开会了。根据标题、说明和参加的人，查一下相关资料（对方是谁、哪家公司、议题的背景），整理成三五条要点让我开会前看一眼；有会议链接的放在最前面。"
+   },
+   {
+    "title": "出发提醒",
+    "description": "要出门的日程，提前估算路上要多久、几点该走",
+    "name": "出发提醒",
+    "params": {
+     "minutes_before": 60
+    },
+    "llm_filter": "只处理写了实际地点、要过去的日程；线上会议和没写地点的忽略",
+    "prompt": "这个日程要出门。按地点估算从我常在的地方过去要多久（不知道我在哪就问我一次并记住），告诉我最晚几点出发、怎么去比较好。"
+   }
+  ],
+  "has_summary": true,
+  "has_validate": true,
+  "has_available": false
+ },
+ {
+  "id": "weather",
+  "title": "天气提醒",
+  "description": "明天下雨、降温、高温、大风、下雪时提醒一次，也能每周五报周末天气。数据来自 Open-Meteo，全球城市都能查；晚上 10 点到早上 7 点不打扰。",
+  "mode": "poll",
+  "fields": [
+   {
+    "key": "city",
+    "label": "城市",
+    "type": "text",
+    "required": true,
+    "placeholder": "杭州 / Beijing / 30.27,120.15",
+    "help": "中文、英文城市名都行，查不到可以直接写经纬度"
+   },
+   {
+    "key": "conditions",
+    "label": "什么情况提醒",
+    "type": "multi",
+    "default": [
+     "rain_tomorrow"
+    ],
+    "options": [
+     {
+      "value": "rain_tomorrow",
+      "label": "明天有雨"
+     },
+     {
+      "value": "temp_drop",
+      "label": "明天降温"
+     },
+     {
+      "value": "hot",
+      "label": "明天高温"
+     },
+     {
+      "value": "cold",
+      "label": "明天低温"
+     },
+     {
+      "value": "wind",
+      "label": "明天大风"
+     },
+     {
+      "value": "snow",
+      "label": "明天下雪"
+     },
+     {
+      "value": "weekend",
+      "label": "周末天气（周五报一次）"
+     }
+    ],
+    "help": "每种情况对同一天只提醒一次"
+   },
+   {
+    "key": "rain_prob",
+    "label": "降水概率达到（%）",
+    "type": "number",
+    "default": 50,
+    "min": 1,
+    "max": 100
+   },
+   {
+    "key": "drop",
+    "label": "降温超过（°C）",
+    "type": "number",
+    "default": 6,
+    "min": 1,
+    "max": 40,
+    "help": "明天的最高或最低气温比今天低这么多"
+   },
+   {
+    "key": "hot",
+    "label": "高温线（°C）",
+    "type": "number",
+    "default": 35,
+    "min": -50,
+    "max": 60
+   },
+   {
+    "key": "cold",
+    "label": "低温线（°C）",
+    "type": "number",
+    "default": 0,
+    "min": -60,
+    "max": 40
+   },
+   {
+    "key": "wind",
+    "label": "大风线（km/h）",
+    "type": "number",
+    "default": 50,
+    "min": 10,
+    "max": 300,
+    "help": "6 级风大约 39–49 km/h，7 级 50–61，8 级 62–74"
+   }
+  ],
+  "category": "生活",
+  "icon": "🌦️",
+  "on": "",
+  "every": 180,
+  "min_every": 60,
+  "fire_first": true,
+  "setup": "",
+  "sample": {
+   "title": "杭州（浙江，中国）：明天中雨（降水概率 85%）；明天降温 7°C（8~12°C）",
+   "text": "今天 11月9日 周一：多云，13~19°C，降水概率 10%，最大风速 14 km/h\n明天 11月10日 周二：中雨，8~12°C，降水概率 85%，降水 12.4 mm，最大风速 28 km/h\n后天 11月11日 周三：阴，7~13°C，降水概率 30%，最大风速 16 km/h"
+  },
+  "scenarios": [
+   {
+    "title": "明天下雨提醒带伞",
+    "description": "明天有雨时提前一天告诉你",
+    "name": "带伞提醒",
+    "params": {
+     "city": "杭州",
+     "conditions": [
+      "rain_tomorrow"
+     ]
+    },
+    "prompt": "明天要下雨。用一两句话提醒我带伞，说清楚大概什么时候、雨大不大；雨很大的提醒我注意出行。"
+   },
+   {
+    "title": "降温提醒加衣",
+    "description": "明天比今天冷很多时提醒你加衣服",
+    "name": "降温提醒",
+    "params": {
+     "city": "杭州",
+     "conditions": [
+      "temp_drop",
+      "cold"
+     ]
+    },
+    "prompt": "明天降温了。告诉我明天的气温，建议穿什么；家里有老人小孩的话也提醒一句注意保暖。"
+   },
+   {
+    "title": "高温提醒",
+    "description": "明天特别热时提醒防暑",
+    "name": "高温提醒",
+    "params": {
+     "city": "杭州",
+     "conditions": [
+      "hot"
+     ],
+     "hot": 35
+    },
+    "prompt": "明天高温。提醒我防暑：少在中午出门、多喝水、注意防晒，一两句话就好。"
+   },
+   {
+    "title": "大风、降雪提醒",
+    "description": "明天有大风或下雪时提前告诉你",
+    "name": "大风降雪",
+    "params": {
+     "city": "北京",
+     "conditions": [
+      "wind",
+      "snow"
+     ]
+    },
+    "prompt": "明天有大风或下雪。说清楚有多大，提醒我出行、收衣服、关窗这些要注意的事。"
+   },
+   {
+    "title": "出行天气（周末）",
+    "description": "每周五告诉你周末的天气，适不适合出去玩",
+    "name": "周末天气",
+    "params": {
+     "city": "杭州",
+     "conditions": [
+      "weekend"
+     ]
+    },
+    "prompt": "这是周末两天的天气预报。告诉我周末适不适合出门、哪天更好，给一两条安排建议（户外还是室内、要带什么）。"
+   }
+  ],
+  "has_summary": true,
+  "has_validate": true,
+  "has_available": false
+ },
+ {
+  "id": "earthquake",
+  "title": "地震提醒",
+  "description": "全球或你附近发生地震时触发：震级、地点、时间、深度、离你多远。数据来自 USGS。",
+  "mode": "poll",
+  "fields": [
+   {
+    "key": "min_magnitude",
+    "label": "最低震级",
+    "type": "number",
+    "default": 5,
+    "min": 2.5,
+    "max": 10,
+    "help": "低于这个震级的不报。4.5 级以下的只有部分地区（主要是美国）收得全"
+   },
+   {
+    "key": "near",
+    "label": "在哪",
+    "type": "text",
+    "placeholder": "比如 成都，或者 30.66,104.07",
+    "help": "城市名或者“纬度,经度”，不填就是全球。中文名有时查不准（事件里会写按哪算的），换英文名或经纬度"
+   },
+   {
+    "key": "radius_km",
+    "label": "范围（公里）",
+    "type": "number",
+    "default": 500,
+    "min": 10,
+    "max": 20000,
+    "help": "填了“在哪”才有用：离那里多远以内的才报"
+   }
+  ],
+  "category": "生活",
+  "icon": "🌏",
+  "on": "",
+  "every": 10,
+  "min_every": 5,
+  "fire_first": false,
+  "setup": "",
+  "sample": {
+   "title": "M5.8 地震：43 km E of Onagawa Chō, Japan，离东京约 340 公里",
+   "url": "https://earthquake.usgs.gov/earthquakes/eventpage/us7000twz2",
+   "text": "震级：M5.8（mww）\n地点：43 km E of Onagawa Chō, Japan（38.38, 141.94）\n时间：2026年11月9日 14:23\n深度：56 公里\n离你：约 340 公里（按“東京（日本 东京都）”算）\n数据来自 USGS，刚发生的震级、位置之后可能会修正。"
+  },
+  "scenarios": [
+   {
+    "title": "附近发生地震时提醒",
+    "description": "你所在的城市附近有感地震，第一时间告诉你（把“在哪”改成你的城市）",
+    "name": "附近地震",
+    "params": {
+     "min_magnitude": 4,
+     "near": "",
+     "radius_km": 300
+    },
+    "prompt": "附近发生了地震。用两三句话告诉我：几级、在哪、离我多远、大概会不会有感或者有影响；有海啸信息或影响评估是橙色、红色的放在最前面。地点是英文的翻成中文。"
+   },
+   {
+    "title": "全球 6 级以上地震",
+    "description": "世界上任何地方发生 6 级以上的强震",
+    "name": "全球强震",
+    "params": {
+     "min_magnitude": 6
+    },
+    "prompt": "发生了 6 级以上的强震。告诉我在哪个国家、哪个地区，几级、多深，可能的影响（人口多不多、有没有海啸风险）。地点是英文的翻成中文，两三句话就够。"
+   }
+  ],
+  "has_summary": true,
+  "has_validate": true,
+  "has_available": false
+ },
+ {
+  "id": "epic_free",
+  "title": "Epic 免费游戏",
+  "description": "Epic 游戏商城开始送新的免费游戏时触发：游戏名、免费到什么时候、商店链接。",
+  "mode": "poll",
+  "fields": [
+   {
+    "key": "country",
+    "label": "商店地区",
+    "type": "select",
+    "default": "CN",
+    "options": [
+     {
+      "value": "CN",
+      "label": "中国大陆"
+     },
+     {
+      "value": "HK",
+      "label": "香港"
+     },
+     {
+      "value": "TW",
+      "label": "台湾"
+     },
+     {
+      "value": "US",
+      "label": "美国"
+     },
+     {
+      "value": "JP",
+      "label": "日本"
+     }
+    ],
+    "help": "不同地区送的游戏偶尔不一样"
+   }
+  ],
+  "category": "生活",
+  "icon": "🎮",
+  "on": "",
+  "every": 720,
+  "min_every": 60,
+  "fire_first": false,
+  "setup": "",
+  "sample": {
+   "title": "Epic 免费送：浮游世界",
+   "url": "https://store.epicgames.com/zh-CN/p/flotsam-266287",
+   "text": "免费领取：11月6日 00:00 到 11月13日 00:00（过了时间就恢复原价，领到的永久归你）\n原价：¥75.00\n简介：漂浮垃圾城生存游戏！从海洋表面尽可能搜集珍贵的垃圾，发展你的城市。\n下一批预告：斗阵骑士 Knightica（11月13日 00:00 起）"
+  },
+  "scenarios": [
+   {
+    "title": "Epic 送新游戏时告诉我",
+    "description": "每周送的免费游戏一出来就告诉你，附上领取链接",
+    "name": "Epic 免费游戏",
+    "prompt": "Epic 在送新的免费游戏。用一两句话介绍这是什么类型的游戏、口碑大概怎样，告诉我领取截止时间，附上商店链接。有下一批预告的也顺带提一句。"
+   }
+  ],
+  "has_summary": true,
+  "has_validate": false,
+  "has_available": false
+ },
+ {
+  "id": "price",
+  "title": "价格到线",
+  "description": "股票（A 股、港股、美股）、加密货币、外汇的价格涨到、跌到某个数，或者涨跌幅超过几个百分点时提醒一次。",
+  "mode": "poll",
+  "fields": [
+   {
+    "key": "market",
+    "label": "市场",
+    "type": "select",
+    "default": "cn",
+    "options": [
+     {
+      "value": "cn",
+      "label": "A 股"
+     },
+     {
+      "value": "hk",
+      "label": "港股"
+     },
+     {
+      "value": "us",
+      "label": "美股"
+     },
+     {
+      "value": "crypto",
+      "label": "加密货币"
+     },
+     {
+      "value": "fx",
+      "label": "外汇"
+     }
+    ]
+   },
+   {
+    "key": "symbol",
+    "label": "代码",
+    "type": "text",
+    "required": true,
+    "placeholder": "600519 / 00700 / AAPL / BTC / USD/CNY",
+    "help": "A 股写 6 位代码（600519、sz000001，上证指数写 sh000001）；港股写 5 位代码（00700）；美股写代号（AAPL）；加密货币写代号（BTC、ETH）或 CoinGecko 的 id，默认按美元，要人民币写 BTC/CNY；外汇写货币对（USD/CNY）"
+   },
+   {
+    "key": "condition",
+    "label": "什么时候提醒",
+    "type": "select",
+    "default": "above",
+    "options": [
+     {
+      "value": "above",
+      "label": "涨到（不低于）"
+     },
+     {
+      "value": "below",
+      "label": "跌到（不高于）"
+     },
+     {
+      "value": "change",
+      "label": "涨跌幅超过（%）"
+     }
+    ]
+   },
+   {
+    "key": "threshold",
+    "label": "价格 / 百分比",
+    "type": "number",
+    "required": true,
+    "help": "到价写价格；涨跌幅写百分比，比如 5 就是涨或跌超过 5%。到线只报一次，回到线的另一边以后再到才再报；涨跌幅一天最多报一次"
+   }
+  ],
+  "category": "金融",
+  "icon": "📈",
+  "on": "",
+  "every": 15,
+  "min_every": 5,
+  "fire_first": true,
+  "setup": "",
+  "sample": {
+   "title": "贵州茅台（sh600519）涨到 1500 以上：现价 1,502.30（+3.46%）",
+   "text": "现价：1,502.30 CNY\n涨跌：+3.46%（今天，昨收 1,452.00）\n行情时间：2026-11-06 14:32\n条件：涨到 1500 以上"
+  },
+  "scenarios": [
+   {
+    "title": "股价到价提醒",
+    "description": "A 股涨到或跌到你设的价格时提醒一次",
+    "name": "到价提醒",
+    "params": {
+     "market": "cn",
+     "symbol": "600519",
+     "condition": "above",
+     "threshold": 1500
+    },
+    "prompt": "价格到了我设的线。用一两句话告诉我现在的价格和今天的涨跌；查一下今天有没有相关的新闻，有就附一句。不要给买卖建议。"
+   },
+   {
+    "title": "股票大涨大跌提醒",
+    "description": "一天涨跌超过 5% 时提醒，顺便查查为什么",
+    "name": "大涨大跌",
+    "params": {
+     "market": "cn",
+     "symbol": "600519",
+     "condition": "change",
+     "threshold": 5
+    },
+    "prompt": "这只股票今天涨跌幅很大。查一下新闻和公告，用三五句话说说可能的原因；找不到明确原因就直说。不要给买卖建议。"
+   },
+   {
+    "title": "比特币价格提醒",
+    "description": "BTC 跌破或涨过某个价格时告诉你",
+    "name": "比特币",
+    "params": {
+     "market": "crypto",
+     "symbol": "BTC",
+     "condition": "below",
+     "threshold": 60000
+    },
+    "prompt": "比特币到了我设的价格。告诉我现在的价格和 24 小时涨跌，查一下最近有没有大新闻，有就用一句话说。不要给买卖建议。"
+   },
+   {
+    "title": "换汇时机",
+    "description": "比如美元兑人民币低于某个值时提醒你换汇",
+    "name": "换汇提醒",
+    "params": {
+     "market": "fx",
+     "symbol": "USD/CNY",
+     "condition": "below",
+     "threshold": 7
+    },
+    "prompt": "汇率到了我设的线，可以考虑换汇了。告诉我现在的汇率；提醒一句银行实际的买卖价会有点差价。"
+   },
+   {
+    "title": "港股 / 美股自选到价",
+    "description": "港股、美股的自选股到价时提醒",
+    "name": "自选到价",
+    "params": {
+     "market": "hk",
+     "symbol": "00700",
+     "condition": "above",
+     "threshold": 450
+    },
+    "prompt": "自选股到了我设的价格。用一两句话告诉我现在的价格和今天的涨跌，有相关新闻就附一句。不要给买卖建议。"
+   }
+  ],
+  "has_summary": true,
+  "has_validate": true,
+  "has_available": false
+ },
+ {
+  "id": "folder",
+  "title": "文件夹有新文件",
+  "description": "这台电脑上的某个文件夹里出现新文件时（下载完、截了图、有人放进共享文件夹），Bot 看一眼、整理或归档。没下载完的文件不会报。",
+  "mode": "poll",
+  "fields": [
+   {
+    "key": "path",
+    "label": "文件夹",
+    "type": "text",
+    "required": true,
+    "placeholder": "~/Downloads",
+    "help": "这台电脑（运行 osa 的那台）上的文件夹，~ 是你的主目录"
+   },
+   {
+    "key": "pattern",
+    "label": "文件名",
+    "type": "text",
+    "default": "*",
+    "placeholder": "*.pdf, *.png",
+    "help": "只看名字符合的文件，* 是任意文字；多个用逗号分开。不填就是所有文件"
+   },
+   {
+    "key": "recursive",
+    "label": "也看子文件夹",
+    "type": "bool",
+    "default": false
+   },
+   {
+    "key": "modified",
+    "label": "文件改了也提醒",
+    "type": "bool",
+    "default": false,
+    "help": "不勾就只报新出现的文件"
+   }
+  ],
+  "category": "系统",
+  "icon": "📁",
+  "on": "",
+  "every": 5,
+  "min_every": 1,
+  "fire_first": false,
+  "setup": "",
+  "sample": {
+   "title": "新文件：发票-2026-11.pdf",
+   "text": "位置：/Users/me/Downloads/发票-2026-11.pdf\n大小：182.4 KB\n修改时间：2026-11-09 10:21\n类型：application/pdf"
+  },
+  "scenarios": [
+   {
+    "title": "下载文件夹有新文件时整理",
+    "description": "下载完的文件按类型挪到合适的地方",
+    "name": "整理下载",
+    "params": {
+     "path": "~/Downloads"
+    },
+    "prompt": "下载文件夹里有新文件。看看是什么，按类型挪到合适的文件夹（文档、图片、安装包、压缩包……），文件名乱的顺手改清楚；拿不准的别动，告诉我一声。"
+   },
+   {
+    "title": "新发票 / PDF 自动归档",
+    "description": "新的 PDF 是发票的话，记下金额、改好名字放进发票文件夹",
+    "name": "发票归档",
+    "params": {
+     "path": "~/Downloads",
+     "pattern": "*.pdf"
+    },
+    "prompt": "有新的 PDF。打开看看是不是发票：是的话记下开票方、金额、日期，改名成“日期-开票方-金额.pdf”，挪到 ~/Documents/发票/年-月/ 里，告诉我一句；不是发票的写 [无新内容]。"
+   },
+   {
+    "title": "截图文件夹有新截图时识别内容",
+    "description": "截了图，Bot 看看图里是什么",
+    "name": "截图识别",
+    "params": {
+     "path": "~/Desktop",
+     "pattern": "截屏*.png, Screenshot*.png"
+    },
+    "prompt": "我刚截了一张图。看看图里是什么，用一两句话说清楚；是报错的告诉我怎么解决，是文字多的把要点摘出来。"
+   },
+   {
+    "title": "共享文件夹有人放了新文件",
+    "description": "团队共享、网盘同步的文件夹里来了新文件",
+    "name": "共享文件夹",
+    "params": {
+     "path": "~/Dropbox",
+     "recursive": true
+    },
+    "prompt": "共享文件夹里有新文件。告诉我是什么文件、放在哪；能打开的用两三句话说说内容，需要我处理的放在最前面。"
+   }
+  ],
+  "has_summary": true,
+  "has_validate": true,
+  "has_available": true
+ },
+ {
+  "id": "ip_change",
+  "title": "公网 IP 变了",
+  "description": "这台机器的公网 IP 换了时触发（家里宽带重新拨号之类），方便你去改 DNS、防火墙白名单。",
+  "mode": "poll",
+  "fields": [
+   {
+    "key": "ipv6",
+    "label": "也看 IPv6",
+    "type": "bool",
+    "default": false,
+    "help": "IPv6 只看前缀（前 64 位），临时地址换了不算"
+   }
+  ],
+  "category": "系统",
+  "icon": "🌐",
+  "on": "",
+  "every": 10,
+  "min_every": 5,
+  "fire_first": false,
+  "setup": "",
+  "sample": {
+   "title": "公网 IPv4 变了：203.0.113.7 → 198.51.100.24",
+   "text": "原来：203.0.113.7\n现在：198.51.100.24\n2026-11-09 08:10 发现的（api.ipify.org 查到，换了一家确认过）。\n有域名解析到这里（DDNS）、防火墙或别的服务按 IP 放行、端口转发写死了地址的，记得改。"
+  },
+  "scenarios": [
+   {
+    "title": "家里公网 IP 变了提醒我（改 DNS）",
+    "description": "宽带重新拨号换了 IP，提醒你去改域名解析、防火墙白名单",
+    "name": "公网 IP 变了",
+    "prompt": "这台机器的公网 IP 变了。告诉我原来的和现在的 IP，提醒我检查：域名解析（DDNS 有没有自动更新）、云服务器安全组或防火墙里按 IP 放行的规则、别的服务里写死的地址。简短一点。"
+   }
+  ],
+  "has_summary": true,
+  "has_validate": false,
+  "has_available": false
+ },
+ {
+  "id": "task_failed",
+  "title": "后台任务失败了",
+  "description": "这个 Bot（或者所有 Bot）的后台任务、定时任务失败时触发，让 Bot 分析原因。",
+  "mode": "internal",
+  "fields": [
+   {
+    "key": "scope",
+    "label": "看谁的任务",
+    "type": "select",
+    "default": "mine",
+    "options": [
+     {
+      "value": "mine",
+      "label": "只看这个 Bot 的"
+     },
+     {
+      "value": "all",
+      "label": "所有 Bot 的"
+     }
+    ]
+   }
+  ],
+  "category": "系统",
+  "icon": "🧯",
+  "on": "task_done",
+  "every": 30,
+  "min_every": 5,
+  "fire_first": false,
+  "setup": "",
+  "sample": {
+   "title": "Nova 的任务 #12 失败了：整理今天的邮件",
+   "text": "要做的事：\n整理今天的邮件\n\n失败原因：\n任务失败：应用 gmail 没连接"
+  },
+  "scenarios": [
+   {
+    "title": "任务失败时分析原因",
+    "description": "后台任务、定时任务失败了，Bot 看原因、告诉你怎么办",
+    "name": "任务失败",
+    "params": {
+     "scope": "all"
+    },
+    "prompt": "有个后台任务失败了。根据失败原因判断是哪类问题（应用没连接、网站打不开、额度用完、要求不清楚……），告诉我怎么解决；偶发的建议再试一次。"
+   }
+  ],
+  "has_summary": true,
+  "has_validate": false,
+  "has_available": false
+ }
+]
