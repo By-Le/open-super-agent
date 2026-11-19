@@ -64,6 +64,8 @@ pub mod worker;
 pub fn modules_migrate() {
     avatars::migrate();
     mcp_hub::migrate();
+    skills::migrate();
+    templates::migrate();
     media::migrate();
 }
 
