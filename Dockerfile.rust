@@ -3,7 +3,7 @@
 # 镜像里还留着 Python：run_code 的沙箱、uvx 装的应用、电脑里的浏览器控制脚本要用它；服务本身不靠它。
 #
 #   docker build -f Dockerfile.rust -t open-super-agent:rust .
-#   docker build -f Dockerfile.rust --target test .      # 在 Linux 上把接口测试（两个版本）跑一遍
+#   docker build -f Dockerfile.rust --target test -t osa-rust-test . && docker run --rm osa-rust-test   # 在 Linux 上把接口测试（两个版本）跑一遍
 #
 # 国内网络可以加 --build-arg NPM_REGISTRY=https://registry.npmmirror.com --build-arg PYPI_INDEX=https://mirrors.ustc.edu.cn/pypi/simple
 # （Rust 依赖走 crates.io；要镜像的话加 --build-arg CARGO_MIRROR=sparse+https://rsproxy.cn/index/）
@@ -61,9 +61,10 @@ COPY tests/ tests/
 COPY contract/ contract/
 COPY --from=web /src/osa/static/dist osa/static/dist
 COPY --from=build /out/ server/target/debug/
-RUN uv run pytest contract -q -p no:cacheprovider --ignore=contract/test_parity.py \
- && OSA_IMPL=rust uv run pytest contract -q -p no:cacheprovider --ignore=contract/test_parity.py \
- && uv run pytest contract/test_parity.py -q -p no:cacheprovider
+# 测试在 docker run 里跑，不在构建时跑：构建的环境里建不了沙箱要的命名空间，run_code 那几项会全挂（两个版本都一样）
+CMD uv run pytest contract -q -p no:cacheprovider --ignore=contract/test_parity.py \
+ ; OSA_IMPL=rust uv run pytest contract -q -p no:cacheprovider --ignore=contract/test_parity.py \
+ ; uv run pytest contract/test_parity.py -q -p no:cacheprovider
 
 # ---------- 运行的镜像 ----------
 FROM base

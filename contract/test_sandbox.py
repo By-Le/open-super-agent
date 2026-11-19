@@ -55,7 +55,8 @@ def test_files_and_exit_code(srv, fake, ws):
 def test_cannot_read_home_or_config(srv, fake, ws):
     secrets = [str(Path.home()), str(srv.tmp / "config.yaml"), str(srv.data / "osa.db")]
     code = "import os\n" + "".join(
-        f"try:\n    os.listdir({p!r}) if os.path.isdir({p!r}) else open({p!r}, 'rb').read(1)\n    print('READ')\n"
+        # Linux 上藏起来的目录是盖了一层空的 tmpfs：能列出来但是空的，也算读不到
+        f"try:\n    print('READ' if (os.listdir({p!r}) if os.path.isdir({p!r}) else open({p!r}, 'rb').read(1)) else 'DENIED')\n"
         f"except OSError:\n    print('DENIED')\n" for p in secrets)
     out = run_code(srv, fake, ws, {"code": code})
     assert out.startswith("退出码 0"), out

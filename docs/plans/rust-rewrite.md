@@ -96,7 +96,10 @@ Python 到 Rust 的对应：
   只有单元测试（期望值是 Python 版同样输入跑出来的）；日历、文件夹、收邮件有接口测试（contract/test_sources.py，假日历网站、
   TLS 的假 IMAP 服务器）。Rust 版的 IMAP 是自己写的小客户端（LOGIN / ID / EXAMINE / UID SEARCH / UID FETCH），
   连不上时的报错原文和 Python 的 imaplib 不一样（“连不上 主机:端口：”后面那半句）。
-- **没在真环境里跑过的**：Linux 上的沙箱（bwrap / unshare）、飞书 / 钉钉 / 企业微信 / Discord（只编译过）、推送中转连真的 APNs、
+- **Linux（2026-11-20，Docker 里 arm64）**：`docker build -f Dockerfile.rust --target test -t osa-rust-test . && docker run --rm --security-opt seccomp=unconfined osa-rust-test`，
+  两个版本的接口测试都全过，parity 单独跑全过（跟在两轮全量后面跑偶尔有一项因为时序不同挂掉，是测试对快慢敏感，不是两个版本不一样）。
+  Docker 默认的 seccomp 不让建用户命名空间：这时两个版本的本机沙箱都用不了（run_code 不出现），和 lsp 上现在的 Python 版一样。
+- **没在真环境里跑过的**：飞书 / 钉钉 / 企业微信 / Discord（只编译过）、推送中转连真的 APNs、
   imap 检查、OAuth 连真的服务（假服务上整套流程测过）。上 lsp 之前要在 Linux 上把接口测试跑一遍。
 
 ## 电脑的结构（第 2 步 A 定下的，B 照着接）
