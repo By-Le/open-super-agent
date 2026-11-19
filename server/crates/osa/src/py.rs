@@ -271,7 +271,7 @@ mod tests {
     #[test]
     fn dumps_like_python() {
         assert_eq!(dumps(&json!({"a": 1, "b": [1, 2.0, "中"], "c": null}), false), r#"{"a": 1, "b": [1, 2.0, "中"], "c": null}"#);
-        assert_eq!(dumps(&json!("中\n"), true), r#""中\n""#);
+        assert_eq!(dumps(&json!("中\n"), true), "\"\\u4e2d\\n\"");
         assert_eq!(round0(2.5), 2);
         assert_eq!(round0(3.5), 4);
         assert_eq!(round_n(1.23456, 1), 1.2);

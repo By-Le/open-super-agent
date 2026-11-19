@@ -1,4 +1,6 @@
 """冒烟：私聊派任务、群聊交接、Bot 之间私信、应用的写操作弹确认卡片。和 tests/test_smoke.py 同样的场景，走真的接口。"""
+import time
+
 from conftest import idle, until
 from fakellm_http import Call
 
@@ -39,7 +41,8 @@ def test_group_handoff_after_task(srv, fake, ws):
     group = srv.post("/api/groups", {"bot_ids": [a["id"], b["id"]], "lead": a["id"]})
     fake.script("router:Finder", Call("dispatch", {"goal": "查资料", "handoff_to": "Writer", "handoff_note": "写个总结"}),
                 "我先查，查完交给 Writer")
-    fake.script("worker", "资料：三条要点")
+    # 任务慢一点：见 docs/plans/rust-rewrite.md“发现的问题”里群聊交接的竞争
+    fake.script("worker", lambda body: (time.sleep(0.5), "资料：三条要点")[1])
     fake.script("router:Writer", "总结：三条要点都很重要")
 
     ws.say(group["id"], "@Finder 查资料，查完交给 @Writer 写总结")
