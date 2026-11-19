@@ -33,3 +33,18 @@ docker-compose up -d
 以前三个服务是 systemd 单元（`osa`、`osa-demo`、`osa-relay`），代码在 `/opt/osa/app`。换的时候：构建好镜像、生成配置 → 存数据库快照 →
 `systemctl stop` 三个单元 → `docker-compose up -d` → 检查 → `systemctl disable` 三个单元（单元文件和 `/opt/osa/app` 先留着，回退用：
 `docker-compose down && systemctl enable --now osa osa-demo osa-relay`）。
+
+## 换成 Rust 版（还没换）
+
+镜像用 `Dockerfile.rust`，叠一个 `compose.rust.yaml`：正式服务、演示服务器、推送中转换成 `open-super-agent:rust`，数据、配置、端口、权限限制都不变。
+lsp 内存和磁盘都小，不在上面编译，在别的机器上打好镜像传过去（约 200 MB 压缩后，`docker load` 前先看 `df -h /`）：
+
+```bash
+docker build --platform linux/amd64 -f Dockerfile.rust -t open-super-agent:rust .
+docker save open-super-agent:rust | gzip | ssh lsp 'gunzip | docker load'
+scp deploy/lsp/compose.rust.yaml lsp:/opt/osa/docker/
+# lsp 上：先照旧存数据库快照，再
+cd /opt/osa/docker && docker-compose -f compose.yaml -f compose.rust.yaml up -d
+```
+
+回退：`docker-compose -f compose.yaml up -d`（Python 版的镜像 `open-super-agent:lsp` 留着别删）。

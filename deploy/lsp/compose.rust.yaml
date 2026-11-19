@@ -1,0 +1,19 @@
+# 换成 Rust 版：叠在 compose.yaml 上面用，正式服务、演示服务器、推送中转都换成 open-super-agent:rust 镜像（Dockerfile.rust）。
+# 数据目录、配置、端口、权限限制都不变，回退时去掉这个文件再 up 一次就回到 Python 版（镜像 open-super-agent:lsp 还在）。
+#   docker-compose -f compose.yaml -f compose.rust.yaml up -d
+# lsp 内存和磁盘都小，镜像不在服务器上编译：在别的机器上 docker build --platform linux/amd64 -f Dockerfile.rust -t open-super-agent:rust .
+# 再 docker save open-super-agent:rust | gzip | ssh lsp 'gunzip | docker load'。见 README.md 的“换成 Rust 版”。
+services:
+  osa:
+    image: open-super-agent:rust
+    build:                 # 一般不在 lsp 上构建（见上面），写上是免得误用 Python 版的 Dockerfile 打出 :rust
+      context: src
+      dockerfile: Dockerfile.rust
+    mem_limit: 512m        # Rust 版服务本身 20 MB 上下，剩下的给应用子进程（npx / uvx）
+  demo:
+    image: open-super-agent:rust
+  relay:
+    image: open-super-agent:rust
+    command: ["osa-relay", "--host", "0.0.0.0", "--port", "8790"]
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "http://127.0.0.1:8790/healthz"]

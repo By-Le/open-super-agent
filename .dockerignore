@@ -13,3 +13,5 @@ osa/static/dist/
 docs/
 server/target
 **/__pycache__
+desktop/
+mobile/
