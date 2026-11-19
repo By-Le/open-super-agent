@@ -99,6 +99,13 @@ Python 到 Rust 的对应：
 
 ## 发现的问题
 
+- **run_code 用哪个 Python（设计，sandbox.rs）**：Python 版用服务自己的解释器（sys.executable）。Rust 版没有自带 Python，按顺序找：
+  环境变量 `OSA_PYTHON` → PATH 上的 `python3`（macOS 的 `/usr/bin/python3` 只有 `xcode-select -p` 成功才算，不然一跑就弹安装框）
+  → `uv python find` → 都没有、但有 uv 时第一次用到才 `uv python install`。找到后问它一次 `sys.prefix / base_prefix / exec_prefix`
+  （不带 -S，venv 的 prefix 才对），沙箱里放开读这几个目录和 `realpath(exe)/../..`，和 Python 版一样。
+  Linux 的 unshare 退路的序幕脚本本身要 Python，找不到 Python 时只用 bwrap。
+- **Linux 沙箱（bwrap / unshare）只照搬了代码，还没在 Linux 上跑过**：这台开发机是 macOS，接口测试只验证了 sandbox-exec。上 lsp 之前要在 Linux 上跑一遍 contract/test_sandbox.py。
+
 （重写时读到的、Python 版里可能不对的地方，记在这里，单独决定改不改）
 
 - **群聊交接的竞争**（groups.py `after_task`）：先 `unexpect()` 再拿群的锁。dispatch 填了 handoff_to 的任务如果在
