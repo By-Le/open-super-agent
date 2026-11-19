@@ -1,7 +1,7 @@
 //! Bot 之间的私信：一个 Bot 直接请另一个 Bot 帮忙，不用拉群。回信自动送回。对应 osa/dm.py（规则见那里的说明）。
 
 use crate::task::{Reply, Task};
-use crate::{bots, groups, memory, providers, py, router, server, t};
+use crate::{bots, groups, memory, providers, py, router, server};
 use parking_lot::Mutex;
 use serde_json::{Value, json};
 use std::collections::HashMap;

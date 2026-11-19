@@ -3,7 +3,7 @@
 use crate::db::{self, RowExt};
 use crate::task::Task;
 use crate::util::{fnmatch, normpath};
-use crate::{config, i18n, memory, py, server, t};
+use crate::{config, i18n, memory, py, server};
 use parking_lot::Mutex;
 use regex::Regex;
 use rusqlite::params;

@@ -2,7 +2,7 @@
 //! 对应 osa/memories.py。
 
 use crate::db::{self, RowExt};
-use crate::{memory, providers, py, t};
+use crate::{memory, providers, py};
 use rusqlite::params;
 use serde_json::{Value, json};
 

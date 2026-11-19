@@ -4,7 +4,7 @@
 //! 调用自己发 HTTP：流式按 SSE 一块块解析。重试和 openai SDK 一样：连不上、408/409/429/5xx 最多再试 5 次，
 //! 0.5、1、2、4、8 秒退避（有 Retry-After 按它）。
 
-use crate::{assets, config, db, i18n, memory, py, t, vault};
+use crate::{assets, config, db, i18n, memory, py, vault};
 use futures::StreamExt;
 use parking_lot::Mutex;
 use regex::Regex;

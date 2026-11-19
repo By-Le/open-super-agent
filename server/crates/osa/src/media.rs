@@ -1,7 +1,7 @@
 //! 对话里的图片和附件（media 表）。对应 osa/media.py（说明见那里）。
 
 use crate::db::{self, RowExt};
-use crate::{config, library, memory, py, t};
+use crate::{config, library, memory, py};
 use regex::Regex;
 use rusqlite::params;
 use serde_json::{Value, json};

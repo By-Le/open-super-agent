@@ -24,7 +24,10 @@ pub mod dm;
 pub mod dsml;
 pub mod groups;
 pub mod library;
+pub mod mcp_client;
 pub mod mcp_hub;
+pub mod mcp_oauth;
+pub mod mcpapps;
 pub mod media;
 pub mod memories;
 pub mod memory;
@@ -51,6 +54,7 @@ pub mod worker;
 /// 各模块自己的表（Python 版在 import 时建）
 pub fn modules_migrate() {
     avatars::migrate();
+    mcp_hub::migrate();
     media::migrate();
 }
 

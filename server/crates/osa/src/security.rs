@@ -1,6 +1,6 @@
 //! 网页上能做到什么程度（config.yaml 的 security）。对应 osa/security.py。
 
-use crate::{catalog, config, mcp_hub, t};
+use crate::{catalog, config, mcp_hub};
 use parking_lot::Mutex;
 use regex::Regex;
 use serde_json::{Value, json};

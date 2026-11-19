@@ -1,7 +1,7 @@
 //! Watchdog：独立于 Worker 的定时巡检。超时、无进展、重复调用（死循环）或超预算时取消任务。对应 osa/watchdog.py。
 
 use crate::task::Task;
-use crate::{config, memory, py, router, t};
+use crate::{config, memory, py, router};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 

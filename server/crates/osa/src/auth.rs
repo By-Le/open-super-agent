@@ -2,7 +2,7 @@
 //! 对应 osa/auth.py（规则见那里的说明）。
 
 use crate::web::{ApiError, Res};
-use crate::{config, i18n, py, t, util};
+use crate::{config, i18n, py, util};
 use axum::body::Body;
 use axum::extract::{Query, Request};
 use axum::http::{HeaderMap, HeaderValue, StatusCode, header};

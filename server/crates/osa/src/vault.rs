@@ -1,7 +1,7 @@
 //! 保险库：加密保存密钥（Fernet，和 Python 版同一种格式、同一把主密钥）。对应 osa/vault.py。
 
 use crate::db::{self, RowExt};
-use crate::{config, py, t};
+use crate::{config, py};
 use regex::Regex;
 use rusqlite::params;
 use serde_json::{Value, json};
