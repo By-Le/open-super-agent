@@ -68,6 +68,8 @@ pub fn modules_migrate() {
     search::migrate();
     unfurl::migrate();
     mcp_hub::migrate();
+    skills::migrate();
+    templates::migrate();
     media::migrate();
 }
 
