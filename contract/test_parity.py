@@ -28,14 +28,14 @@ def normalize(v):
     return v
 
 
-def run(impl: str, scenario) -> list[tuple[str, str, dict]]:
+def run(impl: str, scenario, env: dict | None = None, config: dict | None = None) -> list[tuple[str, str, dict]]:
     llm = FakeLLM()
     old = os.environ.get("OSA_IMPL")
     os.environ["OSA_IMPL"] = impl
     import conftest
     conftest.IMPL = impl
     try:
-        srv = Server(llm)
+        srv = Server(llm, env=env, config=config)
         ws = Socket(srv)
         try:
             scenario(srv, llm, ws)
@@ -52,8 +52,8 @@ def run(impl: str, scenario) -> list[tuple[str, str, dict]]:
     return [(r, n, normalize(b)) for r, n, b in llm.requests]
 
 
-def compare(scenario):
-    a, b = run("python", scenario), run("rust", scenario)
+def compare(scenario, env: dict | None = None, config: dict | None = None):
+    a, b = run("python", scenario, env, config), run("rust", scenario, env, config)
     assert [(r, n) for r, n, _ in a] == [(r, n) for r, n, _ in b], "请求的顺序不一样"
     diffs = []
     for i, ((role, name, x), (_, _, y)) in enumerate(zip(a, b)):

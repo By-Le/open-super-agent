@@ -215,7 +215,7 @@ async fn call_tool(
     name: &str,
     raw: &str,
     env: &Value,
-    shots: &mut Vec<Vec<u8>>,
+    shots: &mut Vec<ctools::Shot>,
 ) -> (String, String) {
     let args: Value = match serde_json::from_str(if raw.is_empty() { "{}" } else { raw }) {
         Ok(v) => v,
@@ -265,9 +265,13 @@ async fn call_tool(
     use futures::FutureExt;
     match std::panic::AssertUnwindSafe(watchdog::TASK.scope(task.clone(), run(call))).catch_unwind().await {
         Ok(Out::Text(s)) => (s, "done".into()),
+        Ok(Out::Pic(s, png, cap)) => {
+            shots.push(ctools::Shot { png, caption: Some(cap) });
+            (s, "done".into())
+        }
         Ok(Out::Shot(s, png)) => {
             if let Some(p) = png {
-                shots.push(p);
+                shots.push(ctools::Shot::page(p));
             }
             (s, "done".into())
         }
@@ -293,7 +297,7 @@ fn lane(call: &Value, env: &Value) -> Option<(String, usize)> {
     Some((if tool.group.is_empty() { tool.name.clone() } else { tool.group.clone() }, tool.parallel))
 }
 
-async fn run_calls(task: &Arc<Task>, log: &Log, calls: &[Value], env: &Value) -> Vec<(String, Vec<Vec<u8>>)> {
+async fn run_calls(task: &Arc<Task>, log: &Log, calls: &[Value], env: &Value) -> Vec<(String, Vec<ctools::Shot>)> {
     let mut results = vec![];
     let mut i = 0;
     while i < calls.len() {
@@ -395,7 +399,7 @@ async fn run_inner(task: Arc<Task>, goal: &str, label: &str) -> anyhow::Result<S
             shots.extend(got);
         }
         if let Some(s) = shots.last() {
-            msgs.push(ctools::image_message(s, None, true));
+            msgs.push(ctools::image_message(&s.png, s.caption.as_deref(), true));
         }
     }
     log.note(&t!("步数用完了，根据已有信息写结果"), "done");

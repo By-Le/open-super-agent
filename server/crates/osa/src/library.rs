@@ -1,6 +1,6 @@
 //! 资料库：Bot 生成的页面（Pages）、小应用的数据、置顶的文件。对应 osa/library.py（说明见那里）。
 //!
-//! 电脑里的文件（列目录、上传、删除）要用电脑，在第 2 步和电脑一起迁；这里只有路径规范（norm）和置顶。
+//! 电脑里的文件（列目录、上传、删除）：接口在 computer/api.rs，这里是对电脑的几步（list_dir / put_file / stat_many / remove）。
 
 use crate::db::{self, RowExt};
 use crate::registry::{Call, Out};
@@ -286,15 +286,9 @@ pub async fn tool_save_page(c: Call) -> Out {
 }
 
 // ---------- 文件 ----------
-/// 现在这台电脑的工作文件夹。TODO(电脑)：迁好电脑以后用 computer 的 workspace
+/// 现在这台电脑的工作文件夹
 pub fn root() -> String {
-    let backend = crate::config::get_str("computer.backend");
-    let desktop = std::env::var("OSA_DESKTOP").is_ok_and(|v| !v.is_empty());
-    if backend == "host" || (backend == "auto" && desktop) {
-        crate::security::workspace().display().to_string()
-    } else {
-        LEGACY.to_string()
-    }
+    crate::computer::get(0).workspace()
 }
 
 /// 把路径规范成工作文件夹下的绝对路径（相对路径从工作文件夹算起）；跑出去就报错
@@ -323,6 +317,51 @@ pub fn check_name(name: &str) -> Result<String, String> {
         return Err(t!("文件名不合法"));
     }
     Ok(n.to_string())
+}
+
+pub async fn list_dir(c: &crate::computer::Computer, path: &str) -> Result<Vec<Value>, String> {
+    let mut out = c.ls(&norm(path, Some(&c.workspace()))?).await?;
+    out.sort_by_key(|e| (e["dir"] != true, py::str_of(&e["name"]).to_lowercase()));
+    Ok(out)
+}
+
+/// 把文件写进电脑里的目录。同名时自动加序号，不覆盖
+pub async fn put_file(c: &crate::computer::Computer, directory: &str, name: &str, data: &[u8]) -> Result<Value, String> {
+    let d = norm(directory, Some(&c.workspace()))?;
+    let name = check_name(name)?;
+    if data.len() > MAX_UPLOAD {
+        return Err(t!("文件太大（最多 {n} MB）", n = MAX_UPLOAD >> 20));
+    }
+    let existing: Vec<String> = list_dir(c, &d).await.map(|v| v.iter().map(|e| py::str_of(&e["name"])).collect()).unwrap_or_default();
+    let (stem, ext) = match name.rfind('.') {
+        Some(i) if i > 0 => (name[..i].to_string(), name[i..].to_string()),
+        _ => (name.clone(), String::new()),
+    };
+    let (mut fin, mut n) = (name.clone(), 1);
+    while existing.contains(&fin) {
+        n += 1;
+        fin = format!("{stem} ({n}){ext}");
+    }
+    let path = crate::computer::base::join(&d, &fin);
+    c.write_bytes(&path, data).await.map_err(|e| e.0)?;
+    Ok(json!({"path": path, "name": fin, "size": data.len()}))
+}
+
+/// 置顶文件的现状（可能已经被删了）
+pub async fn stat_many(c: &crate::computer::Computer, paths: &[String]) -> Result<indexmap::IndexMap<String, Value>, String> {
+    if paths.is_empty() {
+        return Ok(Default::default());
+    }
+    c.stat_paths(paths).await.map_err(|e| e.0)
+}
+
+pub async fn remove(c: &crate::computer::Computer, path: &str) -> Result<(), String> {
+    let p = norm(path, Some(&c.workspace()))?;
+    if p == c.workspace() {
+        return Err(t!("不能删除整个工作目录"));
+    }
+    c.rm(&p).await?;
+    unpin(&p)
 }
 
 pub fn pins() -> Vec<String> {

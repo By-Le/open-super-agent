@@ -127,6 +127,50 @@ pub fn b64url(b: &[u8]) -> String {
     base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(b)
 }
 
+/// tar.gz（ustar），文件按给的顺序，权限 644
+pub fn tar_gz(files: &[(String, Vec<u8>)]) -> Vec<u8> {
+    use std::io::Write;
+    let mut tar: Vec<u8> = vec![];
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+    for (name, data) in files {
+        let mut h = [0u8; 512];
+        let nb = name.as_bytes();
+        let (prefix, short) = if nb.len() > 100 {
+            match name[..name.len().min(155)].rfind('/') {
+                Some(i) => (&name[..i], &name[i + 1..]),
+                None => ("", name.as_str()),
+            }
+        } else {
+            ("", name.as_str())
+        };
+        h[..short.len().min(100)].copy_from_slice(&short.as_bytes()[..short.len().min(100)]);
+        let put = |h: &mut [u8; 512], off: usize, len: usize, v: String| {
+            let b = v.as_bytes();
+            h[off..off + b.len().min(len)].copy_from_slice(&b[..b.len().min(len)]);
+        };
+        put(&mut h, 100, 8, format!("{:07o}\0", 0o644));
+        put(&mut h, 108, 8, format!("{:07o}\0", 0));
+        put(&mut h, 116, 8, format!("{:07o}\0", 0));
+        put(&mut h, 124, 12, format!("{:011o}\0", data.len()));
+        put(&mut h, 136, 12, format!("{:011o}\0", now));
+        h[156] = b'0';
+        put(&mut h, 257, 6, "ustar\0".into());
+        put(&mut h, 263, 2, "00".into());
+        put(&mut h, 345, 155, prefix.to_string());
+        h[148..156].copy_from_slice(b"        ");
+        let sum: u32 = h.iter().map(|b| *b as u32).sum();
+        put(&mut h, 148, 8, format!("{sum:06o}\0 "));
+        tar.extend_from_slice(&h);
+        tar.extend_from_slice(data);
+        let pad = (512 - data.len() % 512) % 512;
+        tar.extend(std::iter::repeat_n(0u8, pad));
+    }
+    tar.extend(std::iter::repeat_n(0u8, 1024));
+    let mut e = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+    let _ = e.write_all(&tar);
+    e.finish().unwrap_or_default()
+}
+
 pub fn zlib_compress(b: &[u8]) -> Vec<u8> {
     use std::io::Write;
     let mut e = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());

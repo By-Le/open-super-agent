@@ -159,8 +159,13 @@ pub async fn find_refs(items: &Value) -> Result<Vec<Value>, String> {
         } else {
             match by_path(&x, false) {
                 Some(g) => g,
-                // 电脑里的文件要等电脑迁过来（第 2 步）
-                None => return Err(format!("电脑里没有这个文件：{x}")),
+                None => {
+                    let att = media::from_computer(&x, false).await?;
+                    if !py::truthy(&att["media"]) {
+                        return Err(format!("{} 不是图片（只认 PNG、JPG、WebP、GIF，最大 {} MB）", py::str_of(&att["name"]), media::MAX_BYTES >> 20));
+                    }
+                    media::info(&att["media"]).ok_or_else(|| format!("对话里没有编号是 {x} 的图片"))?
+                }
             }
         };
         let mime = got["mime"].as_str().unwrap_or("");

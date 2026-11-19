@@ -80,7 +80,7 @@ Python 到 Rust 的对应：
 |---|---|---|
 | 0 | 计划、接口测试的框架（先在 Python 版上跑通） | 完成（2026-11-19） |
 | 1 | 核心：数据库和迁移、设置、登录、Bot / 对话 / 消息 / 讨论串 / 未读、记忆、调模型（流式）、Router、Worker、任务和任务过程、确认、WebSocket、应用（MCP）、沙箱、内置工具、技能 | 完成（2026-11-19）：接口测试 Python 87 / Rust 85 全过（parity 只在 Python 那边跑一次），发给模型的请求逐字一样；现在的网页在 Rust 版上能聊天、派任务、看过程、应用市场、观测、设置，没有报错的接口 |
-| 2 | 电脑：Instabox、Docker、本机 Chrome、派任务到 Mac | 未开始 |
+| 2 | 电脑：Instabox、Docker、本机 Chrome、派任务到 Mac | A 完成（2026-11-20）：共用部分、电脑工具、Docker、Instabox、电脑和文件的接口、VNC 转发，别的模块里的桩都接上了；B（本机 Chrome、整台 Mac、派任务到 Mac）未开始 |
 | 3 | 外围：事件、定时任务、消息来源、聊天软件、画图和视频、资料库页面、小应用、备份、推送、中转 | 大部分跟第 1 步一起做完了（分模块并行），剩下的见下面“还没迁的” |
 | 4 | 桌面 App 把服务链进 Tauri 外壳；Python / uv 用到时再下载；Docker 镜像换成 Rust 版 | 未开始 |
 
@@ -88,11 +88,28 @@ Python 到 Rust 的对应：
 
 ## 还没迁的（2026-11-19）
 
-- **电脑（第 2 步）**：Instabox、Docker、本机 Chrome、整台 Mac、派任务到 Mac，以及靠它的：沙箱在电脑里跑、send_file、
-  /api/files、/api/bots/{id}/computer…、演示一遍的录制、聊天软件发来的文件存进电脑、帮忙卡片交还电脑、设置里电脑相关的检查。
+- **电脑（第 2 步 B）**：本机 Chrome（host）、整台 Mac（macdesk）、派任务到你的 Mac（mac / link / agent，/api/computer/links、
+  /api/computer/macs/{id}…、/api/computer/link）。现在选了 host 会照实说“Rust 版还没有本机电脑”；macs 列表是空的。
 - **事件来源**：收邮件（IMAP）、日历、天气、地震、价格、文件夹。列表里照样有，选了提示“Rust 版还没有这种事件来源”。
 - **没在真环境里跑过的**：Linux 上的沙箱（bwrap / unshare）、飞书 / 钉钉 / 企业微信 / Discord（只编译过）、推送中转连真的 APNs、
   imap 检查、OAuth 连真的服务（假服务上整套流程测过）。上 lsp 之前要在 Linux 上把接口测试跑一遍。
+
+## 电脑的结构（第 2 步 A 定下的，B 照着接）
+
+- `computer/base.rs`：`Computer` 是所有电脑共用的部分（谁在用 users、排队 waiting、演示独占 exclusive、watch、对话用的窗口、
+  asking、接手 / 交还、浏览器操作 browser()、page_shot、front），`Backend` trait 是每种电脑自己的部分。
+- Backend 必须实现：kind、status、start、pause、exec、open_vnc。带默认实现（走终端命令）、本机电脑要重写的：
+  read_bytes / read_range / write_bytes / ls / stat_paths / rm / upload_paths、helper_run（本机在本机跑 cdp_helper.py）、
+  look / screenshot / type_text / press / shell / peek，以及 on_takeover / on_handback / on_release（Python 的 release 重写）。
+- HOSTS 那一组（B 实现）：shell_enabled、desktop_enabled、desk_supported、desk_busy、desk_state、show、grant、
+  desk(op, key, args)（screenshot / inspect / focused / click / drag / type / key / scroll / open_app，返回的 JSON 里截图放在
+  "png"，base64）、desk_claim / desk_release / desk_allowed / desk_ok / desk_denied / set_desk_denied，mac 用的 lid、name。
+- 派到 Mac 的任务：router 跑任务时包了 `computer::with_task_pc`，B 在 use_mac 里调 `computer::set_task_pc(那台 Mac)`，
+  `computer::current()` 就是它。pick_mac / use_mac / link_rows / macs_state 现在是 mod.rs 里的占位。
+- 电脑里运行的三个脚本不改：cdp_helper.py（字节原样写进电脑，路径 /tmp/osa-cdp-<sha1 前 8 位>.py）、computerd.py、镜像。
+- 接口测试 contract/test_computer.py 用真的 osa-computer:2 容器加测试里的假 computerd（和 lsp 上 compose 的电脑容器同一条路），
+  没装 Docker、没有镜像就跳过；Instabox 用假 API（INSTABOX_API_URL）。这台 Mac 的 shell 设了 DOCKER_DEFAULT_PLATFORM，
+  起容器要带 --platform（local.rs 的 platform() 也是为这个）。
 
 ## 迁一个模块的做法
 
@@ -120,6 +137,9 @@ Python 到 Rust 的对应：
 - **群聊交接的竞争**（groups.py `after_task`）：先 `unexpect()` 再拿群的锁。dispatch 填了 handoff_to 的任务如果在
   派任务的那一轮还没说完时就做完了，排在后面、被 @ 到的那个 Bot 就不再跳过，先按“被 @”说一次，交接时又说一次。
   Rust 版照搬了（任务做得快更容易碰上）；接口测试里让假任务慢 0.5 秒避开。改法：unexpect 挪到拿到锁之后。
+
+- **对话里直接操作电脑时开机失败**（router.py `_direct`）：Python 版 `c.start()` 报错会让这一整轮对话出错（“出错了：…”）；
+  Rust 版把它当成这个工具的结果（“电脑操作失败：…”），模型能接着说。Rust 的工具返回值里放不下异常，就这一处和 Python 不一样。
 
 ## 顺手修的
 

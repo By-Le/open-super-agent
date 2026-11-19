@@ -18,6 +18,8 @@ pub type PostFn = Arc<dyn Fn(String, String, i64, Value) -> BoxFuture<'static, i
 pub enum Out {
     Text(String),
     Shot(String, Option<Vec<u8>>),
+    /// 带说明的截图（整个屏幕的截图：给模型的说明和浏览器页面的不一样）
+    Pic(String, Vec<u8>, String),
 }
 
 impl From<String> for Out {

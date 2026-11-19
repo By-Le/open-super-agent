@@ -1,7 +1,6 @@
 //! 演示一遍（Teach a task）：用户在共用电脑上做一遍，Bot 把录到的操作整理成技能草稿，用户审核后保存。对应 osa/teach.py。
 //!
-//! 录制靠电脑（第 2 步才迁过来）：开始、结束时对电脑的几步操作集中在下面的 pc_* 里，现在电脑还没有，开始录制会照实报错；
-//! 状态、自动结束、整理操作、生成草稿都已经照 Python 版写好。
+//! 开始、结束时对电脑的几步操作集中在下面的 pc_* 里。
 
 use crate::web::{ApiError, Body, Res, ok};
 use crate::{i18n, providers, py, server};
@@ -34,27 +33,57 @@ pub fn public() -> Value {
     }
 }
 
-fn changed(extra: Value, _pc: Option<i64>) {
-    // TODO（第 2 步）：pc 给了时先推 {"type": "computer", "computer": computer.public_state(pc)}
+fn changed(extra: Value, pc: Option<i64>) {
     let mut ev = json!({"type": "teach", "teach": public()});
     if let Some(o) = extra.as_object() {
         for (k, v) in o {
             ev[k] = v.clone();
         }
     }
-    server::broadcast(ev);
+    match pc {
+        // 接手 / 交还要马上反映到电脑画面上：先推电脑的状态
+        Some(b) => {
+            tokio::spawn(async move {
+                server::broadcast(json!({"type": "computer", "computer": crate::computer::public_state(b).await}));
+                server::broadcast(ev);
+            });
+        }
+        None => server::broadcast(ev),
+    }
 }
 
-// ---------- 电脑上的几步（第 2 步） ----------
-async fn pc_begin(_path: &str) -> Result<(), String> {
-    // Python 版：c.users / c.exclusive 有人在用就报“电脑正在被用着”；c.start()；c.claim_exclusive(KEY, "演示录制")；
-    // c.browser("rec_start", as_human=True, file=path, max_s=MAX_S+30)；c.takeover()；本机电脑 c.show()
-    Err(t!("电脑现在用不了（Rust 版还没有电脑）"))
+// ---------- 电脑上的几步 ----------
+async fn pc_begin(path: &str) -> Result<(), String> {
+    let c = crate::computer::get(0);
+    let busy = {
+        let st = c.st.lock();
+        !st.users.is_empty() || !st.exclusive.is_empty()
+    };
+    if busy {
+        return Err(t!("电脑正在被用着（{who}），等它做完或者先停掉再录", who = c.busy()));
+    }
+    c.start().await.map_err(|e| e.0)?;
+    if let Err(e) = c.claim_exclusive(KEY, &t!("演示录制")) {
+        return Err(t!("{error}，等它做完或者先停掉再录", error = e.0));
+    }
+    if let Err(e) = c.browser("rec_start", None, true, json!({"file": path, "max_s": MAX_S + 30})).await {
+        c.release(KEY).await;
+        return Err(e.0);
+    }
+    c.takeover();
+    if crate::computer::HOSTS.contains(&c.kind()) {
+        let _ = c.backend.show(&c).await;
+    }
+    Ok(())
 }
 
-async fn pc_end(_path: &str) -> Result<Vec<Value>, String> {
-    // Python 版：r = c.browser("rec_stop", as_human=True, file=path)；finally c.handback()、c.release(KEY)
-    Ok(vec![])
+async fn pc_end(path: &str) -> Result<Vec<Value>, String> {
+    let c = crate::computer::get(0);
+    let r = c.browser("rec_stop", None, true, json!({"file": path})).await;
+    c.handback();
+    c.release(KEY).await;
+    let r = r.map_err(|e| e.0)?;
+    Ok(r["events"].as_array().cloned().unwrap_or_default())
 }
 
 pub async fn start(bot_id: i64, note: &str) -> Result<Value, String> {

@@ -592,8 +592,9 @@ fn eq(a: &[u8], b: &[u8]) -> bool {
     a.len() == b.len() && a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
 }
 
-/// 交还电脑（“请你帮忙”处理完了）。电脑那部分（_pc(bot_id).handback()、广播电脑状态）等 computer 模块迁过来再接上
+/// 交还电脑（“请你帮忙”处理完了）
 fn handback(bot_id: i64) {
+    crate::computer::get(bot_id).handback();
     let ids: Vec<i64> = approvals::PENDING
         .lock()
         .values()
@@ -603,11 +604,22 @@ fn handback(bot_id: i64) {
     for a in ids {
         approvals::resolve(a, true, "", false, &Value::Null, None, None);
     }
+    tokio::spawn(async move {
+        crate::server::broadcast(json!({"type": "computer", "computer": crate::computer::public_state(bot_id).await}));
+    });
 }
 
-/// 聊天软件发来的文件存到电脑的 uploads 目录（要电脑模块：还没迁）
-async fn save_upload(_name: &str, _data: &[u8]) -> Result<String, String> {
-    Err(t!("电脑现在用不了"))
+/// 聊天软件发来的文件存到电脑的 uploads 目录（和网页上传附件一样）
+async fn save_upload(name: &str, data: &[u8]) -> Result<String, String> {
+    let c = crate::computer::get(0);
+    if c.state().await != "running" {
+        c.start().await.map_err(|e| e.0)?;
+    }
+    let name: String = name.chars().map(|ch| if ch == '/' || ch == '\\' || ch == '\0' { '_' } else { ch }).collect();
+    let name = name.trim();
+    let name = if name.is_empty() { "file".to_string() } else { crate::py::head(name, 200) };
+    let r = crate::library::put_file(&c, "uploads", &name, data).await?;
+    Ok(crate::py::str_of(&r["path"]))
 }
 
 // ---------- 增删改 ----------

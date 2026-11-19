@@ -517,7 +517,7 @@ impl Router {
         let sid = format!("s{}", py::now_ns());
         let started = py::now();
         let (mut shown, mut thinking, mut reasoning) = (String::new(), String::new(), String::new());
-        let mut shots: Vec<(Vec<u8>, bool)> = vec![];
+        let mut shots: Vec<(Vec<u8>, Option<String>, bool)> = vec![];
         self.emit(json!({"type": "stream_start", "sid": sid}), Some(cid));
         let body = async {
             for _ in 0..10 {
@@ -539,15 +539,20 @@ impl Router {
                         Out::Text(s) => s,
                         Out::Shot(s, png) => {
                             if let Some(p) = png {
-                                shots.push((p, name == "look_at_screen"));
+                                let whole = name == "look_at_screen";
+                                shots.push((p, if whole { Some("电脑的整个屏幕".to_string()) } else { None }, !whole));
                             }
+                            s
+                        }
+                        Out::Pic(s, png, cap) => {
+                            shots.push((png, Some(cap), true));
                             s
                         }
                     };
                     msgs.push(json!({"role": "tool", "tool_call_id": id, "content": text}));
                 }
-                if let Some((png, whole)) = shots.last() {
-                    msgs.push(ctools::image_message(png, if *whole { Some("电脑的整个屏幕") } else { None }, !*whole));
+                if let Some((png, cap, coords)) = shots.last() {
+                    msgs.push(ctools::image_message(png, cap.as_deref(), *coords));
                     shots.clear();
                 }
                 if !shown.is_empty() && !shown.ends_with('\n') {

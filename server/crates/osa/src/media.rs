@@ -307,8 +307,58 @@ pub fn sent_text(att: &Value) -> String {
     format!("已发给用户：{}（{what}）。回复里不用再贴链接。", py::str_of(&att["name"]))
 }
 
-pub async fn tool_send_file(_c: crate::registry::Call) -> crate::registry::Out {
-    crate::builtin::todo("send_file")
+pub async fn tool_send_file(c: crate::registry::Call) -> crate::registry::Out {
+    let router = c.scope == crate::registry::ROUTER;
+    if c.files.lock().len() >= MAX_SEND {
+        return if router { format!("没发：一次最多发 {MAX_SEND} 个文件") } else { format!("没发：一个任务最多发 {MAX_SEND} 个文件") }.into();
+    }
+    let att = match from_computer(&c.arg_str("path"), false).await {
+        Ok(a) => a,
+        Err(e) => return format!("没发：{e}").into(),
+    };
+    c.files.lock().push(att.clone());
+    let text = sent_text(&att);
+    if router { text.into() } else { text.replace("对话里", "任务结果下面").into() }
+}
+
+static IMG_EXT: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)\.(png|jpe?g|webp|gif)$").unwrap());
+static VIDEO_EXT: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)\.(mp4|m4v|mov|webm)$").unwrap());
+
+/// 电脑里的一个文件 → 附件。图片另存一份进 media。video：视频也存一份（当参考视频用）。派到你的 Mac 上的任务发的是那台 Mac 上的文件
+pub async fn from_computer(path: &str, video: bool) -> Result<Value, String> {
+    let c = crate::computer::current();
+    let p = library::norm(path, Some(&c.workspace()))?;
+    if c.state().await != "running" {
+        c.start().await.map_err(|e| e.0)?;
+    }
+    let st = c.stat_paths(std::slice::from_ref(&p)).await.map_err(|e| e.0)?.get(&p).cloned().ok_or_else(|| format!("电脑里没有这个文件：{p}"))?;
+    if st["dir"] == true {
+        return Err(format!("{p} 是文件夹，只能发文件"));
+    }
+    let size = py::to_int(&st["size"]).unwrap_or(0);
+    let mut att = json!({"name": basename(&p), "path": p, "size": st["size"]});
+    if c.kind() == "mac" {
+        att["mac"] = json!(c.backend.lid());
+    }
+    if size as usize <= MAX_BYTES && IMG_EXT.is_match(&p) {
+        let data = c.read_bytes(&p, MAX_BYTES).await.unwrap_or_default();
+        if sniff(&data).is_some() {
+            let name = py::str_of(&att["name"]);
+            let m = save(&data, &name, MAX_BYTES, false)?;
+            for k in ["media", "mime", "w", "h"] {
+                att[k] = m[if k == "media" { "id" } else { k }].clone();
+            }
+        }
+    } else if video && size as usize <= MAX_VIDEO_REF && VIDEO_EXT.is_match(&p) {
+        let data = c.read_bytes(&p, MAX_VIDEO_REF).await.unwrap_or_default();
+        if sniff(&data).is_some_and(|m| m.starts_with("video/")) {
+            let name = py::str_of(&att["name"]);
+            let m = save(&data, &name, MAX_VIDEO_REF, true)?;
+            att["media"] = m["id"].clone();
+            att["mime"] = m["mime"].clone();
+        }
+    }
+    Ok(att)
 }
 
 // ---------- 接口：/api/media、/media/{id}、/pub/media/{id} ----------
