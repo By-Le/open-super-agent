@@ -34,6 +34,8 @@ OSA_IMPL=rust uv run pytest tests/contract   # 跑 Rust 版（先 cargo build）
 - 假模型是一个真的 HTTP 服务（`tests/contract/fakellm_http.py`），按剧本流式返回文字或工具调用，和 `tests/fakellm.py` 一样按系统提示词认角色。
 - 假应用是一个 stdio 的 MCP 服务（`tests/contract/fake_mcp.py`），测应用的工具、确认卡片。
 - 每个测试模块起一个服务进程，临时数据目录、临时 config.yaml。
+- `contract/test_parity.py`：同一个剧本在两个版本上各跑一遍，比对每次发给模型的请求（messages、tools、参数）逐字一样。
+  2026-11-19 第一次跑：除了还没迁的 quick_code / run_code，系统提示词、上下文、群聊和私信的轮次说明、记忆都一字不差。
 - 一个模块迁完的标准：它的接口测试在两个版本上都通过。原来的 `tests/`（进程内的单元测试）留着测 Python 版，Rust 版的单元测试写在各自的模块里。
 
 ## 代码结构
