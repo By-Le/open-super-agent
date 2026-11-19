@@ -32,6 +32,7 @@ pub mod channels;
 pub mod computer;
 pub mod dm;
 pub mod dsml;
+pub mod generation;
 pub mod groups;
 pub mod library;
 pub mod mcp_client;
@@ -59,6 +60,7 @@ pub mod teach;
 pub mod tools;
 pub mod vault;
 pub mod watchdog;
+pub mod websearch;
 pub mod worker;
 
 /// 各模块自己的表（Python 版在 import 时建）
@@ -78,4 +80,5 @@ pub fn background() {
     tokio::spawn(media::gc_loop());
     tokio::spawn(prices::price_loop());
     tokio::spawn(search::startup());
+    videos::resume();
 }
