@@ -1,10 +1,11 @@
 //! osa-server：和 `uvicorn osa.server:app --host … --port …` 一样的用法。
+//! `osa-server setup`：装好 uv 和 Python（桌面 App 第一次打开时调，见 runtime.rs）。
 //! `osa-server agent`：你的 Mac 上替服务器上的 Bot 干活的小程序（Python 版的 `python -m osa.computer.agent`，见 computer/agent.rs）。
 
 use std::net::SocketAddr;
 
 fn main() -> anyhow::Result<()> {
-    osa::runtime::init_path(); // 改 PATH 要在起线程之前
+    osa::runtime::init_env(); // 改 PATH、镜像要在起线程之前
     tokio::runtime::Builder::new_multi_thread().enable_all().build()?.block_on(run())
 }
 
@@ -15,6 +16,12 @@ async fn run() -> anyhow::Result<()> {
         .init();
     if std::env::args().nth(1).as_deref() == Some("agent") {
         return osa::computer::agent::main().await;
+    }
+    if std::env::args().nth(1).as_deref() == Some("setup") {
+        return osa::runtime::setup_main().await;
+    }
+    if let Some(other) = std::env::args().nth(1).filter(|a| !a.starts_with('-')) {
+        anyhow::bail!("不认识的子命令：{other}（可以用 agent、setup，或者 --host / --port 起服务）");
     }
     let mut host = "127.0.0.1".to_string();
     let mut port: u16 = 8765;

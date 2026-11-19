@@ -19,6 +19,9 @@ pub struct Config {
     /// 网页设置里选的外观："light" / "dark"；None 是跟随系统。下次启动一开始就用它，启动页不会先闪成另一种
     #[serde(default)]
     pub theme: Option<String>,
+    /// 下载用哪边："cn"（国内镜像）/ "global"（官方源）；None 是还没测过。第一次打开时测一下网络自动选，启动页上能换
+    #[serde(default)]
+    pub mirror: Option<String>,
 }
 
 pub fn home() -> PathBuf {

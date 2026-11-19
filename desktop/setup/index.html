@@ -4,75 +4,211 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Open Super Agent</title>
+<!-- 不能写在标签的 style 里：Tauri 的 CSP 会挡掉内联样式（JS 里改 el.style 可以） -->
 <style>
-:root{--bg:#0d0d0e;--bg2:#151517;--line:#26262a;--fg:#ececec;--fg2:#a8a8ad;--fg3:#6e6e74;--acc:#ececec;--acc-fg:#0d0d0e;--bad:#ef6b6b;color-scheme:dark}
-@media (prefers-color-scheme:light){:root{--bg:#fbfbfa;--bg2:#f2f2f0;--line:#e2e2df;--fg:#18181a;--fg2:#57575c;--fg3:#8d8d92;--acc:#18181a;--acc-fg:#fbfbfa;color-scheme:light}}
-*{box-sizing:border-box}html,body{margin:0;height:100%}
-body{display:grid;place-items:center;background:var(--bg);color:var(--fg);font:15px/1.6 -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;-webkit-font-smoothing:antialiased;-webkit-user-select:none;user-select:none}
-main{width:min(560px,92vw);display:flex;flex-direction:column;gap:18px}
-.logo{font-size:30px;text-align:center;line-height:1}h1{margin:0;font-size:20px;text-align:center;font-weight:600}
-.sub{margin:-8px 0 0;text-align:center;color:var(--fg2)}
-.card{border:1px solid var(--line);background:var(--bg2);border-radius:14px;padding:18px 20px;display:flex;flex-direction:column;gap:10px}
-.card h2{margin:0;font-size:16px;font-weight:600}.card p{margin:0;color:var(--fg2);font-size:14px}
-.row{display:flex;gap:8px}
-input{flex:1;font:inherit;color:var(--fg);background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:8px 12px;outline:none;-webkit-user-select:text;user-select:text}
-input:focus{border-color:var(--fg3)}
-button{font:inherit;padding:8px 16px;border-radius:10px;border:1px solid var(--line);background:transparent;color:var(--fg);cursor:pointer;white-space:nowrap}
-button.primary{background:var(--acc);color:var(--acc-fg);border-color:var(--acc)}button:hover{opacity:.88}button:disabled{opacity:.5;cursor:default}
-.err{color:var(--bad);font-size:13px;margin:0}
-pre{margin:0;max-height:260px;overflow:auto;white-space:pre-wrap;word-break:break-all;font:12px/1.5 ui-monospace,Menlo,monospace;color:var(--fg2);background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:10px 12px;-webkit-user-select:text;user-select:text}
-.center{text-align:center;color:var(--fg2)}
-.spin{width:22px;height:22px;margin:0 auto 10px;border:2px solid var(--line);border-top-color:var(--fg);border-radius:50%;animation:s 0.9s linear infinite}
-@keyframes s{to{transform:rotate(360deg)}}
-.links{display:flex;gap:8px;justify-content:center;flex-wrap:wrap}
-.sp10{height:10px}.sp12{height:12px}.sp14{height:14px}.err.big{text-align:center;font-size:15px}   /* 不能写在标签的 style 里：Tauri 的 CSP 会挡掉内联样式 */
+:root{
+  --bg:#f6f6f3;--panel:#ffffff;--field:#f1f1ec;--line:rgba(20,20,16,.08);--line2:rgba(20,20,16,.14);
+  --fg:#1a1a17;--fg2:#5f5e57;--fg3:#9a9990;--btn1:#2f2f2c;--btn2:#1b1b19;--btn-fg:#fbfbf8;
+  --ok:#2f9e44;--bad:#c2410c;--bad-bg:rgba(194,65,12,.07);--acc:#d9822b;
+  --orb1:rgba(217,130,43,.20);--orb2:rgba(76,110,245,.16);--orb3:rgba(47,158,68,.12);
+  --shadow:0 12px 32px -18px rgba(20,20,16,.25);--ease:cubic-bezier(.22,1,.36,1);color-scheme:light
+}
+@media (prefers-color-scheme:dark){:root{
+  --bg:#111110;--panel:#1a1a19;--field:#222220;--line:rgba(255,255,250,.08);--line2:rgba(255,255,250,.14);
+  --fg:#ececea;--fg2:#a5a49d;--fg3:#6f6e68;--btn1:#f2f2ee;--btn2:#dcdcd6;--btn-fg:#151514;
+  --ok:#51cf66;--bad:#ff8a5c;--bad-bg:rgba(255,138,92,.08);--acc:#f0a050;
+  --orb1:rgba(240,160,80,.16);--orb2:rgba(110,140,255,.14);--orb3:rgba(81,207,102,.09);
+  --shadow:0 16px 40px -20px rgba(0,0,0,.7);color-scheme:dark
+}}
+*{box-sizing:border-box}html,body{margin:0;min-height:100%}
+body{background:var(--bg);color:var(--fg);font:14px/1.55 -apple-system,BlinkMacSystemFont,"SF Pro Text","PingFang SC","Microsoft YaHei",sans-serif;
+  -webkit-font-smoothing:antialiased;-webkit-user-select:none;user-select:none;overflow-x:hidden}
+.num{font-variant-numeric:tabular-nums}
 [hidden]{display:none!important}
+
+/* 背景：几团柔和的光 */
+.orbs{position:fixed;inset:0;pointer-events:none;overflow:hidden;z-index:0}
+.orbs i{position:absolute;border-radius:50%;filter:blur(60px);animation:drift 18s ease-in-out infinite alternate}
+.orbs i:nth-child(1){width:420px;height:420px;background:var(--orb1);left:-120px;top:-140px}
+.orbs i:nth-child(2){width:380px;height:380px;background:var(--orb2);right:-120px;top:40px;animation-delay:-6s}
+.orbs i:nth-child(3){width:340px;height:340px;background:var(--orb3);left:30%;bottom:-200px;animation-delay:-12s}
+@keyframes drift{to{transform:translate(40px,30px) scale(1.08)}}
+
+.wrap{position:relative;z-index:1;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px 16px}
+main{width:min(100%,560px)}
+section{display:flex;flex-direction:column;align-items:center;text-align:center;animation:enter .32s var(--ease) both}
+@keyframes enter{from{opacity:0;transform:translateY(8px)}}
+
+/* 顶上的小插画：几张浮着的卡片，说明它能干什么 */
+.scene{position:relative;width:100%;height:150px;margin-bottom:22px}
+.chip{position:absolute;display:flex;align-items:center;gap:8px;padding:9px 13px;border-radius:14px;background:var(--panel);
+  border:1px solid var(--line);box-shadow:var(--shadow);font-size:12.5px;color:var(--fg2);white-space:nowrap;animation:float 6s ease-in-out infinite}
+.chip b{color:var(--fg);font-weight:600}
+.chip .ic{width:22px;height:22px;border-radius:7px;display:grid;place-items:center;font-size:12px;color:#fff;flex:none}
+.chip.c1{left:2%;top:18px;transform:rotate(-4deg)}.chip.c1 .ic{background:#d9822b}
+.chip.c2{right:0;top:12px;transform:rotate(3deg);animation-delay:-2s}.chip.c2 .ic{background:#4c6ef5}
+.chip.c3{left:6%;top:98px;transform:rotate(1.5deg);animation-delay:-4s}.chip.c3 .ic{background:#2f9e44}
+@keyframes float{50%{translate:0 -6px}}
+.logo{position:absolute;left:50%;top:44px;translate:-50% 0;width:58px;height:58px;border-radius:18px;display:grid;place-items:center;
+  background:linear-gradient(180deg,var(--btn1),var(--btn2));color:var(--btn-fg);font-size:26px;box-shadow:0 14px 30px -12px rgba(0,0,0,.45)}
+
+.eyebrow{display:inline-flex;align-items:center;gap:6px;padding:4px 11px;border-radius:999px;border:1px solid var(--line);background:var(--panel);
+  font-size:12px;color:var(--fg2);margin-bottom:14px}
+.eyebrow .dot{width:6px;height:6px;border-radius:50%;background:var(--ok)}
+h1{margin:0;font-size:26px;line-height:34px;font-weight:650;letter-spacing:-.022em}
+.lead{margin:8px 0 0;color:var(--fg2);font-size:13.5px;max-width:460px}
+
+/* 按钮 */
+.big{margin-top:26px;min-width:260px;height:46px;padding:0 22px;border:0;border-radius:13px;cursor:pointer;font:inherit;font-size:15px;font-weight:600;
+  color:var(--btn-fg);background:linear-gradient(180deg,var(--btn1),var(--btn2));box-shadow:0 10px 24px -12px rgba(0,0,0,.5);
+  display:inline-flex;align-items:center;justify-content:center;gap:8px;transition:transform .2s var(--ease),box-shadow .2s var(--ease)}
+.big:hover{transform:translateY(-1px);box-shadow:0 14px 28px -12px rgba(0,0,0,.55)}.big:active{transform:none}
+.big .arr{transition:transform .2s var(--ease)}.big:hover .arr{transform:translateX(2px)}
+.big:disabled{opacity:.6;cursor:default;transform:none}
+.hint{margin-top:10px;font-size:12.5px;color:var(--fg3)}
+.hint .rec{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--acc);margin-right:6px;vertical-align:1px}
+button.link{border:0;background:none;padding:0;font:inherit;color:var(--fg2);cursor:pointer;text-decoration:underline;text-decoration-color:var(--line2);text-underline-offset:3px}
+button.link:hover{color:var(--fg)}
+.btn{font:inherit;font-size:13.5px;height:36px;padding:0 15px;border-radius:10px;border:1px solid var(--line2);background:var(--panel);color:var(--fg);cursor:pointer;white-space:nowrap}
+.btn:hover{background:var(--field)}.btn.primary{background:linear-gradient(180deg,var(--btn1),var(--btn2));color:var(--btn-fg);border-color:transparent}
+.btn.primary:hover{opacity:.92}.btn:disabled{opacity:.5;cursor:default}
+.row{display:flex;gap:8px;justify-content:center;flex-wrap:wrap}
+
+/* 连接服务器：点开才展开 */
+.fold{display:grid;grid-template-rows:0fr;width:100%;transition:grid-template-rows .42s var(--ease),margin .42s var(--ease)}
+.fold.open{grid-template-rows:1fr;margin-top:14px}.fold>div{overflow:hidden}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);padding:18px 20px;text-align:left;width:100%}
+.card h2{margin:0 0 4px;font-size:15px;font-weight:600}.card p{margin:0 0 12px;color:var(--fg2);font-size:13px}
+.card form{display:flex;gap:8px}
+input{flex:1;min-width:0;font:inherit;color:var(--fg);background:var(--field);border:1px solid transparent;border-radius:10px;padding:8px 12px;outline:none;-webkit-user-select:text;user-select:text}
+input:focus{border-color:var(--line2);background:var(--panel)}
+.err{color:var(--bad);font-size:12.5px;margin:8px 0 0}
+.foot{margin-top:22px;font-size:12.5px;color:var(--fg3)}
+
+/* 准备中：总进度 + 步骤清单 */
+.panel{margin-top:24px;width:100%;background:var(--panel);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);padding:18px 20px 8px;text-align:left}
+.now{display:flex;align-items:baseline;justify-content:space-between;gap:12px}
+.now .t{font-weight:600}.now .pct{color:var(--fg2);font-size:13px}
+.bar{margin-top:10px;height:5px;border-radius:5px;background:var(--field);overflow:hidden;position:relative}
+.bar i{display:block;height:100%;width:0;border-radius:5px;background:linear-gradient(90deg,var(--fg3),var(--fg));transition:width .9s var(--ease);position:relative;overflow:hidden}
+.bar i::after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,.45),transparent);translate:-100% 0;animation:sheen 1.8s ease-in-out infinite}
+.bar.stopped i{background:var(--fg3)}.bar.stopped i::after{display:none}
+@keyframes sheen{to{translate:100% 0}}
+.xfer{margin-top:7px;min-height:18px;font-size:12px;color:var(--fg3)}
+ol.steps{list-style:none;margin:14px 0 0;padding:0;border-top:1px solid var(--line)}
+ol.steps li{display:grid;grid-template-columns:22px 1fr auto;gap:10px;align-items:start;padding:11px 0;border-bottom:1px solid var(--line);position:relative}
+ol.steps li:last-child{border-bottom:0}
+.dot{width:18px;height:18px;margin-top:1px;border-radius:50%;border:1.5px solid var(--line2);display:grid;place-items:center;transition:all .3s var(--ease)}
+li.running .dot{border-color:var(--line2);border-top-color:var(--fg);animation:spin .8s linear infinite}
+li.done .dot{background:var(--fg);border-color:var(--fg)}
+li.done .dot::after{content:"";width:8px;height:4px;border-left:1.6px solid var(--bg);border-bottom:1.6px solid var(--bg);rotate:-45deg;translate:0 -1px;animation:pop .35s var(--ease)}
+li.error .dot{border-color:var(--bad);background:var(--bad-bg)}li.error .dot::after{content:"!";color:var(--bad);font-size:11px;font-weight:700}
+li.skipped .dot{border-style:dashed}
+@keyframes spin{to{rotate:360deg}}@keyframes pop{from{scale:.3;opacity:0}}
+.st{font-size:13.5px}.st small{display:block;color:var(--fg3);font-size:12px;margin-top:1px}
+li.pending .st{color:var(--fg3)}.st small .link{margin-left:6px;font-size:12px}li.error .st small{color:var(--bad);-webkit-user-select:text;user-select:text;word-break:break-word}
+.secs{font-size:12px;color:var(--fg3)}
+.msg{margin-top:16px;width:100%;text-align:left;background:var(--bad-bg);border:1px solid var(--line);border-radius:12px;padding:10px 12px;color:var(--bad);font-size:12.5px}
+pre{margin:16px 0 0;width:100%;max-height:220px;overflow:auto;white-space:pre-wrap;word-break:break-all;text-align:left;font:12px/1.5 ui-monospace,Menlo,monospace;
+  color:var(--fg2);background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px 12px;-webkit-user-select:text;user-select:text}
+.actions{margin-top:18px}
+
+/* 准备好了 */
+.check{width:64px;height:64px;border-radius:50%;background:var(--fg);display:grid;place-items:center;margin-bottom:20px;animation:popin .56s var(--ease) both}
+.check svg{width:30px;height:30px;stroke:var(--bg);stroke-width:2.6;fill:none;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:30;stroke-dashoffset:30;animation:draw .42s .25s var(--ease) forwards}
+@keyframes popin{0%{scale:.4;opacity:0}60%{scale:1.06}}@keyframes draw{to{stroke-dashoffset:0}}
+.pill{display:inline-flex;align-items:center;gap:7px;margin-top:16px;padding:5px 12px;border-radius:999px;background:var(--panel);border:1px solid var(--line);font-size:12.5px;color:var(--fg2)}
+.pill .dot2{width:7px;height:7px;border-radius:50%;background:var(--ok);box-shadow:0 0 0 3px color-mix(in srgb,var(--ok) 20%,transparent)}
+.confetti{position:fixed;inset:0;pointer-events:none;z-index:5;overflow:hidden}
+.confetti i{position:absolute;bottom:-12px;width:7px;height:11px;border-radius:2px;animation:fly 2.6s cubic-bezier(.2,.7,.3,1) forwards}
+@keyframes fly{to{transform:translate(var(--dx),var(--dy)) rotate(var(--r));opacity:0}}
+
+.spinner{width:24px;height:24px;border-radius:50%;border:2px solid var(--line2);border-top-color:var(--fg);animation:spin .8s linear infinite;margin-bottom:14px}
+
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}.check svg{stroke-dashoffset:0}}
+@media (max-width:520px){.chip.c2{display:none}h1{font-size:22px;line-height:30px}}
 </style>
 </head>
 <body>
-<main>
-  <div class="logo">◆</div>
-  <h1>Open Super Agent</h1>
+<div class="orbs" aria-hidden="true"><i></i><i></i><i></i></div>
+<div class="wrap"><main>
 
-  <section id="choose" hidden>
-    <p class="sub" data-t="choose"></p>
-    <div class="sp14"></div>
-    <div class="card">
-      <h2 data-t="localTitle"></h2>
-      <p data-t="localDesc"></p>
-      <div class="row"><button class="primary" id="local" data-t="localBtn"></button></div>
+  <!-- 第一次打开：选用法 -->
+  <section id="welcome" hidden>
+    <div class="scene" aria-hidden="true">
+      <div class="chip c1"><span class="ic">✦</span><span data-t="chip1"></span></div>
+      <div class="chip c2"><span class="ic">▣</span><span data-t="chip2"></span></div>
+      <div class="chip c3"><span class="ic">◷</span><span data-t="chip3"></span></div>
+      <div class="logo">◆</div>
     </div>
-    <div class="sp12"></div>
-    <div class="card">
-      <h2 data-t="remoteTitle"></h2>
-      <p data-t="remoteDesc"></p>
-      <form class="row" id="remote">
-        <input id="url" type="text" placeholder="https://osa.example.com" autocomplete="url" spellcheck="false">
-        <button class="primary" type="submit" data-t="remoteBtn"></button>
-      </form>
-      <p class="err" id="remoteErr" hidden></p>
+    <div class="eyebrow"><span class="dot"></span><span data-t="eyebrow"></span></div>
+    <h1 data-t="welcome"></h1>
+    <p class="lead" data-t="welcomeLead"></p>
+    <button class="big" id="local"><span data-t="localBtn"></span><span class="arr">→</span></button>
+    <div class="hint"><span class="rec"></span><span data-t="localHint"></span></div>
+    <div class="fold" id="remoteFold"><div>
+      <div class="card">
+        <h2 data-t="remoteTitle"></h2>
+        <p data-t="remoteDesc"></p>
+        <form id="remote">
+          <input id="url" type="text" placeholder="https://osa.example.com" autocomplete="url" spellcheck="false">
+          <button class="btn primary" type="submit" data-t="remoteBtn"></button>
+        </form>
+        <p class="err" id="remoteErr" hidden></p>
+      </div>
+    </div></div>
+    <div class="foot">
+      <button class="link" id="toggleRemote" data-t="haveServer"></button>
+      <span id="backWrap" hidden> · <button class="link" id="back" data-t="back"></button></span>
     </div>
-    <div class="sp12"></div>
-    <div class="links"><button id="back" hidden data-t="back"></button></div>
   </section>
 
-  <section id="starting" class="center" hidden>
-    <div class="spin"></div>
-    <div data-t="starting"></div>
+  <!-- 第一次的准备：测网络、起服务、装 uv 和 Python -->
+  <section id="installing" hidden>
+    <h1 id="instTitle"></h1>
+    <p class="lead" id="instLead"></p>
+    <div class="panel">
+      <div class="now"><span class="t" id="nowTitle"></span><span class="pct num" id="pct">0%</span></div>
+      <div class="bar" id="bar"><i id="fill"></i></div>
+      <div class="xfer num" id="xfer"></div>
+      <ol class="steps" id="steps"></ol>
+    </div>
+    <div class="msg" id="instErr" hidden></div>
+    <div class="row actions" id="instActions" hidden>
+      <button class="btn" id="skip" data-t="skip"></button>
+      <button class="btn" id="otherSource"></button>
+      <button class="btn primary" id="retryRt" data-t="retry"></button>
+    </div>
   </section>
 
+  <!-- 准备好了 -->
+  <section id="ready" hidden>
+    <div class="check"><svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></div>
+    <h1 data-t="readyTitle"></h1>
+    <p class="lead" data-t="readyLead"></p>
+    <div class="pill"><span class="dot2"></span><span id="readyPill"></span></div>
+    <button class="big" id="open"><span data-t="openBtn"></span><span class="arr">→</span></button>
+  </section>
+
+  <!-- 以后每次打开：一闪而过 -->
+  <section id="starting" hidden>
+    <div class="spinner"></div>
+    <div class="lead" data-t="starting"></div>
+  </section>
+
+  <!-- 服务没起来 -->
   <section id="failed" hidden>
-    <p class="err big" data-t="failed"></p>
-    <div class="sp10"></div>
+    <h1 data-t="failed"></h1>
+    <p class="lead" data-t="failedLead"></p>
     <pre id="message"></pre>
-    <div class="sp14"></div>
-    <div class="links">
-      <button class="primary" id="retry" data-t="retry"></button>
-      <button id="other" data-t="other"></button>
-      <button id="logs" data-t="logs"></button>
+    <div class="row actions">
+      <button class="btn" id="logs" data-t="logs"></button>
+      <button class="btn" id="other" data-t="other"></button>
+      <button class="btn primary" id="retry" data-t="retry"></button>
     </div>
   </section>
-</main>
+
+</main></div>
 <script src="setup.js"></script>
 </body>
 </html>

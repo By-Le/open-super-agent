@@ -2,6 +2,7 @@
 //! 再补上网页做不到的：系统通知、菜单栏、全局快捷键、开机启动，以及在这台电脑上起停服务。
 
 mod link;
+mod onboard;
 mod server;
 mod store;
 mod tray;
@@ -55,7 +56,8 @@ const BRIDGE: &str = r#"(function () {
 pub struct State {
     cfg: Mutex<store::Config>,
     origin: Mutex<Option<Url>>, // 当前打开的服务器
-    phase: Mutex<(String, String)>, // 启动页显示的状态："starting" / "error" 和说明
+    phase: Mutex<(String, String)>, // 启动页显示的状态："starting" / "installing" / "runtime_error" / "ready" / "error" 和说明
+    onboard: onboard::Onboard, // 第一次打开时的准备步骤
     server: Arc<server::Server>,
     agent: Arc<server::Server>, // 允许服务器派任务到这台 Mac 时在后台跑的小程序（link.rs）
     granted: Mutex<Vec<String>>, // 已经给过桥接授权的服务器
@@ -108,23 +110,50 @@ fn show_setup(app: &AppHandle, query: &str) {
 
 // ---------- 两种用法 ----------
 
-/// 在这台电脑上运行：起服务，等它好了，用一次性的票登录，再打开页面
-fn start_local(app: &AppHandle) {
+/// 在这台电脑上运行：起服务，等它好了，用一次性的票登录，再打开页面。
+/// first：第一次（刚在启动页选了这种用法）——先测网络，起好服务后再把 uv 和 Python 装好，启动页一步一步显示，最后停在“准备好了”
+fn start_local(app: &AppHandle, first: bool) {
     let app = app.clone();
     std::thread::spawn(move || {
         let st = state(&app);
-        set_phase(&app, "starting", "");
+        let ob = &st.onboard;
+        if first {
+            ob.reset();
+            set_phase(&app, "installing", "");
+        } else {
+            ob.clear();
+            set_phase(&app, "starting", "");
+        }
         link::stop(&app); // 在这台电脑上运行时，用的就是本机电脑，不借给服务器
         {
             let mut cfg = st.cfg.lock().unwrap();
             cfg.mode = Some("local".into());
             store::save(&cfg);
         }
+        // 测网络：第一次，或者上次没测出来
+        let mirror = st.cfg.lock().unwrap().mirror.clone();
+        if first || mirror.is_none() {
+            ob.set("network", "running", None);
+            let found = match mirror {
+                Some(m) if first => Some(m), // 启动页上手动换过
+                _ => onboard::detect().map(String::from),
+            };
+            let mut cfg = st.cfg.lock().unwrap();
+            if found.is_some() {
+                cfg.mirror = found.clone();
+                store::save(&cfg);
+            }
+            ob.set("network", "done", Some(cfg.mirror.clone().unwrap_or_default()));
+        }
+        ob.set("service", "running", None);
         let port = pick_port(&app);
         let secret = store::secret();
         let launch = match server::launch(app.path().resource_dir().ok(), port, &secret) {
             Ok(l) => l,
-            Err(e) => return set_phase(&app, "error", e),
+            Err(e) => {
+                ob.set("service", "error", Some(e.clone()));
+                return set_phase(&app, "error", e);
+            }
         };
         let failed = app.clone();
         st.server.start(launch, move |why| {
@@ -133,14 +162,45 @@ fn start_local(app: &AppHandle) {
         });
         let srv = Arc::clone(&st.server);
         if !server::wait_ready(port, Duration::from_secs(120), || srv.alive()) {
+            ob.set("service", "error", None);
             if state(&app).phase.lock().unwrap().0 != "error" {
                 set_phase(&app, "error", format!("{}\n\n{}", tr("服务没能启动。", "The service didn't start."), server::log_tail()));
             }
             return;
         }
+        ob.set("service", "done", None);
+        if first {
+            return install_runtime(&app);
+        }
         let origin = Url::parse(&format!("http://127.0.0.1:{port}/")).unwrap();
         login_local(&app, &origin, "/");
+        // 从带 Python 的旧版升级上来的：在后台悄悄把 uv 和 Python 装好，不用等到第一次用
+        if !store::home().join("runtime/bin/uv").exists() {
+            if let Ok(mut c) = server::setup_child(app.path().resource_dir().ok()) {
+                let _ = c.wait();
+            }
+        }
     });
+}
+
+/// 装 uv 和 Python（服务已经起来了）。好了停在“准备好了”，出错停在 runtime_error（启动页上能重试、换下载源、跳过）
+fn install_runtime(app: &AppHandle) {
+    let ob = &state(app).onboard;
+    set_phase(app, "installing", "");
+    ob.set("uv", "running", None);
+    let result = server::setup_child(app.path().resource_dir().ok()).and_then(|c| ob.run_setup(c));
+    match result {
+        Ok(()) => set_phase(app, "ready", ""),
+        Err(e) => set_phase(app, "runtime_error", e),
+    }
+}
+
+/// 准备好了：登录本机服务、打开页面
+fn finish_local(app: &AppHandle) {
+    let port = state(app).cfg.lock().unwrap().port.unwrap_or(store::DEFAULT_PORT);
+    state(app).onboard.clear();
+    let origin = Url::parse(&format!("http://127.0.0.1:{port}/")).unwrap();
+    login_local(app, &origin, "/");
 }
 
 /// 端口定下来就一直用它；被别的程序占了才换一个并记住
@@ -265,12 +325,51 @@ fn setup_state(app: AppHandle) -> serde_json::Value {
     let st = state(&app);
     let cfg = st.cfg.lock().unwrap().clone();
     let (phase, message) = st.phase.lock().unwrap().clone();
-    json!({ "mode": cfg.mode, "url": cfg.url, "phase": phase, "message": message, "zh": zh() })
+    json!({ "mode": cfg.mode, "url": cfg.url, "phase": phase, "message": message, "zh": zh(),
+            "mirror": cfg.mirror, "steps": st.onboard.snapshot() })
 }
 
+/// 启动页上选“在这台电脑上运行”：还没用过这种用法就走一遍第一次的准备
 #[tauri::command]
 fn choose_local(app: AppHandle) {
-    start_local(&app);
+    let first = state(&app).cfg.lock().unwrap().mode.as_deref() != Some("local");
+    start_local(&app, first);
+}
+
+/// 第一次准备时出错了：从头再来（服务已经起着的先停掉）
+#[tauri::command]
+fn setup_retry(app: AppHandle) {
+    let st = state(&app);
+    if st.phase.lock().unwrap().0 == "runtime_error" {
+        let app2 = app.clone();
+        std::thread::spawn(move || install_runtime(&app2));
+        return;
+    }
+    st.server.stop();
+    start_local(&app, true);
+}
+
+/// 换下载源（"cn" / "global"）：服务要带着新的设置重新起，再接着装
+#[tauri::command]
+fn setup_mirror(app: AppHandle, mirror: String) {
+    let st = state(&app);
+    {
+        let mut cfg = st.cfg.lock().unwrap();
+        cfg.mirror = Some(if mirror == "cn" { "cn" } else { "global" }.into());
+        store::save(&cfg);
+    }
+    st.server.stop();
+    start_local(&app, true);
+}
+
+/// 不装了（以后用到时再下载）或者已经好了：打开页面
+#[tauri::command]
+fn setup_finish(app: AppHandle) {
+    let p = state(&app).phase.lock().unwrap().0.clone();
+    if p == "ready" || p == "runtime_error" {
+        let app2 = app.clone();
+        std::thread::spawn(move || finish_local(&app2));
+    }
 }
 
 #[tauri::command(async)]
@@ -648,6 +747,7 @@ pub fn run() {
             cfg: Mutex::new(store::load()),
             origin: Mutex::new(None),
             phase: Mutex::new((String::new(), String::new())),
+            onboard: onboard::Onboard::default(),
             server: Arc::new(server::Server::default()),
             agent: Arc::new(server::Server::default()),
             granted: Mutex::new(vec![]),
@@ -655,7 +755,7 @@ pub fn run() {
             updated: Mutex::new(None),
         })
         .invoke_handler(tauri::generate_handler![
-            setup_state, choose_local, choose_remote, open_logs,
+            setup_state, choose_local, choose_remote, open_logs, setup_retry, setup_mirror, setup_finish,
             desktop_notify, desktop_set_badge, desktop_open_external, desktop_log, desktop_set_theme,
             desktop_update_pending, desktop_restart, desktop_switch,
             link::desktop_link_state, link::desktop_link, link::desktop_unlink
@@ -690,7 +790,7 @@ pub fn run() {
             });
             let cfg = state(&handle).cfg.lock().unwrap().clone();
             match (cfg.mode.as_deref(), cfg.url) {
-                (Some("local"), _) => start_local(&handle),
+                (Some("local"), _) => start_local(&handle, false),
                 (Some("remote"), Some(url)) => {
                     if let Some(origin) = normalize(&url) {
                         open_server(&handle, origin, None);

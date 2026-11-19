@@ -137,6 +137,20 @@ pub fn agent_launch(resources: Option<PathBuf>, ws_url: &str, token: &str) -> Re
     ])
 }
 
+/// 第一次打开时装 uv 和 Python：跑 `osa-server setup`，标准输出是一行一行的 JSON 进度（见 onboard.rs），出错信息进 setup.log
+pub fn setup_child(resources: Option<PathBuf>) -> Result<Child, String> {
+    let l = rust_launch(resources, &["setup"], "setup.log", vec![])?;
+    let log = OpenOptions::new().create(true).append(true).open(&l.log).map_err(|e| e.to_string())?;
+    let mut cmd = Command::new(&l.program);
+    cmd.args(&l.args).current_dir(&l.cwd).envs(l.env.iter().map(|(k, v)| (k, v))).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(log);
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        cmd.process_group(0);
+    }
+    cmd.spawn().map_err(|e| e.to_string())
+}
+
 /// osa-server 在哪、它的根目录（config.yaml、osa/static 在下面）在哪。
 /// 打包的 App：osa-server 和主程序一起在 Contents/MacOS（Tauri 的 externalBin），根目录是 Resources/app；
 /// 开发版：仓库里 server/target 下编译好的（先 cd server && cargo build），根目录是仓库
@@ -176,6 +190,10 @@ fn rust_launch(resources: Option<PathBuf>, args: &[&str], log_name: &str, extra:
         ("PATH".into(), search_path(Some(&runtime.join("bin")))),
         // 只用 uv 自己下载的 Python：macOS 的 /usr/bin/python3 没装命令行工具时一跑就弹安装框
         ("UV_PYTHON_PREFERENCE".into(), "only-managed".into()),
+        // uv 下载的 Python 放在 App 自己的目录里：不和你自己的 uv 混在一起，删掉 App 的数据就干净了
+        ("UV_PYTHON_INSTALL_DIR".into(), runtime.join("python").display().to_string()),
+        // 国内网络：uv、Python、npm 都从国内镜像下载（见 server/crates/osa/src/runtime.rs）
+        ("OSA_MIRROR".into(), store::load().mirror.unwrap_or_else(|| "global".into())),
     ];
     env.extend(extra);
     let args: Vec<String> = args.iter().map(|s| s.to_string()).collect();

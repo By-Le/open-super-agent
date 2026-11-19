@@ -3,6 +3,9 @@ fn main() {
     tauri_build::try_build(tauri_build::Attributes::new().app_manifest(tauri_build::AppManifest::new().commands(&[
         "setup_state",
         "choose_local",
+        "setup_retry",
+        "setup_mirror",
+        "setup_finish",
         "choose_remote",
         "open_logs",
         "desktop_notify",

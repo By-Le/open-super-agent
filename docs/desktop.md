@@ -87,7 +87,13 @@ cd desktop && npx tauri build --bundles app  # 带自动更新包时要设 TAURI
 App 里带的服务是 Rust 版的 osa-server（一个约 24 MB 的文件，Tauri 当 externalBin 放进 `Contents/MacOS` 并签名），
 另有 `Resources/app`（config.yaml、前端、本机电脑的镜像文件）。整个 App 约 46 MB。App 不带 Python：
 uv 第一次用到时（装 uvx 应用、run_code 要 Python、操作整台 Mac）才下载到 `~/Library/Application Support/open-super-agent/runtime/bin`
-（固定版本，按 sha256 校验，见 `server/crates/osa/src/runtime.rs`），Python 再由 uv 下载。
+（固定版本，按 sha256 校验，见 `server/crates/osa/src/runtime.rs`），Python 再由 uv 下载到 `runtime/python`。
+
+第一次打开（`desktop/setup/`，步骤在 `src-tauri/src/onboard.rs`）：欢迎页选用法 → “正在准备”一步一步显示：检查网络、启动服务、
+下载 uv、安装 Python（`osa-server setup` 一行一行报进度）→ “准备好了”。下载失败可以重试、换下载源，或者先用着（用到时再下载）。
+检查网络的办法照 Linger：同时从官方源和阿里云镜像下载 uv 安装包的前 512 KB，镜像快 1.5 倍以上就算国内网络，记在 `desktop.json` 的
+`mirror`（`cn` / `global`），启动页上能换。服务带着 `OSA_MIRROR=cn` 起来时，uv 的包（阿里云 PyPI）、Python（npmmirror 的
+python-build-standalone）、npm（npmmirror）都走国内镜像，已经单独设了的环境变量不动。
 
 ## 发布
 
