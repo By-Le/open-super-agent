@@ -90,7 +90,10 @@ Python 到 Rust 的对应：
 
 - **电脑（第 2 步 B）**：本机 Chrome（host）、整台 Mac（macdesk）、派任务到你的 Mac（mac / link / agent，/api/computer/links、
   /api/computer/macs/{id}…、/api/computer/link）。现在选了 host 会照实说“Rust 版还没有本机电脑”；macs 列表是空的。
-- **事件来源**：收邮件（IMAP）、日历、天气、地震、价格、文件夹。列表里照样有，选了提示“Rust 版还没有这种事件来源”。
+- **事件来源**：2026-11-20 都迁完了（收邮件 IMAP、日历、天气、地震、价格、文件夹）。天气、地震、价格的接口地址写死在代码里，
+  只有单元测试（期望值是 Python 版同样输入跑出来的）；日历、文件夹、收邮件有接口测试（contract/test_sources.py，假日历网站、
+  TLS 的假 IMAP 服务器）。Rust 版的 IMAP 是自己写的小客户端（LOGIN / ID / EXAMINE / UID SEARCH / UID FETCH），
+  连不上时的报错原文和 Python 的 imaplib 不一样（“连不上 主机:端口：”后面那半句）。
 - **没在真环境里跑过的**：Linux 上的沙箱（bwrap / unshare）、飞书 / 钉钉 / 企业微信 / Discord（只编译过）、推送中转连真的 APNs、
   imap 检查、OAuth 连真的服务（假服务上整套流程测过）。上 lsp 之前要在 Linux 上把接口测试跑一遍。
 
@@ -134,9 +137,9 @@ Python 到 Rust 的对应：
 
 （重写时读到的、Python 版里可能不对的地方，记在这里，单独决定改不改）
 
-- **群聊交接的竞争**（groups.py `after_task`）：先 `unexpect()` 再拿群的锁。dispatch 填了 handoff_to 的任务如果在
-  派任务的那一轮还没说完时就做完了，排在后面、被 @ 到的那个 Bot 就不再跳过，先按“被 @”说一次，交接时又说一次。
-  Rust 版照搬了（任务做得快更容易碰上）；接口测试里让假任务慢 0.5 秒避开。改法：unexpect 挪到拿到锁之后。
+- **群聊交接的竞争**（groups.py `after_task`）：先 `unexpect()` 再拿群的锁，任务比派它的那一轮先做完时，被 @ 的接手人会说两次。
+  **已修**：Python 版 6322724（main 上的 fix/python-bugs-2026-11-19，2026-11-19 部署 lsp），Rust 版跟着改；
+  接口测试 test_group_handoff_when_task_finishes_first 在两个版本上都过。
 
 - **对话里直接操作电脑时开机失败**（router.py `_direct`）：Python 版 `c.start()` 报错会让这一整轮对话出错（“出错了：…”）；
   Rust 版把它当成这个工具的结果（“电脑操作失败：…”），模型能接着说。Rust 的工具返回值里放不下异常，就这一处和 Python 不一样。

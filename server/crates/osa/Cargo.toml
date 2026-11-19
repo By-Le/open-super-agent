@@ -61,3 +61,5 @@ cbc = { version = "0.1", features = ["alloc"] }
 hkdf = "0.12"
 p256 = { version = "0.13", features = ["ecdh", "ecdsa", "pkcs8", "pem"] }
 tokio-tungstenite = { version = "0.30", features = ["rustls-tls-webpki-roots"] }
+chrono-tz = "0.10"
+mailparse = "0.16"

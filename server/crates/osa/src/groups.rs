@@ -194,13 +194,15 @@ pub async fn after_task(task: Arc<Task>) {
         (s.handoff.clone(), s.status.clone())
     };
     let Some(h) = h else { return };
-    unexpect(task.chat_id, h.to);
     if status != "done" {
+        unexpect(task.chat_id, h.to); // 不会交接了：还没轮到的点名照常说
         note(task.chat_id, &t!("任务 #{id} 没做完，没有交给 {name}", id = task.id, name = name_of(h.to)));
         return;
     }
     let g = get(task.chat_id);
     let _l = g.lock.lock().await;
+    // 拿到锁再撤：派任务的那一轮可能还没说完，点名给对方的发言要继续跳过，不然对方会说两次
+    unexpect(task.chat_id, h.to);
     let request = if h.note.is_empty() { t!("资料在上面，请接着做") } else { h.note.clone() };
     message(
         task.chat_id,

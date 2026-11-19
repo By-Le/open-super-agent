@@ -219,15 +219,18 @@ fn mkdtemp(prefix: &str) -> R<PathBuf> {
 pub fn snapshot() -> R<PathBuf> {
     let work = mkdtemp("osa-backup-")?;
     let p = work.join("osa.db");
-    crate::db::conn().execute("vacuum into ?", params![p.to_string_lossy()]).map_err(io)?;
+    if let Err(e) = crate::db::conn().execute("vacuum into ?", params![p.to_string_lossy()]) {
+        let _ = std::fs::remove_dir_all(&work);
+        return Err(io(e));
+    }
     Ok(p)
 }
 
 /// 打一个备份，返回 (文件路径, 摘要)。文件在临时目录里，用完由调用方删掉整个目录
 pub fn export(passphrase: &str, snap: PathBuf) -> R<(PathBuf, Value)> {
-    check_passphrase(passphrase)?;
     let work = snap.parent().map(|p| p.to_path_buf()).unwrap_or_default();
     let r = (|| -> R<(PathBuf, Value)> {
+        check_passphrase(passphrase)?; // 出错时整个临时目录删掉，传进来的快照也算
         let db = Connection::open(&snap).map_err(io)?;
         let mut secrets = serde_json::Map::new();
         let mut unreadable = vec![];

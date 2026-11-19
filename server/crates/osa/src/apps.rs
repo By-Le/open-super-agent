@@ -72,13 +72,22 @@ async fn install_app(Path(item_id): Path<String>, Body(d): Body) -> Res {
         mcp_hub::disconnect(&item_id, false).await;
         mcp_hub::remove(&item_id);
         broadcast(json!({"type": "apps_changed"}));
-        let words = ["401", "403", "400 Bad Request", "Unauthorized", "parse JSON", "密钥无效", "鉴权失败", "invalid or expired"];
-        if words.iter().any(|w| msg.contains(w)) {
+        if key_rejected(&item_id, &msg) {
             msg = t!("对方没有接受这个密钥，检查一下有没有复制完整。（{msg}）", msg = py::head(&msg, 120));
         }
         return Err(ApiError::bad(msg));
     }
     app_out(&item_id)
+}
+
+/// 对方不认密钥时常见的报错。状态码前后不能挨着数字（端口、编号里的 401 不算）
+static KEY_ERROR: std::sync::LazyLock<fancy_regex::Regex> = std::sync::LazyLock::new(|| {
+    fancy_regex::Regex::new(r"(?<!\d)40[13](?!\d)|400 Bad Request|Unauthorized|parse JSON|密钥无效|鉴权失败|invalid or expired").unwrap()
+});
+
+/// 没连上像是因为密钥不对：只算要填密钥的应用（免配置的、账号登录的没有密钥可查）
+fn key_rejected(item_id: &str, msg: &str) -> bool {
+    crate::catalog::items().get(item_id).is_some_and(|it| it["kind"] == "token") && KEY_ERROR.is_match(msg).unwrap_or(false)
 }
 
 fn ref_of(name: &str, k: &str) -> String {

@@ -65,6 +65,16 @@ pub async fn get(
     headers: &[(&str, String)],
     params: &[(&str, String)],
 ) -> Result<Resp, FetchErr> {
+    #[cfg(test)]
+    if let Ok(m) = MOCK.try_with(|m| m.clone()) {
+        let mut u = reqwest::Url::parse(url).map_err(|e| FetchErr::Request(e.to_string()))?;
+        if !params.is_empty() {
+            u.query_pairs_mut().extend_pairs(params.iter().map(|(k, v)| (*k, v.as_str())));
+        }
+        let (status, body) = m(&u);
+        let resp = Resp { status, reason: String::new(), headers: Default::default(), body, url: u.to_string() };
+        return if status >= 400 { Err(FetchErr::Status(resp)) } else { Ok(resp) };
+    }
     let mut url = url.to_string();
     let mut params: Vec<(String, String)> = params.iter().map(|(k, v)| (k.to_string(), v.clone())).collect();
     for _ in 0..=MAX_REDIRECTS {
@@ -160,5 +170,80 @@ pub fn decode(raw: &[u8], enc: &str) -> String {
     match encoding_rs::Encoding::for_label(e.as_bytes()) {
         Some(enc) => enc.decode_without_bom_handling(raw).0.into_owned(),
         None => String::from_utf8_lossy(raw).into_owned(),
+    }
+}
+
+/// 单元测试里替掉联网：网址（带参数）→ (状态码, 内容)
+#[cfg(test)]
+pub type Mock = std::sync::Arc<dyn Fn(&reqwest::Url) -> (u16, Vec<u8>) + Send + Sync>;
+
+#[cfg(test)]
+tokio::task_local! {
+    pub static MOCK: Mock;
+}
+
+// ---------- 和 Python 的格式化一样的数字 ----------
+/// f"{x:.{n}f}"
+pub fn f(x: f64, n: usize) -> String {
+    format!("{x:.n$}")
+}
+
+/// f"{x:,.{n}f}"
+pub fn comma(x: f64, n: usize) -> String {
+    let s = f(x, n);
+    let (sign, rest) = if let Some(r) = s.strip_prefix('-') { ("-", r) } else { ("", s.as_str()) };
+    let (int, frac) = match rest.split_once('.') {
+        Some((i, fr)) => (i, format!(".{fr}")),
+        None => (rest, String::new()),
+    };
+    let mut out = String::new();
+    for (i, c) in int.chars().enumerate() {
+        if i > 0 && (int.len() - i) % 3 == 0 {
+            out.push(',');
+        }
+        out.push(c);
+    }
+    format!("{sign}{out}{frac}")
+}
+
+/// f"{x:.{p}g}"（p 默认 6，即 f"{x:g}"）
+pub fn g(x: f64, p: usize) -> String {
+    let p = p.max(1);
+    if x == 0.0 {
+        return if x.is_sign_negative() { "-0".into() } else { "0".into() };
+    }
+    if !x.is_finite() {
+        return if x.is_nan() { "nan".into() } else if x > 0.0 { "inf".into() } else { "-inf".into() };
+    }
+    let e = format!("{:.*e}", p - 1, x);
+    let (mant, exp) = e.split_once('e').unwrap_or((&e, "0"));
+    let exp: i32 = exp.parse().unwrap_or(0);
+    let strip = |s: String| -> String {
+        if s.contains('.') { s.trim_end_matches('0').trim_end_matches('.').to_string() } else { s }
+    };
+    if exp < -4 || exp >= p as i32 {
+        let m = strip(mant.to_string());
+        format!("{m}e{}{:02}", if exp < 0 { '-' } else { '+' }, exp.abs())
+    } else {
+        strip(f(x, (p as i32 - 1 - exp).max(0) as usize))
+    }
+}
+
+#[cfg(test)]
+mod fmt_tests {
+    use super::*;
+    #[test]
+    fn like_python() {
+        assert_eq!(f(2.5, 0), "2");
+        assert_eq!(f(3.5, 0), "4");
+        assert_eq!(f(-0.2, 0), "-0");
+        assert_eq!(comma(1234567.891, 2), "1,234,567.89");
+        assert_eq!(comma(-1234.5, 2), "-1,234.50");
+        assert_eq!(g(5.0, 6), "5");
+        assert_eq!(g(4.5, 6), "4.5");
+        assert_eq!(g(0.000012345678, 6), "1.23457e-05");
+        assert_eq!(g(30.27, 6), "30.27");
+        assert_eq!(g(1e16, 6), "1e+16");
+        assert_eq!(g(0.123456789, 6), "0.123457");
     }
 }

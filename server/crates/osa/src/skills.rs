@@ -160,7 +160,7 @@ pub fn clean_apps(apps: &Value) -> Vec<String> {
             .filter_map(|x| match x {
                 Value::String(s) => Some(s.clone()),
                 Value::Number(n) if n.is_i64() || n.is_u64() => Some(n.to_string()),
-                Value::Bool(b) => Some(if *b { "True".into() } else { "False".into() }),
+                Value::Bool(_) => None, // YAML 的 true 不是应用名
                 _ => None,
             })
             .collect(),
