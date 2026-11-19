@@ -37,7 +37,7 @@ docker-compose up -d
 ## 换成 Rust 版（还没换）
 
 镜像用 `Dockerfile.rust`，叠一个 `compose.rust.yaml`：正式服务、演示服务器、推送中转换成 `open-super-agent:rust`，数据、配置、端口、权限限制都不变。
-lsp 内存和磁盘都小，不在上面编译，在别的机器上打好镜像传过去（约 200 MB 压缩后，`docker load` 前先看 `df -h /`）：
+lsp 内存和磁盘都小，不在上面编译，在别的机器上打好镜像传过去（传过去约 120 MB，解开约 370 MB，和 Python 版的镜像共用 python:3.13-slim 那几层；`docker load` 前先看 `df -h /`）：
 
 ```bash
 docker build --platform linux/amd64 -f Dockerfile.rust -t open-super-agent:rust .
