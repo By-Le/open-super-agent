@@ -41,8 +41,7 @@ def test_group_handoff_after_task(srv, fake, ws):
     group = srv.post("/api/groups", {"bot_ids": [a["id"], b["id"]], "lead": a["id"]})
     fake.script("router:Finder", Call("dispatch", {"goal": "查资料", "handoff_to": "Writer", "handoff_note": "写个总结"}),
                 "我先查，查完交给 Writer")
-    # 任务慢一点：见 docs/plans/rust-rewrite.md“发现的问题”里群聊交接的竞争
-    fake.script("worker", lambda body: (time.sleep(0.5), "资料：三条要点")[1])
+    fake.script("worker", "资料：三条要点")
     fake.script("router:Writer", "总结：三条要点都很重要")
 
     ws.say(group["id"], "@Finder 查资料，查完交给 @Writer 写总结")
@@ -53,6 +52,28 @@ def test_group_handoff_after_task(srv, fake, ws):
     assert srv.find(group["id"], kind="handoff", text="任务 #")
     seen = "\n".join(str(m.get("content")) for m in fake.bodies("router", "Writer")[0]["messages"])
     assert "资料：三条要点" in seen and "写个总结" in seen
+
+
+def test_group_handoff_when_task_finishes_first(srv, fake, ws):
+    """任务比派它的这一轮先做完：被点名的接手人还是只说一次（交接时），不会先按点名说一次。"""
+    a, b = srv.make_bot("Quick"), srv.make_bot("Taker")
+    group = srv.post("/api/groups", {"bot_ids": [a["id"], b["id"]], "lead": a["id"]})
+
+    def slow(body):   # Quick 派完任务后的那次请求：等任务结果出来、交接排上了再回
+        until(lambda: srv.find(group["id"], kind="result"), what="任务结果")
+        time.sleep(0.2)
+        return "我先查，查完交给 Taker"
+    fake.script("router:Quick", Call("dispatch", {"goal": "查资料", "handoff_to": "Taker", "handoff_note": "写个总结"}), slow)
+    fake.script("worker", "资料：两条要点")
+    fake.script("router:Taker", "总结：两条要点")
+
+    ws.say(group["id"], "@Quick 查资料，查完交给 @Taker 写总结")
+    until(lambda: srv.find(group["id"], role="assistant", bot_id=b["id"]), what="Taker 的总结")
+    idle(srv)
+    time.sleep(0.5)
+    assert len(fake.bodies("router", "Taker")) == 1
+    assert len(srv.find(group["id"], role="assistant", bot_id=b["id"])) == 1
+    assert srv.find(group["id"], kind="handoff", text="任务 #")
 
 
 def test_dm_reply_comes_back(srv, fake, ws):

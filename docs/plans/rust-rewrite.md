@@ -117,9 +117,9 @@ Python 到 Rust 的对应：
 
 （重写时读到的、Python 版里可能不对的地方，记在这里，单独决定改不改）
 
-- **群聊交接的竞争**（groups.py `after_task`）：先 `unexpect()` 再拿群的锁。dispatch 填了 handoff_to 的任务如果在
-  派任务的那一轮还没说完时就做完了，排在后面、被 @ 到的那个 Bot 就不再跳过，先按“被 @”说一次，交接时又说一次。
-  Rust 版照搬了（任务做得快更容易碰上）；接口测试里让假任务慢 0.5 秒避开。改法：unexpect 挪到拿到锁之后。
+- **群聊交接的竞争**（groups.py `after_task`）：先 `unexpect()` 再拿群的锁，任务比派它的那一轮先做完时，被 @ 的接手人会说两次。
+  **已修**：Python 版 6322724（main 上的 fix/python-bugs-2026-11-19，2026-11-19 部署 lsp），Rust 版跟着改；
+  接口测试 test_group_handoff_when_task_finishes_first 在两个版本上都过。
 
 ## 顺手修的
 

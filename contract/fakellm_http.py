@@ -86,10 +86,10 @@ class FakeLLM:
             return [b for r, n, b in self.requests if r == role and (not name or n == name)]
 
     def _next(self, role: str, name: str, body: dict):
+        """取剧本里的下一条（拿着锁调）。函数原样返回，由调用方放开锁以后再调：它可能要等别的请求。"""
         for key in (f"{role}:{name}", role):
             if self.scripts.get(key):
-                reply = self.scripts[key].pop(0)
-                return reply(body) if callable(reply) else reply
+                return self.scripts[key].pop(0)
         return "好的" if role == "router" else "完成"
 
     def _handler(self):
@@ -131,6 +131,8 @@ class FakeLLM:
                     role, name = role_of(body)
                     fake.requests.append((role, name, body))
                     reply = fake._next(role, name, body)
+                if callable(reply):
+                    reply = reply(body)
                 if not body.get("tools") and not isinstance(reply, str):
                     reply = "（没给工具，只能回答）"
                 if not body.get("stream"):
