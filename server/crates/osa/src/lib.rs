@@ -47,6 +47,7 @@ pub mod prices;
 pub mod providers;
 pub mod push;
 pub mod registry;
+pub mod relay;
 pub mod router;
 pub mod routes;
 pub mod routines;
@@ -75,6 +76,8 @@ pub fn modules_migrate() {
     mcp_hub::migrate();
     skills::migrate();
     templates::migrate();
+    channels::migrate();
+    push::migrate();
     media::migrate();
 }
 
