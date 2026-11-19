@@ -200,16 +200,6 @@ fn info(provider: &str, model: &str) -> Value {
 }
 
 /// 存在 settings 表里的 {provider, model}（画图、视频用哪个模型；avatars.choice / videos.choice）
-fn model_choice(keys: &[&str]) -> Value {
-    let c = keys.iter().filter_map(|k| memory::setting(k)).find(|v| py::truthy(v)).unwrap_or(json!({}));
-    let s = |k: &str| if py::truthy(&c[k]) { py::str_of(&c[k]) } else { String::new() };
-    json!({"provider": s("provider"), "model": s("model")})
-}
-
-fn choose(key: &str, provider: &str, model: &str) {
-    memory::set_setting(key, &json!({"provider": provider, "model": model}));
-}
-
 pub fn public() -> Value {
     let emb = config::get("embedding");
     let s = |v: &Value| if py::truthy(v) { py::str_of(v) } else { String::new() };
@@ -240,9 +230,9 @@ pub fn public() -> Value {
         "computer_on_desktop": std::env::var("OSA_DESKTOP").is_ok_and(|v| !v.is_empty()),
         "computer_host_shell": py::truthy(&pc_cfg["host_shell"]),
         "embedding": {"provider": s(&emb["provider"]), "model": s(&emb["model"])},
-        "image_model": model_choice(&["image_model", "avatar_model"]),
-        "image_edit_model": model_choice(&["image_edit_model"]),
-        "video_model": model_choice(&["video_model"]),
+        "image_model": crate::avatars::choice(false),
+        "image_edit_model": crate::avatars::choice(true),
+        "video_model": crate::videos::choice(),
         "model_info": model_info,
         "prices": prices::info(),
         "problem": problem(),
@@ -371,19 +361,29 @@ pub fn save(data: &Value) -> Result<Value, String> {
         if !provider.is_empty() && !providers::exists(&provider) {
             return Err(crate::t!("没有这个模型服务：{name}", name = provider));
         }
-        // TODO(generation)：检查是不是画图的模型、能不能照着图片画（generation.recipe / caps），等 generation 迁过来
-        choose(k, &provider, &model);
+        if !provider.is_empty() && crate::generation::recipe("image", &provider, &model).is_none() {
+            return Err(crate::t!("{model} 不是画图的模型", model = model));
+        }
+        if !provider.is_empty() && k == "image_edit_model" && crate::generation::caps("image", &provider, &model).images == 0 {
+            return Err(crate::t!("{model} 不能照着图片画", model = model));
+        }
+        crate::avatars::choose(&provider, &model, k == "image_edit_model");
     }
     if has("video_model") {
         let (provider, model) = pm(&data["video_model"]);
         if !provider.is_empty() && !providers::exists(&provider) {
             return Err(crate::t!("没有这个模型服务：{name}", name = provider));
         }
-        // TODO(generation)：检查是不是生成视频的模型
-        choose("video_model", &provider, &model);
+        if !provider.is_empty() && crate::generation::recipe("video", &provider, &model).is_none() {
+            return Err(crate::t!("{model} 不是生成视频的模型", model = model));
+        }
+        crate::videos::choose(&provider, &model);
     }
     memory::set_setting("overrides", &Value::Object(o));
     apply();
+    if has("embedding") {
+        crate::search::wake();   // 换了模型：后台重新算向量
+    }
     Ok(public())
 }
 

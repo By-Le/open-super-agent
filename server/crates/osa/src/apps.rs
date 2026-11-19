@@ -301,37 +301,13 @@ async fn mcp_app_read(Path(app): Path<String>, Body(d): Body) -> Res {
     mcpapps::read(&app, d["uri"].as_str().unwrap_or("")).await.map(axum::Json).map_err(mcp_err)
 }
 
-pub const MAX_SAY: usize = 4000;
-
 async fn mcp_app_say(Path(app): Path<String>, Body(d): Body) -> Res {
     if mcp_hub::session_of(&app).is_none() {
         return Err(ApiError::not_found(t!("应用 @{name} 没连接", name = app)));
     }
     let bot_id = if d["bot_id"].is_i64() { d["bot_id"].as_i64() } else { None };
     let text = if py::truthy(&d["text"]) { py::str_of(&d["text"]) } else { String::new() };
-    send(bot_id, &text, json!({"app": app, "title": format!("@{app}")})).map_err(mcp_err)?;
+    crate::applets::send(bot_id, &text, json!({"app": app, "title": format!("@{app}")})).map_err(mcp_err)?;
     ok(json!({"ok": true}))
 }
 
-/// 界面替用户给 Bot 发一条消息，发到 Bot 的私聊里（Python 版是 applets.send；小应用那边迁好后可以合到一起）
-fn send(bot_id: Option<i64>, text: &str, origin: Value) -> Result<(), (u16, String)> {
-    let text = text.trim().to_string();
-    if text.is_empty() {
-        return Err((400, t!("消息不能为空")));
-    }
-    if py::char_len(&text) > MAX_SAY {
-        return Err((400, t!("消息太长（最多 {n} 字）", n = MAX_SAY)));
-    }
-    let bot = bot_id.and_then(bots::get);
-    let chat = bot.as_ref().and_then(|b| b["chat_id"].as_i64()).and_then(bots::chat);
-    let Some(chat) = chat else { return Err((404, t!("发起它的 Bot 已删除"))) };
-    let bot_id = bots::ids_of(&chat).first().copied().unwrap_or(0);
-    let cid = chat["id"].as_i64();
-    tokio::spawn(async move {
-        if let Err(e) = crate::router::runtime(bot_id).handle_user(&text, "", cid, &[], Some(origin.clone())).await {
-            tracing::error!("应用界面发消息出错：{e:#}");
-            broadcast(json!({"type": "error", "chat_id": cid, "message": t!("出错了：{e}", e = crate::providers::brief(&e))}));
-        }
-    });
-    Ok(())
-}

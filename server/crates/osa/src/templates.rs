@@ -1,8 +1,7 @@
 //! Bot 模板：把一个 Bot 的人设、头像、技能、要用的应用、定时任务打包成一个文件（.osabot.yaml），一键装出一个现成的助手。
 //! 对应 osa/templates.py（格式说明见那里）。内置模板编进二进制（assets/skills.json）。
 //!
-//! 定时任务那几处要用 routines 模块（检查 trigger、建、删、导出时去掉密钥），在下面“定时任务”一节统一调用；
-//! routines 还没迁过来的部分先在那里绕开。
+//! 定时任务那几处要用 routines 模块（检查 trigger、建、删、导出时去掉密钥），在下面“定时任务”一节统一调用。
 
 use crate::db::{self, RowExt};
 use crate::server::broadcast;
@@ -32,39 +31,20 @@ pub fn migrate() {
 }
 
 // ---------- 定时任务（routines 模块） ----------
-/// routines._clean_trigger
 fn clean_trigger(t: &Value) -> Result<Value, String> {
-    // TODO(合并时)：换成 routines::clean_trigger(t, None)。routines 迁好之前只检查是一组键值
-    if !t.is_object() {
-        return Err("trigger 要是一组键值".into());
-    }
-    Ok(t.clone())
+    crate::routines::clean_trigger(t, &Value::Null)
 }
 
-/// routines.save(bot_id, data)
-fn save_routine(_bot_id: i64, _data: &Value) -> Result<(), String> {
-    // TODO(合并时)：换成 routines::save(bot_id, data, None)。routines 迁好之前模板里的定时任务不装
-    tracing::warn!("Rust 版的定时任务还没迁好，模板里的定时任务没有装");
-    Ok(())
+fn save_routine(bot_id: i64, data: &Value) -> Result<(), String> {
+    crate::routines::save(bot_id, data, None).map(|_| ())
 }
 
-/// routines.delete_for_bot
-fn delete_routines(_bot_id: i64) {
-    // TODO(合并时)：换成 routines::delete_for_bot(bot_id)
+fn delete_routines(bot_id: i64) {
+    crate::routines::delete_for_bot(bot_id);
 }
 
-/// events.portable：导出成模板时的 trigger 去掉密钥、旧地址（secret 参数也要去掉，要 events 的来源清单）
 fn portable(t: &Value) -> Value {
-    // TODO(合并时)：换成 events::portable(t)
-    if t["kind"] != "event" {
-        return t.clone();
-    }
-    let mut o = t.clone();
-    if let Some(m) = o.as_object_mut() {
-        m.remove("key");
-        m.remove("path");
-    }
-    o
+    crate::events::portable(t)
 }
 
 // ---------- 检查 ----------

@@ -2,7 +2,7 @@
 
 use crate::db::{self, RowExt};
 use crate::web::{Q, Res, qs};
-use crate::{config, py};
+use crate::py;
 use axum::routing::get as route_get;
 use futures::StreamExt;
 use parking_lot::Mutex;
@@ -25,54 +25,9 @@ pub fn migrate() {
     db::batch("create table if not exists unfurls(url text primary key, data text, ok integer, fetched real)");
 }
 
-// ---------- 能不能抓（和 tools.blocked 一样；TODO：tools 迁好后用它的） ----------
-fn private_ip(ip: std::net::IpAddr) -> bool {
-    use std::net::IpAddr;
-    let ip = match ip {
-        IpAddr::V6(v6) => match v6.to_ipv4_mapped() {
-            Some(v4) => IpAddr::V4(v4),
-            None => IpAddr::V6(v6),
-        },
-        x => x,
-    };
-    match ip {
-        IpAddr::V4(a) => {
-            let o = a.octets();
-            if o[0] == 198 && (o[1] & 0xfe) == 18 {
-                return false; // Clash / Surge 的假地址
-            }
-            a.is_private() || a.is_loopback() || a.is_link_local() || a.is_unspecified() || a.is_broadcast() || a.is_documentation()
-                || a.is_multicast() || o[0] == 0 || (o[0] == 100 && (o[1] & 0xc0) == 64) || o[0] >= 240 || (o[0] == 192 && o[1] == 0 && o[2] == 0)
-        }
-        IpAddr::V6(a) => {
-            let s = a.segments();
-            a.is_loopback() || a.is_unspecified() || a.is_multicast() || (s[0] & 0xfe00) == 0xfc00 || (s[0] & 0xffc0) == 0xfe80 || s[0] == 0x2001 && s[1] == 0xdb8
-        }
-    }
-}
-
-async fn private_host(url: &reqwest::Url) -> bool {
-    let Some(host) = url.host_str() else { return false };
-    let host = host.trim_matches(['[', ']']);
-    if let Ok(ip) = host.parse::<std::net::IpAddr>() {
-        return private_ip(ip);
-    }
-    let port = url.port_or_known_default().unwrap_or(80);
-    match tokio::net::lookup_host((host, port)).await {
-        Ok(addrs) => addrs.into_iter().any(|a| private_ip(a.ip())),
-        Err(_) => false,
-    }
-}
-
+// ---------- 能不能抓：和 fetch_url 用同一个检查 ----------
 async fn blocked(url: &str) -> bool {
-    let Ok(u) = reqwest::Url::parse(url) else { return true };
-    if !matches!(u.scheme(), "http" | "https") || u.host_str().is_none_or(|h| h.is_empty()) {
-        return true;
-    }
-    if config::get_bool("tools.fetch_private", false) {
-        return false;
-    }
-    private_host(&u).await || crate::tools::private_host(url).await
+    crate::tools::blocked(url).await.is_some()
 }
 
 // ---------- 解析网页开头 ----------

@@ -48,6 +48,14 @@ pub fn private_ip(ip: &str) -> bool {
     }
 }
 
+/// ipaddress 的 ip.is_global
+pub fn is_global(ip: IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(v) => global_v4(v),
+        IpAddr::V6(v) => global_v6(v),
+    }
+}
+
 /// ipaddress 的 is_global（IANA 特殊用途表里不是 globally reachable 的都算不是）
 fn global_v4(v: std::net::Ipv4Addr) -> bool {
     let o = v.octets();

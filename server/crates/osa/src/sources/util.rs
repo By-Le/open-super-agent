@@ -1,8 +1,7 @@
 //! 事件来源共用的小工具：联网抓取（挡内网、限大小、自己跟跳转）、网页转文字、截断。对应 osa/sources/_util.py。
 
-use crate::{config, py};
+use crate::py;
 use regex::Regex;
-use std::net::IpAddr;
 use std::sync::LazyLock;
 use std::time::Duration;
 
@@ -50,60 +49,9 @@ impl FetchErr {
     }
 }
 
-static FAKE_IP: (u32, u32) = (0xC612_0000, 0xFFFE_0000); // 198.18.0.0/15：代理 TUN 模式的假地址，不算内网
-
-fn v4_private(a: std::net::Ipv4Addr) -> bool {
-    let n = u32::from(a);
-    if n & FAKE_IP.1 == FAKE_IP.0 {
-        return false;
-    }
-    let o = a.octets();
-    a.is_private() || a.is_loopback() || a.is_link_local() || a.is_broadcast() || a.is_documentation() || a.is_unspecified()
-        || a.is_multicast() || o[0] == 0 || (o[0] == 100 && (o[1] & 0xC0) == 64) || (o[0] == 192 && o[1] == 0 && o[2] == 0) || o[0] >= 240
-}
-
-/// 本机、内网、链路本地、100.64/10、保留和组播地址
-pub fn private_ip(ip: IpAddr) -> bool {
-    match ip {
-        IpAddr::V4(a) => v4_private(a),
-        IpAddr::V6(a) => {
-            if let Some(m) = a.to_ipv4_mapped() {
-                return v4_private(m);
-            }
-            let s = a.segments();
-            a.is_loopback() || a.is_unspecified() || a.is_multicast() || (s[0] & 0xfe00) == 0xfc00 || (s[0] & 0xffc0) == 0xfe80
-                || (s[0] == 0x2001 && s[1] == 0x0db8) || (s[0] & 0xe000) != 0x2000
-        }
-    }
-}
-
-pub async fn private_host(url: &str) -> bool {
-    let Ok(u) = reqwest::Url::parse(url) else { return false };
-    let host = u.host_str().unwrap_or("").trim_matches(['[', ']']).to_string();
-    if let Ok(ip) = host.parse::<IpAddr>() {
-        return private_ip(ip);
-    }
-    let port = u.port_or_known_default().unwrap_or(80);
-    match tokio::net::lookup_host((host.as_str(), port)).await {
-        Ok(addrs) => addrs.into_iter().any(|a| private_ip(a.ip())),
-        Err(_) => false,
-    }
-}
-
-/// 能不能抓这个地址：不能的话返回原因（和 tools.blocked 一样）
+/// 能不能抓这个地址：和 fetch_url 用同一个检查（tools::blocked）
 pub async fn blocked(url: &str) -> Option<String> {
-    let ok = reqwest::Url::parse(url).ok().filter(|u| matches!(u.scheme(), "http" | "https") && u.host_str().is_some_and(|h| !h.is_empty()));
-    let Some(u) = ok else { return Some("只能抓取 http / https 网址".into()) };
-    if config::get_bool("tools.fetch_private", false) {
-        return None;
-    }
-    if private_host(url).await {
-        return Some(format!(
-            "没抓取：{} 是本机或内网地址。要抓内网页面，在 config.yaml 里设 tools.fetch_private: true",
-            u.host_str().unwrap_or("").trim_matches(['[', ']'])
-        ));
-    }
-    None
+    crate::tools::blocked(url).await
 }
 
 static CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {

@@ -359,8 +359,6 @@ mod api {
             }
             if mime.starts_with("video/") {
                 h.insert(header::ACCEPT_RANGES, HeaderValue::from_static("bytes"));
-                // TODO：server.rs 的 CompressionLayer 会压缩视频、去掉 Accept-Ranges（分段就坏了）。那边的判断改成不压 video/* 和 206 之后去掉这行
-                h.insert(header::CONTENT_ENCODING, HeaderValue::from_static("identity"));
             }
             if let Some(cr) = range.and_then(|c| HeaderValue::from_str(&c).ok()) {
                 h.insert(header::CONTENT_RANGE, cr);
@@ -420,26 +418,11 @@ mod api {
 
 pub use api::routes;
 
-// ---------- 限时地址的签名（和 Python 版 generation.sign / verify 一样，密钥在 settings 的 media_link_secret） ----------
-/// TODO(generation)：generation 迁好后，public_link 用这里的 sign
-fn link_secret() -> Vec<u8> {
-    let get = || memory::setting_raw("media_link_secret");
-    if get().is_none() {
-        db::exec("insert or ignore into settings values('media_link_secret', ?)", params![crate::util::token_hex(32)]);
-    }
-    let hex = get().unwrap_or_default();
-    (0..hex.len() / 2).filter_map(|i| u8::from_str_radix(&hex[i * 2..i * 2 + 2], 16).ok()).collect()
-}
-
+// ---------- 限时地址的签名：和 generation 共用一份（generation::sign / verify，和 Python 版一样） ----------
 pub fn sign(mid: &str, exp: i64) -> String {
-    use hmac::{Hmac, Mac};
-    let mut m = Hmac::<sha2::Sha256>::new_from_slice(&link_secret()).expect("hmac");
-    m.update(format!("{mid}:{exp}").as_bytes());
-    let hex: String = m.finalize().into_bytes().iter().map(|b| format!("{b:02x}")).collect();
-    hex[..32].to_string()
+    crate::generation::sign(mid, exp)
 }
 
 pub fn verify(mid: &str, exp: i64, sig: &str) -> bool {
-    let want = sign(mid, exp);
-    exp as f64 >= py::now() && want.len() == sig.len() && want.bytes().zip(sig.bytes()).fold(0u8, |a, (x, y)| a | (x ^ y)) == 0
+    crate::generation::verify(mid, exp, sig)
 }

@@ -82,54 +82,22 @@ pub fn recipe(kind: &str, provider: &str, model: &str) -> Option<Value> {
     None
 }
 
-// ---------- 单价（config.yaml 的 pricing.images / pricing.videos） ----------
-fn unit_price(table: &str, provider: &str, model: &str) -> Option<Value> {
-    let b = base(provider).to_lowercase();
-    if providers::is_local(&b) {
-        return Some(json!(0.0));
-    }
-    let tail = model.rsplit('/').next().unwrap_or(model).to_lowercase();
-    let pricing = config::get(&format!("pricing.{table}"));
-    for (host, tbl) in pricing.as_object().cloned().unwrap_or_default() {
-        if !b.contains(&host.to_lowercase()) && host != provider {
-            continue;
-        }
-        for (name, price) in tbl.as_object().cloned().unwrap_or_default() {
-            let n = name.to_lowercase();
-            if n == model.to_lowercase() || (!n.contains('/') && n == tail) {
-                return Some(price);
-            }
-        }
-    }
-    None
-}
-
-/// 画一张图多少钱；不知道是 None
+// ---------- 单价：在 prices 模块（和 Python 版一样，这里只转一下） ----------
 pub fn image_price(provider: &str, model: &str) -> Option<f64> {
-    unit_price("images", provider, model).map(|p| p.as_f64().unwrap_or(0.0))
+    crate::prices::image_price(provider, model)
 }
 
-/// 生成一段视频多少钱：数字是每段，{per_second: x} 是每秒（不知道时长按 5 秒）
 pub fn video_price(provider: &str, model: &str, seconds: Option<i64>) -> Option<f64> {
-    let p = unit_price("videos", provider, model)?;
-    if p.is_object() {
-        return Some(p["per_second"].as_f64().unwrap_or(0.0) * seconds.filter(|s| *s != 0).unwrap_or(5) as f64);
-    }
-    Some(p.as_f64().unwrap_or(0.0))
+    crate::prices::video_price(provider, model, seconds)
 }
 
 pub fn price(kind: &str, provider: &str, model: &str) -> Option<f64> {
     if kind == "image" { image_price(provider, model) } else { video_price(provider, model, None) }
 }
 
-/// 美元换成设置的货币
+/// 美元换成设置的货币（prices._rate）
 pub fn usd_rate() -> f64 {
-    let r = config::get_f64("pricing.usd_rate", 0.0);
-    if r != 0.0 {
-        return r;
-    }
-    let c = config::get_str("pricing.currency");
-    if c == "$" || c == "USD" { 1.0 } else { 7.1 }
+    crate::prices::usd_rate()
 }
 
 // ---------- 能用的模型 ----------
@@ -741,7 +709,7 @@ pub fn verify(mid: &str, exp: i64, sig: &str) -> bool {
 
 /// 网页的公网地址（设置 → 聊天软件 → 网页地址）；外面打不开的返回空
 pub fn public_base() -> String {
-    let u = memory::setting_raw("public_url").unwrap_or_default();
+    let u = crate::channels::public_url();
     let host = reqwest::Url::parse(&u).ok().and_then(|x| x.host_str().map(|h| h.trim_matches(['[', ']']).to_lowercase())).unwrap_or_default();
     if host.is_empty() || host == "localhost" || host.ends_with(".local") {
         return String::new();

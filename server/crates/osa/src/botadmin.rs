@@ -432,7 +432,7 @@ pub async fn remove(bot_id: i64) -> Result<(), String> {
     }
     approvals::cancel_for_bot(bot_id);
     bots::delete(bot_id)?;
-    // TODO(合并时)：routines::delete_for_bot(bot_id)（routines 迁好之前没有）
+    routines::delete_for_bot(bot_id);
     memories::delete_for_bot(bot_id);
     db::exec("delete from skills where bot_id=?", params![bot_id]);
     router::forget_runtime(bot_id);
@@ -597,7 +597,7 @@ fn running_tasks(bot_id: i64) -> Vec<Arc<Task>> {
 }
 
 fn is_event(r: &Value) -> bool {
-    r["trigger"]["kind"] == "event"
+    routines::is_event(r)
 }
 
 fn overview(me: &Value) -> String {

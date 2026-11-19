@@ -39,6 +39,11 @@ static DATA: LazyLock<RwLock<Value>> = LazyLock::new(|| {
 static STATUS: Mutex<(String, f64)> = Mutex::new((String::new(), 0.0));
 static MATCHED: LazyLock<Mutex<HashMap<(String, String, String), Option<String>>>> = LazyLock::new(Default::default);
 
+/// 1 美元换多少设置的货币（Python 版的 prices._rate）
+pub fn usd_rate() -> f64 {
+    rate()
+}
+
 fn rate() -> f64 {
     let p = config::get("pricing");
     match p["usd_rate"].as_f64().filter(|r| *r != 0.0) {

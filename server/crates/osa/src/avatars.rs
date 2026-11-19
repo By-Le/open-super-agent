@@ -1,10 +1,10 @@
 //! 头像图片：Bot 和群聊可以用自己的图片当头像（上传的，或者让生图模型画的）。对应 osa/avatars.py（说明见那里）。
 //!
-//! 生图（models / current / generate / draw）要用 generation 模块，还没迁：接口先回“还没有这个功能”。
+//! 用哪个模型画、怎么画在 images 模块（Python 版也是 avatars 和 images 共用），这里的 choice / choose / generate 转给它。
 
 use crate::db::{self, RowExt};
-use crate::web::{ApiError, Body, Res, ok};
-use crate::{memory, py};
+use crate::web::{Body, Res, ok};
+use crate::py;
 use axum::extract::Path;
 use axum::http::{HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
@@ -78,25 +78,22 @@ pub fn gc() {
     }
 }
 
-// ---------- 用哪个模型画 ----------
-fn setting_obj(key: &str) -> Value {
-    memory::setting(key).filter(|v| v.is_object()).unwrap_or(json!({}))
-}
-
-fn raw_choice() -> Value {
-    let c = setting_obj("image_model");
-    if c.as_object().is_some_and(|o| !o.is_empty()) { c } else { setting_obj("avatar_model") }
-}
-
-/// 记下画图用哪个模型。edit：照着图片画用的那个
+// ---------- 用哪个模型画（选择、列表、画都在 images 模块，这里转一下，和 Python 版 avatars.py 的接口一样） ----------
 pub fn choose(provider: &str, model: &str, edit: bool) {
-    memory::set_setting(if edit { "image_edit_model" } else { "image_model" }, &json!({"provider": provider, "model": model}));
+    crate::images::choose(provider, model, edit);
 }
 
-/// 设置里选的画图模型：{provider, model}，没选过是空的
 pub fn choice(edit: bool) -> Value {
-    let c = if edit { setting_obj("image_edit_model") } else { raw_choice() };
-    json!({"provider": c["provider"].as_str().unwrap_or(""), "model": c["model"].as_str().unwrap_or("")})
+    crate::images::choice(edit)
+}
+
+/// 让生图模型画一张头像，返回原图的 data URL（浏览器再裁成 256 像素传回来）
+pub async fn generate(prompt: &str, provider: &str, model: &str) -> Result<String, String> {
+    if prompt.trim().is_empty() {
+        return Err(t!("写一句想要什么样的头像"));
+    }
+    let (b, mime) = crate::images::draw(prompt, provider, model, &[]).await?;
+    Ok(format!("data:{mime};base64,{}", crate::util::b64(&b)))
 }
 
 // ---------- 接口 ----------
@@ -105,16 +102,13 @@ async fn api_upload(Body(d): Body) -> Res {
     ok(json!({"image": save(&data)?}))
 }
 
-/// TODO(generation)：能画图的模型列表要 generation.catalog / rank
 async fn api_models() -> Res {
-    ok(json!({"models": [], "default": null, "edit_models": [], "edit_default": null}))
+    ok(crate::images::models().await)
 }
 
 async fn api_generate(Body(d): Body) -> Res {
-    if d["prompt"].as_str().unwrap_or("").trim().is_empty() {
-        return Err(ApiError::bad(t!("写一句想要什么样的头像")));
-    }
-    crate::web::todo("生成头像（要 generation 模块）")
+    let s = |k: &str| if py::truthy(&d[k]) { py::str_of(&d[k]) } else { String::new() };
+    ok(json!({"data": generate(&s("prompt"), &s("provider"), &s("model")).await?}))
 }
 
 async fn api_file(Path(aid): Path<String>) -> Response {

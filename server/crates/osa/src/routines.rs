@@ -277,29 +277,13 @@ pub fn describe(trig: &Value, in_lang: Option<&str>) -> String {
     }
 }
 
-// ---------- 技能（skills 还没迁过来：直接读 skills 表，和 skills.find 一样，自己的覆盖共用的） ----------
+// ---------- 技能 ----------
 fn skill_find(bot_id: i64, name: &str) -> Option<Value> {
-    if db::columns("skills").is_empty() {
-        return None;
-    }
-    let has_files = db::columns("skills").iter().any(|c| c == "files");
-    let sql = format!(
-        "select name, body, {} from skills where (bot_id=? or bot_id is null) and name=? order by bot_id is null limit 1",
-        if has_files { "files" } else { "''" }
-    );
-    db::row(&sql, params![bot_id, name]).map(|r| json!({"name": r[0], "body": r.s(1), "files": r.j(2)}))
+    crate::skills::find(bot_id, name)
 }
 
 fn files_hint(s: &Value) -> String {
-    let files: Vec<String> = s["files"].as_object().map(|o| o.keys().cloned().collect()).unwrap_or_default();
-    if files.is_empty() {
-        return String::new();
-    }
-    format!(
-        "\n这个技能带了文件：{}。要看全文用 use_skill(name=\"{}\", file=\"路径\")；要运行脚本，用 computer_write_file 把文件内容写进工作文件夹再用 run_code 或 computer_shell 跑。",
-        files.join("、"),
-        py::str_of(&s["name"])
-    )
+    crate::skills::files_hint(s)
 }
 
 // ---------- 增删改 ----------
@@ -1011,18 +995,14 @@ async fn event_sources() -> Res {
     ok(json!(events::catalog()))
 }
 
-/// 第一次建 webhook 类的事件时记下网页地址（channels.set_public_url；channels 还没迁过来，直接写同一行设置）
+/// 第一次建 webhook 类的事件时记下网页地址：Bot 在对话里告诉用户地址时要用完整的
 fn remember_origin(h: &HeaderMap) {
-    if !events::public_url().is_empty() {
+    if !crate::channels::public_url().is_empty() {
         return;
     }
     let origin = h.get("origin").and_then(|v| v.to_str().ok()).unwrap_or("");
     if (origin.starts_with("http://") || origin.starts_with("https://")) && !origin.contains("localhost") && !origin.contains("127.0.0.1") {
-        static R: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^https?://[^\s/]+(/[^\s]*)?$").unwrap());
-        let url = origin.trim().trim_end_matches('/');
-        if R.is_match(url) {
-            memory::set_setting_raw("public_url", url);
-        }
+        let _ = crate::channels::set_public_url(origin);
     }
 }
 

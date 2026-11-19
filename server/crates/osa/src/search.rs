@@ -21,6 +21,11 @@ pub const BATCH: i64 = 32;
 static CJK: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"[\x{3400}-\x{4dbf}\x{4e00}-\x{9fff}\x{f900}-\x{faff}]+|[a-z0-9_]+").unwrap());
 static WAKE: LazyLock<tokio::sync::Notify> = LazyLock::new(tokio::sync::Notify::new);
 
+/// 叫醒后台算向量的循环（换了 embedding 模型时）
+pub fn wake() {
+    WAKE.notify_one();
+}
+
 struct Status {
     error: String,
     last: f64,

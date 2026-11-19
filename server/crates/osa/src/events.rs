@@ -4,7 +4,7 @@
 
 use crate::db::{self, RowExt};
 use crate::registry::{self, HookReq, POLL, PUSH, ParseErr, Parsed, Source};
-use crate::{i18n, memory, py, routines, util, vault};
+use crate::{i18n, py, routines, util, vault};
 use parking_lot::Mutex;
 use regex::Regex;
 use rusqlite::params;
@@ -366,9 +366,9 @@ pub fn hook_path(t: &Value) -> String {
     if t["kind"] == "event" && py::truthy(&t["key"]) { format!("/hooks/{}", py::str_of(&t["key"])) } else { String::new() }
 }
 
-/// 网页的地址（channels.public_url）。channels 还没迁过来，直接读 settings 里同一行
+/// 网页的地址（channels.public_url）
 pub fn public_url() -> String {
-    memory::setting_raw("public_url").unwrap_or_default()
+    crate::channels::public_url()
 }
 
 pub fn hook_url(t: &Value) -> String {

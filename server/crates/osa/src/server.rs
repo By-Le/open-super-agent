@@ -457,6 +457,17 @@ async fn fallback(req: Request) -> Response {
     file_response(&index, true, false)
 }
 
+/// 压缩哪些响应：默认的规则（够大、不是图片和事件流）之外，视频和分段（206 / 带 Content-Range）的不压，
+/// 不然 Accept-Ranges 会被去掉、分段播放就坏了
+fn compressible() -> impl tower_http::compression::Predicate {
+    use tower_http::compression::predicate::{DefaultPredicate, NotForContentType, Predicate};
+    DefaultPredicate::new().and(NotForContentType::const_new("video/")).and(
+        |status: StatusCode, _: axum::http::Version, h: &HeaderMap, _: &axum::http::Extensions| {
+            status != StatusCode::PARTIAL_CONTENT && !h.contains_key(header::CONTENT_RANGE)
+        },
+    )
+}
+
 pub fn app() -> Router {
     use tower_http::compression::CompressionLayer;
     Router::new()
@@ -491,7 +502,7 @@ pub fn app() -> Router {
         .merge(crate::routes::extra())
         .fallback(fallback)
         .layer(axum::middleware::from_fn(auth::middleware))
-        .layer(CompressionLayer::new().br(true).gzip(true))
+        .layer(CompressionLayer::new().br(true).gzip(true).compress_when(compressible()))
 }
 
 // ---------- 启动和停止 ----------

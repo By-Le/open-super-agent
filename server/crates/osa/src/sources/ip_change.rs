@@ -16,7 +16,7 @@ pub fn parse(text: &str, version: u8) -> Option<String> {
         IpAddr::V4(_) => version == 4,
         IpAddr::V6(_) => version == 6,
     };
-    if ok && !util::private_ip(ip) { Some(ip.to_string()) } else { None }
+    if ok && crate::tools::is_global(ip) { Some(ip.to_string()) } else { None }
 }
 
 async fn lookup(version: u8, skip: &str) -> (Option<String>, String, Vec<String>) {
