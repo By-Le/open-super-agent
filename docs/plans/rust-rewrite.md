@@ -7,7 +7,10 @@
 
 - 内存：lsp 上主服务约 164 MB（RSS 64 + swap 100），Rust 版目标 30–50 MB。
 - 启动：Python 版 import 约 0.66 秒、ready 约 1.25 秒；Rust 版目标 0.1 秒以内，桌面 App 本机模式打开更快。
-- 桌面 App：最后把服务作为库链进 Tauri 外壳，一个进程；不再带 105 MB 的 Python 运行环境（run_code 要的 Python、uvx 用到时再下载）。
+- 桌面 App：不再带 105 MB 的 Python 运行环境（run_code 要的 Python、uvx 用到时再下载）。原来打算把服务作为库链进 Tauri 外壳、一个进程；
+  做的时候改成了 App 带 osa-server 这一个文件、单独一个进程（Tauri 的 externalBin）：崩了能自动重启、退出 App 时连同应用的子进程一起停掉、
+  “在这台电脑上运行”和“连接到服务器”来回切换时整个停掉再起（服务里有很多全局状态，在同一个进程里停了再起不干净），
+  这几样原来的外壳都做好了，换成 Rust 只改了起哪个程序。多一个进程约 20 MB 内存，起来 50 毫秒左右。
 - 和 [Open Agent Docs](https://github.com/kadaliao/open-agent-docs) 同一套技术栈（axum 0.8、tokio、rusqlite、rmcp、reqwest），
   资料库以后可以直接把 OAD 的 crate 挂进来（见 OAD 的 `examples/rust-mount`）。
 
@@ -82,7 +85,7 @@ Python 到 Rust 的对应：
 | 1 | 核心：数据库和迁移、设置、登录、Bot / 对话 / 消息 / 讨论串 / 未读、记忆、调模型（流式）、Router、Worker、任务和任务过程、确认、WebSocket、应用（MCP）、沙箱、内置工具、技能 | 完成（2026-11-19）：接口测试 Python 87 / Rust 85 全过（parity 只在 Python 那边跑一次），发给模型的请求逐字一样；现在的网页在 Rust 版上能聊天、派任务、看过程、应用市场、观测、设置，没有报错的接口 |
 | 2 | 电脑：Instabox、Docker、本机 Chrome、派任务到 Mac | A 完成（2026-11-20）：共用部分、电脑工具、Docker、Instabox、电脑和文件的接口、VNC 转发，别的模块里的桩都接上了；B（本机 Chrome、整台 Mac、派任务到 Mac）未开始 |
 | 3 | 外围：事件、定时任务、消息来源、聊天软件、画图和视频、资料库页面、小应用、备份、推送、中转 | 大部分跟第 1 步一起做完了（分模块并行），剩下的见下面“还没迁的” |
-| 4 | 桌面 App 把服务链进 Tauri 外壳；Python / uv 用到时再下载；Docker 镜像换成 Rust 版 | 未开始 |
+| 4 | 桌面 App 换成 osa-server；Python / uv 用到时再下载；Docker 镜像换成 Rust 版 | 桌面 App 和按需下载做完（2026-11-20，App 46 MB）；Docker 镜像写好了，Linux 上的接口测试还没跑通；lsp 没切 |
 
 第 1 步做完停下来给用户看：用 Rust 版打开现在的网页，能和 Bot 聊天、能跑带工具的任务，接口测试在两个版本上都通过。
 

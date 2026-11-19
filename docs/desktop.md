@@ -69,8 +69,9 @@ App 自己会检查更新，所以 `brew upgrade` 默认跳过它。`brew uninst
 
 ```bash
 (cd web && npm ci && npm run build)          # 服务端要用构建好的前端
+desktop/scripts/build-server.sh              # 编译 osa-server，准备 desktop/build/（开发版也要：Tauri 要这几个文件在）
 cd desktop && npm ci
-npx tauri dev                                # 开发版：用仓库里的 .venv 起服务
+npx tauri dev                                # 开发版：起 desktop/build 里的 osa-server
 ```
 
 开发版的数据也在 `~/Library/Application Support/open-super-agent`。测试时用 `OSA_DESKTOP_HOME=/某个临时目录` 换个地方，不碰真正的数据。
@@ -79,12 +80,14 @@ npx tauri dev                                # 开发版：用仓库里的 .venv
 打一个能单独用的 App：
 
 ```bash
-desktop/scripts/build-runtime.sh             # 准备 Python 运行环境（desktop/build/），可以加 aarch64 或 x86_64
+desktop/scripts/build-server.sh              # 编译 osa-server、准备 desktop/build/，可以加 aarch64 或 x86_64
 cd desktop && npx tauri build --bundles app  # 带自动更新包时要设 TAURI_SIGNING_PRIVATE_KEY，见下面
 ```
 
-运行环境：独立版 Python 3.13（python-build-standalone）+ 按 `uv.lock` 装的依赖 + uv（uvx 应用要用），去掉了 pip、调试符号这些，约 106 MB；
-`.pyc` 写到数据目录旁边。Intel 版的 cryptography 用 48.0：从 49.0 起它不再提供 Intel Mac 的安装包。
+App 里带的服务是 Rust 版的 osa-server（一个约 24 MB 的文件，Tauri 当 externalBin 放进 `Contents/MacOS` 并签名），
+另有 `Resources/app`（config.yaml、前端、本机电脑的镜像文件）。整个 App 约 46 MB。App 不带 Python：
+uv 第一次用到时（装 uvx 应用、run_code 要 Python、操作整台 Mac）才下载到 `~/Library/Application Support/open-super-agent/runtime/bin`
+（固定版本，按 sha256 校验，见 `server/crates/osa/src/runtime.rs`），Python 再由 uv 下载。
 
 ## 发布
 
@@ -102,4 +105,4 @@ cd desktop && npx tauri build --bundles app  # 带自动更新包时要设 TAURI
 | `APPLE_CERTIFICATE`、`APPLE_CERTIFICATE_PASSWORD` | “Developer ID Application” 证书导出的 `.p12`（base64）和它的密码 |
 | `APPLE_API_KEY_P8`、`APPLE_API_KEY_ID`、`APPLE_API_ISSUER` | App Store Connect 的 API key（`.p8` 文件的内容）、Key ID 和 Issuer ID，公证用 |
 
-配了 Apple 的那几项时：App 里带的 Python 运行环境先逐个签名（`desktop/scripts/sign-runtime.sh`），Tauri 签名并公证 App，CI 再公证 dmg 并把结果钉上，下载后双击就能打开。没配的话安装包只有临时签名：下载后第一次打开会被拦下，要去 系统设置 → 隐私与安全性 点“仍要打开”。
+配了 Apple 的那几项时：Tauri 签名（连同 osa-server）并公证 App，CI 再公证 dmg 并把结果钉上，下载后双击就能打开。没配的话安装包只有临时签名：下载后第一次打开会被拦下，要去 系统设置 → 隐私与安全性 点“仍要打开”。

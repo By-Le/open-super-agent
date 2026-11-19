@@ -3,8 +3,12 @@
 
 use std::net::SocketAddr;
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
+fn main() -> anyhow::Result<()> {
+    osa::runtime::init_path(); // 改 PATH 要在起线程之前
+    tokio::runtime::Builder::new_multi_thread().enable_all().build()?.block_on(run())
+}
+
+async fn run() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::try_from_env("OSA_LOG").unwrap_or_else(|_| "info".into()))
         .with_target(false)

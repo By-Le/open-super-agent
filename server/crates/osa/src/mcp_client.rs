@@ -172,6 +172,9 @@ impl Session {
         let mut child_slot = None;
         match t {
             Transport::Stdio { command, args, env } => {
+                if command == "uvx" || command == "uv" {
+                    crate::runtime::uv().await; // 桌面 App 里没有 uv：第一次装 uvx 应用时下载（下载不了照旧报找不到命令）
+                }
                 let mut cmd = tokio::process::Command::new(&command);
                 cmd.args(&args)
                     .env_clear()

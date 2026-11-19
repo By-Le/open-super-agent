@@ -467,7 +467,7 @@ pub async fn python() -> Option<String> {
     if let Some(p) = tokio::task::spawn_blocking(python_known).await.ok().flatten() {
         return Some(p);
     }
-    let uv = which("uv")?;
+    let uv = crate::runtime::uv().await?; // 桌面 App 里没有 uv 时第一次用到才下载
     let ok = tokio::process::Command::new(uv)
         .args(["python", "install"])
         .stdout(std::process::Stdio::null())

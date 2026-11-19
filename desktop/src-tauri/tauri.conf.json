@@ -34,8 +34,10 @@
         "Resources/Assets.car": "icons/Assets.car"
       }
     },
+    "externalBin": [
+      "../build/bin/osa-server"
+    ],
     "resources": {
-      "../build/runtime/": "runtime/",
       "../build/app/": "app/"
     },
     "createUpdaterArtifacts": true

@@ -2,6 +2,7 @@
 //! 数据库表结构和 Python 版一样（见 docs/plans/rust-rewrite.md）。
 
 pub mod config;
+pub mod runtime;
 pub mod db;
 pub mod py;
 pub mod util;

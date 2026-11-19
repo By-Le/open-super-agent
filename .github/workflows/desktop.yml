@@ -34,20 +34,21 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - uses: astral-sh/setup-uv@v6
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: desktop/src-tauri
+          workspaces: |
+            desktop/src-tauri
+            server
           key: ${{ matrix.target }}
 
       - name: Frontend
         run: cd web && npm ci && npm run build
 
-      - name: Python runtime
-        run: desktop/scripts/build-runtime.sh ${{ matrix.arch }}
+      - name: Server (osa-server)
+        run: desktop/scripts/build-server.sh ${{ matrix.arch }}
 
       - name: Apple certificate
         id: cert
@@ -78,10 +79,6 @@ jobs:
             printf '%s\n' "$APPLE_API_KEY_P8" > "$RUNNER_TEMP/AuthKey.p8"
             echo "api_key_path=$RUNNER_TEMP/AuthKey.p8" >> "$GITHUB_OUTPUT"
           fi
-
-      - name: Sign Python runtime
-        if: steps.cert.outputs.identity != '-'
-        run: desktop/scripts/sign-runtime.sh "${{ steps.cert.outputs.identity }}"
 
       - name: Build app
         working-directory: desktop
