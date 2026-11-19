@@ -218,3 +218,125 @@ macro_rules! run_fn {
         })
     };
 }
+
+// ---------- 事件来源 ----------
+pub const PUSH: &str = "push";
+pub const POLL: &str = "poll";
+pub const INTERNAL: &str = "internal";
+
+/// poll 来源 check 的结果：(事件列表, 新 state)
+pub type CheckFut = BoxFuture<'static, Result<(Vec<Value>, Value), String>>;
+
+/// push 来源解析一次请求的结果
+pub enum Parsed {
+    /// 事件列表
+    Events(Vec<Value>),
+    /// 这次不处理的原因（GitHub 的 ping、不关心的事件类型）
+    Skip(String),
+}
+
+/// push 来源解析出错：Denied 是签名不对这类（接口回 401），Other 是别的
+pub enum ParseErr {
+    Denied(String),
+    Other(String),
+}
+
+/// push 来源收到的请求：headers（小写）、body、json（解析好的 JSON 或 Null）、query
+pub struct HookReq {
+    pub headers: std::collections::HashMap<String, String>,
+    pub body: Vec<u8>,
+    pub json: Value,
+    pub query: std::collections::HashMap<String, String>,
+}
+
+/// 事件来源（对应 Python 版的 registry.Source）。写死的信息（标题、参数、场景、示例）在 meta 里，从 assets/sources.json 来
+pub struct Source {
+    pub id: String,
+    pub mode: &'static str,
+    pub meta: Value,
+    pub check: Option<fn(Value, Value) -> CheckFut>,
+    pub parse: Option<fn(&HookReq, &Value) -> Result<Parsed, ParseErr>>,
+    /// internal：(参数, 这个事件的 routine, 事件参数) -> 事件列表
+    pub matcher: Option<fn(&Value, &Value, &Value) -> Vec<Value>>,
+    pub validate: Option<fn(Value) -> Result<Value, String>>,
+    pub summary: Option<fn(&Value) -> String>,
+    pub available: Option<fn() -> String>,
+    pub owner: String,
+}
+
+impl Source {
+    pub fn title(&self) -> &str {
+        self.meta["title"].as_str().unwrap_or("")
+    }
+    pub fn fields(&self) -> Vec<Value> {
+        self.meta["fields"].as_array().cloned().unwrap_or_default()
+    }
+    pub fn every(&self) -> i64 {
+        self.meta["every"].as_i64().unwrap_or(30)
+    }
+    pub fn min_every(&self) -> i64 {
+        self.meta["min_every"].as_i64().unwrap_or(5)
+    }
+    pub fn fire_first(&self) -> bool {
+        self.meta["fire_first"] == true
+    }
+    pub fn on(&self) -> &str {
+        self.meta["on"].as_str().unwrap_or("")
+    }
+}
+
+pub static SOURCES: LazyLock<RwLock<IndexMap<String, Arc<Source>>>> = LazyLock::new(Default::default);
+
+pub fn source(id: &str) -> Option<Arc<Source>> {
+    SOURCES.read().get(id).cloned()
+}
+
+pub fn sources() -> Vec<Arc<Source>> {
+    SOURCES.read().values().cloned().collect()
+}
+
+impl Context {
+    /// 登记一种事件来源。和工具一样不覆盖别人的同名来源
+    pub fn source(&self, mut src: Source) -> Result<(), String> {
+        if ![PUSH, POLL, INTERNAL].contains(&src.mode) {
+            return Err(format!("事件来源 {} 的 mode 只能是 push / poll / internal", src.id));
+        }
+        let ok = match src.mode {
+            POLL => src.check.is_some(),
+            PUSH => src.parse.is_some(),
+            _ => !src.on().is_empty() && src.matcher.is_some(),
+        };
+        if !ok {
+            return Err(format!("事件来源 {}：poll 要写 check，push 要写 parse，internal 要写 on 和 match", src.id));
+        }
+        src.owner = self.name.clone();
+        let mut all = SOURCES.write();
+        if let Some(old) = all.get(&src.id) {
+            if old.owner != self.name {
+                return Err(format!("事件来源 {} 已经由 {} 登记了，换个名字", src.id, old.owner));
+            }
+        }
+        let id = src.id.clone();
+        let internal = src.mode == INTERNAL;
+        let on = src.on().to_string();
+        let s = Arc::new(src);
+        let me = s.clone();
+        all.insert(id.clone(), s);
+        drop(all);
+        let id2 = id.clone();
+        self.disposers.lock().push(Box::new(move || {
+            let mut all = SOURCES.write();
+            if all.get(&id2).is_some_and(|x| Arc::ptr_eq(x, &me)) {
+                all.shift_remove(&id2);
+            }
+        }));
+        if internal {
+            let sid = id.clone();
+            self.on(&on, Arc::new(move |kw: Value| -> BoxFuture<'static, ()> {
+                let sid = sid.clone();
+                Box::pin(async move { crate::events::internal(&sid, &kw) })
+            }));
+        }
+        Ok(())
+    }
+}

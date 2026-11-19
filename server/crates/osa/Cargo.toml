@@ -44,3 +44,8 @@ tower = { version = "0.5.3", features = ["util"] }
 tower-http = { version = "0.6.11", features = ["compression-br", "compression-gzip", "fs", "set-header"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+encoding_rs = "0.8"
+roxmltree = "0.20"
+sha1 = "0.10"
+similar = "2"
+html-escape = "0.2"
