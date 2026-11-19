@@ -67,6 +67,7 @@ pub mod worker;
 
 /// 各模块自己的表（Python 版在 import 时建）
 pub fn modules_migrate() {
+    computer::migrate();
     events::migrate();
     routines::migrate();
     avatars::migrate();
@@ -83,6 +84,7 @@ pub fn modules_migrate() {
 
 /// 后台循环（清理、刷新价格……）
 pub fn background() {
+    tokio::spawn(computer::idle_pauser());
     tokio::spawn(media::gc_loop());
     tokio::spawn(prices::price_loop());
     tokio::spawn(search::startup());

@@ -40,13 +40,13 @@ pub fn exec_mode() -> String {
 }
 
 // ---------- 在哪跑 ----------
-/// 能在里面跑代码的电脑（Docker / Instabox），没有返回空。电脑是第 2 步，现在总是空
+/// 能在里面跑代码的电脑（Docker / Instabox），没有返回空
 fn computer_backend() -> String {
     if !config::get_bool("computer.enabled", true) {
         return String::new();
     }
-    // TODO（第 2 步）：computer::backend_name() == "instabox"，或 "local" 且 docker_ok()
-    String::new()
+    let b = crate::computer::backend_name();
+    if b == "instabox" || (b == "local" && crate::computer::docker_ok()) { b } else { String::new() }
 }
 
 /// 这次在哪跑：computer（Docker / Instabox 电脑里）、host（本机的受限子进程），都不行返回空
@@ -171,7 +171,20 @@ fn no_sandbox() -> String {
     if exec_mode() != "host" {
         return s + "这台服务器只允许在沙箱里执行代码。";
     }
-    // TODO（第 2 步）：电脑是用户的 Mac / 本机时，提示改用 computer_shell（见 sandbox.py 的 _no_sandbox）
+    let c = crate::computer::current();
+    if c.kind() == "mac" {
+        let name = c.backend.name();
+        if c.backend.shell_enabled() {
+            return s + &format!("可以改用 computer_shell 在用户的 Mac「{name}」上跑（每条命令要用户确认）。");
+        }
+        return s + &format!("用户在电脑面板给「{name}」打开“允许 Bot 用终端”后，可以用 computer_shell 在那台 Mac 上跑（每条命令要用户确认）。");
+    }
+    if crate::computer::backend_name() == "host" {
+        if crate::computer::host::shell_on() {
+            return s + "可以改用 computer_shell 在终端里跑（每条命令要用户确认）。";
+        }
+        return s + "用户在电脑面板打开“允许 Bot 用终端”后，可以用 computer_shell 跑（每条命令要用户确认）。";
+    }
     s
 }
 
@@ -227,15 +240,66 @@ pub async fn execute(lang: &str, code: &Value, files: &Value, timeout: &Value, n
     }
     let _watch = crate::watchdog::long_call(timeout as f64);
     let r = if wh == "computer" {
-        Err("电脑里跑代码要等电脑迁过来（第 2 步）".to_string())
+        in_computer(&crate::computer::get(0), &lang, code, &inputs, timeout).await
     } else {
         on_host(&lang, code, &inputs, timeout, net).await
     };
-    // TODO（第 2 步）：派到用户 Mac 上的任务，把产出的文件传到那台 Mac（sandbox.py 的 _to_mac）
+    // TODO（第 2 步 B）：派到用户 Mac 上的任务（computer::current().kind() == "mac"），把产出的文件传到那台 Mac（sandbox.py 的 _to_mac）
     match r {
         Ok(r) => r,
         Err(e) => res(format!("没跑成：{e}")),
     }
+}
+
+// ---------- 电脑里（Docker / Instabox） ----------
+const MARK: &str = "__OSA_RUN_EXIT__";
+
+async fn in_computer(c: &crate::computer::Computer, lang: &str, code: &str, inputs: &[(String, String)], timeout: i64) -> Result<RunResult, String> {
+    use crate::computer::base::quote;
+    let exe = match lang {
+        "python" => "python3",
+        "bash" => "bash",
+        _ => "node",
+    };
+    let cmd = match lang {
+        "python" => "python3 -B",
+        "bash" => "bash",
+        _ => "node",
+    };
+    let main = format!("main.{}", ext(lang));
+    let root = format!("{}/{RUN}", c.workspace());
+    let d = format!("{root}/{}", rid());
+    let mut names = vec![main.clone()];
+    names.extend(inputs.iter().map(|(n, _)| n.clone()));
+    let keep = names.iter().map(|n| format!("! -path {}", quote(&format!("./{n}")))).collect::<Vec<_>>().join(" ");
+    let (qr, qd) = (quote(&root), quote(&d));
+    let script = format!(
+        "command -v {exe} >/dev/null 2>&1 || exit 97\nfind {qr} -mindepth 1 -maxdepth 1 -type d -mtime +{KEEP_DAYS} -exec rm -rf {{}} + 2>/dev/null\nmkdir -p {qd} && cd {qd} && base64 -d | tar -xzf - --no-same-owner -m || exit 98\nT=\"\"; command -v timeout >/dev/null 2>&1 && T=\"timeout -k 2 {timeout}\"\nPYTHONUNBUFFERED=1 MPLBACKEND=Agg $T {cmd} {main} </dev/null 2>&1 | head -c {CAP}\nrc=${{PIPESTATUS[0]}}\nrm -f {main}\nouts=$(find . -type f {keep} | sed 's|^\\./||' | head -n 50)\n[ -n \"$outs\" ] || {{ cd / && rm -rf {qd}; }}\nprintf '\\n{MARK}%s\\n%s\\n' \"$rc\" \"$outs\"\n"
+    );
+    let mut files: Vec<(String, Vec<u8>)> = inputs.iter().map(|(n, v)| (n.clone(), v.as_bytes().to_vec())).collect();
+    files.retain(|(n, _)| *n != main);
+    files.push((main.clone(), code.as_bytes().to_vec()));
+    let tar = crate::util::b64(&crate::util::tar_gz(&files));
+    c.start().await.map_err(|e| e.0)?;
+    c.touch();
+    let r = c.exec(&format!("bash -c {}", quote(&script)), timeout + 30, Some(&tar)).await.map_err(|e| e.0)?;
+    if r.exit_code == 97 {
+        return Ok(res(format!("电脑里没有 {exe}，换一种语言写吧")));
+    }
+    let Some(at) = r.stdout.rfind(&format!("\n{MARK}")) else {
+        if r.timed_out {
+            return Ok(RunResult { text: text_of(124, &r.stdout, true, timeout, &[], ""), files: vec![], timed_out: true });
+        }
+        let e = if !r.stderr.is_empty() { r.stderr.clone() } else { r.stdout.clone() };
+        let e = py::tail(e.trim(), 500);
+        return Ok(res(format!("没跑成：{}", if e.is_empty() { format!("退出码 {}", r.exit_code) } else { e })));
+    };
+    let out = &r.stdout[..at];
+    let tail: Vec<&str> = r.stdout[at + MARK.len() + 1..].lines().collect();
+    let rc = tail.first().and_then(|t| t.trim().parse::<i64>().ok()).unwrap_or(r.exit_code);
+    let files: Vec<String> = tail.iter().skip(1).filter(|x| !x.trim().is_empty()).map(|x| format!("{d}/{x}")).collect();
+    let timed_out = rc == 124 || rc == 137 || r.timed_out;
+    Ok(RunResult { text: text_of(rc, out, timed_out, timeout, &files, ""), files, timed_out })
 }
 
 /// 带进去的文件 [(相对路径, 文字内容)]（保持给的顺序）

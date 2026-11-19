@@ -30,104 +30,8 @@ fn load() -> Map<String, Value> {
     memory::setting("overrides").and_then(|v| v.as_object().cloned()).unwrap_or_default()
 }
 
-// ---------- 电脑（第 2 步迁 computer 时换成 computer 模块里的） ----------
-pub mod pc {
-    use crate::{config, i18n, security, vault};
-    use serde_json::{Value, json};
-
-    pub const BACKENDS: [&str; 3] = ["host", "local", "instabox"];
-
-    pub fn host_allowed() -> bool {
-        (std::env::var("OSA_DESKTOP").is_ok_and(|v| !v.is_empty()) || cfg!(target_os = "macos")) && security::local_exec()
-    }
-
-    pub fn key_source() -> &'static str {
-        if vault::get("INSTABOX_API_KEY").is_some_and(|v| !v.is_empty()) {
-            "saved"
-        } else if std::env::var("INSTABOX_API_KEY").is_ok_and(|v| !v.is_empty()) {
-            "env"
-        } else {
-            ""
-        }
-    }
-
-    pub fn backend_name() -> String {
-        let mut b = config::get("computer.backend").as_str().unwrap_or("auto").to_string();
-        if b == "auto" && std::env::var("OSA_DESKTOP").is_ok_and(|v| !v.is_empty()) {
-            b = "host".into();
-        }
-        if !BACKENDS.contains(&b.as_str()) || (b == "host" && !host_allowed()) {
-            return if key_source().is_empty() { "local".into() } else { "instabox".into() };
-        }
-        b
-    }
-
-    pub fn choices() -> Vec<&'static str> {
-        let want: Vec<String> =
-            config::get("computer.choices").as_array().map(|a| a.iter().map(crate::py::str_of).collect()).unwrap_or_default();
-        BACKENDS.iter().copied().filter(|b| (want.is_empty() || want.iter().any(|w| w == b)) && (*b != "host" || host_allowed())).collect()
-    }
-
-    fn exists(p: &str) -> bool {
-        match std::fs::metadata(p) {
-            Ok(m) => m.is_file(),
-            Err(e) => e.kind() == std::io::ErrorKind::PermissionDenied,
-        }
-    }
-
-    fn which(name: &str) -> Option<String> {
-        let path = std::env::var_os("PATH")?;
-        std::env::split_paths(&path).map(|d| d.join(name)).find(|p| p.is_file()).map(|p| p.display().to_string())
-    }
-
-    pub fn chrome_path() -> Option<String> {
-        if let Some(f) = config::get("computer.chrome_path").as_str().filter(|s| !s.is_empty()) {
-            let f = config::expand_user(std::path::Path::new(f)).display().to_string();
-            return if exists(&f) { Some(f) } else { None };
-        }
-        let home = std::env::var("HOME").unwrap_or_default();
-        let list: Vec<String> = if cfg!(target_os = "macos") {
-            vec![
-                "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome".into(),
-                format!("{home}/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"),
-                "/Applications/Chromium.app/Contents/MacOS/Chromium".into(),
-                "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge".into(),
-                "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser".into(),
-            ]
-        } else {
-            vec![]
-        };
-        if let Some(c) = list.into_iter().find(|c| exists(c)) {
-            return Some(c);
-        }
-        ["google-chrome", "google-chrome-stable", "chromium", "chromium-browser", "microsoft-edge"].iter().find_map(|n| which(n))
-    }
-
-    pub fn docker_problem() -> String {
-        let socket = std::env::var("OSA_COMPUTER_SOCKET").unwrap_or_default();
-        if !socket.is_empty() {
-            #[cfg(unix)]
-            {
-                if std::os::unix::net::UnixStream::connect(&socket).is_ok() {
-                    return String::new();
-                }
-            }
-            return i18n::t0("电脑容器没开（docker compose up -d computer）");
-        }
-        if which("docker").is_some() { String::new() } else { i18n::t0("这台电脑没装 Docker") }
-    }
-
-    pub fn available() -> Vec<Value> {
-        let host = if host_allowed() {
-            json!({"id": "host", "ok": chrome_path().is_some()})
-        } else {
-            json!({"id": "host", "ok": false, "locked": true})
-        };
-        let key = key_source();
-        let why = docker_problem();
-        vec![host, json!({"id": "local", "ok": why.is_empty(), "why": why}), json!({"id": "instabox", "ok": !key.is_empty(), "key": key})]
-    }
-}
+// 电脑：用哪种、能用哪几种（computer::pc）
+pub use crate::computer::pc;
 
 pub fn apply() {
     providers::apply();
@@ -348,7 +252,14 @@ pub fn save(data: &Value) -> Result<Value, String> {
                 return Err(why);
             }
         }
-        // TODO(computer)：电脑正在被用着时不让换（computer.get().users / exclusive），等 computer 迁过来
+        let c = crate::computer::get(0);
+        let busy = {
+            let st = c.st.lock();
+            !st.users.is_empty() || !st.exclusive.is_empty()
+        };
+        if busy && b != config::get_str("computer.backend") {
+            return Err(crate::t!("电脑正在被用着（{who}），等用完再换", who = c.busy()));
+        }
         if b == "auto" {
             o.remove("computer_backend");
         } else {
@@ -429,7 +340,12 @@ async fn put_settings(Body(d): Body) -> Res {
         return Err(ApiError::new(422, "Input should be a valid dictionary"));
     }
     let out = save(&d)?;
-    // TODO(computer)：并行数改了 recheck；电脑相关的改了要 broadcast {"type": "computer", "computer": public_state()}
+    if d.get("computer_parallel").is_some() {
+        crate::computer::get(0).recheck();
+    }
+    if ["computer_parallel", "computer_backend", "computer_host_shell"].iter().any(|k| d.get(*k).is_some()) {
+        crate::server::broadcast(json!({"type": "computer", "computer": crate::computer::public_state(0).await}));
+    }
     ok(out)
 }
 

@@ -79,8 +79,16 @@ pub async fn find_videos(items: &Value) -> Result<Vec<Value>, String> {
         if x.is_empty() {
             continue;
         }
-        // 电脑里的视频要等电脑迁过来（第 2 步）
-        let got = find_video(&x)?.ok_or_else(|| format!("电脑里没有这个文件：{x}"))?;
+        let got = match find_video(&x)? {
+            Some(g) => g,
+            None => {
+                let att = media::from_computer(&x, true).await?;
+                if !py::truthy(&att["media"]) || !py::str_of(&att["mime"]).starts_with("video/") {
+                    return Err(format!("{} 不是视频（只认 MP4、MOV、WebM，最大 {} MB）", py::str_of(&att["name"]), media::MAX_VIDEO_REF >> 20));
+                }
+                media::info(&att["media"]).ok_or_else(|| format!("电脑里没有这个文件：{x}"))?
+            }
+        };
         if !got["mime"].as_str().unwrap_or("").starts_with("video/") {
             return Err(format!("{} 不是视频", py::str_of(&got["name"])));
         }

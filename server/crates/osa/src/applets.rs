@@ -124,7 +124,7 @@ pub async fn call(page: &Value, tool: &str, args: &Value) -> Result<String, (u16
         env: json!({}),
     };
     Ok(match (tl.run)(c).await {
-        Out::Text(s) | Out::Shot(s, _) => s,
+        Out::Text(s) | Out::Shot(s, _) | Out::Pic(s, _, _) => s,
     })
 }
 
