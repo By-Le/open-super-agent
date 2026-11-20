@@ -2,8 +2,8 @@
 # 生成 lsp 上正式服务和演示服务器的配置，每次部署（换了 src/ 里的代码）后跑一遍。用镜像里的 Python，从 src/config.yaml 改出来：
 # - 正式服务 /opt/osa/docker/config.server.yaml：电脑用云电脑（Instabox，/opt/osa/env 里有 INSTABOX_API_KEY 时；auto 就是这个意思），
 #   服务器只有 2 GB 内存，不常开 Docker 电脑（compose 里的 computer 容器默认不启动，要用时 docker-compose up -d computer，
-#   再到 设置 → 电脑 里换成 Docker 沙盒）；电脑一次只给一个任务用；服务器锁打开（security.local_exec: false），
-#   命令只在沙箱（电脑）里跑，见 SECURITY.md
+#   再到 设置 → 电脑 里换成 Docker 沙盒）；电脑一次只给一个任务用；服务器锁关着（security.local_exec: true，2026-11-09 起按用户要求）：
+#   插件、服务器上的终端命令都能用，代价是登录密码约等于这个容器里的 root，见 SECURITY.md
 # - 演示服务器 /opt/osa/demo/config.yaml：演示模式、不开电脑、不导入触发器、每天最多 50 万 token
 set -eu
 docker run --rm -i -v /opt/osa/docker:/w -v /opt/osa/demo:/demo open-super-agent:lsp python - <<'PY'
@@ -14,7 +14,7 @@ c = copy.deepcopy(base)
 c["computer"]["backend"] = "auto"
 c["computer"]["choices"] = ["local", "instabox"]
 c["computer"]["parallel"] = 1
-c.setdefault("security", {})["local_exec"] = False
+c.setdefault("security", {})["local_exec"] = True
 yaml.safe_dump(c, open("/w/config.server.yaml", "w"), allow_unicode=True, sort_keys=False)
 
 d = copy.deepcopy(base)
