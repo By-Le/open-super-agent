@@ -9,7 +9,6 @@ services:
     build:                 # 一般不在 lsp 上构建（见上面），写上是免得误用 Python 版的 Dockerfile 打出 :rust
       context: src
       dockerfile: Dockerfile.rust
-    mem_limit: 512m        # Rust 版服务本身 20 MB 上下，剩下的给应用子进程（npx / uvx）
   demo:
     image: open-super-agent:rust
   relay:
