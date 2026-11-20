@@ -3,6 +3,28 @@
 格式参照 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
 ## [未发布]
+
+## [0.25.0] - 2026-11-20
+### 改动
+- **服务换成 Rust 写的**：接口、WebSocket 消息、数据库、`config.yaml`、数据目录都和原来一样，网页、桌面 App、手机 App 不用改，
+  已有的数据直接接着用。起来约 0.05 秒（原来 1–2 秒），服务本身的内存约 20 MB（原来 100 MB 上下）；网页的资源压缩、长期缓存，
+  打开不再先白一下。两个版本用同一套接口测试（`contract/`）对过，发给模型的提示词一字不差。Docker 镜像用 `Dockerfile.rust`；
+  Python 版的代码（`osa/`）和 `Dockerfile` 先留着
+- **桌面 App 不再带 Python**：App 里带的是一个约 24 MB 的服务程序，整个 App 约 46 MB（原来光 Python 运行环境就有 105 MB）。
+  装应用、运行代码要的 uv 和 Python 第一次用到时才下载，放在 App 自己的目录里
+- **第一次打开有引导**：欢迎页选用法 → 一步一步显示准备进度（检查网络、启动服务、下载 uv、安装 Python）→ 准备好了。
+  下载失败可以重试、换下载源，或者先用着
+- **自动识别国内网络**：国内网络下 uv、Python、npm 的安装包都从国内镜像下载（阿里云 PyPI、npmmirror）。
+  菜单栏新加“下载源”：自动 / 国内镜像 / 官方源；自己部署的服务设 `OSA_MIRROR=cn` 也一样
+- 菜单栏的“切换服务器…”改叫“换一种用法（本机 / 服务器）…”；连着服务器、停在它的登录页时，页面底下有“换一种用法”可以回到启动页；
+  第一次关窗口时提醒它还在菜单栏里运行
+
+### 修复
+- 群聊里派出的任务比这一轮先做完时，被点名接手的 Bot 不再说两次
+- 推送在消息没有正文时的兜底文字；网页推送的签名（VAPID）里带了默认端口，推送服务会拒收
+- 技能的 `apps` 里写了 YAML 的布尔值、改技能时字段给了空值会出错；资料库工具的页面编号是布尔值时出错
+- 备份没做成时留下的临时文件夹；应用市场“检查密钥”的提示范围
+
 ### 移除
 - **资料库先回到 0.22.0 的样子**：资料库要拆成独立项目 [Open Agent Docs](https://github.com/kadaliao/open-agent-docs)，做好了再接回来。
   0.23.0、0.24.0 里加的按段编辑（`edit_page`）、块编辑器、页面评论（`comment_page`）、子页面、版本历史、回收站、数据库（`db_*`）、
@@ -684,7 +706,8 @@
 - 按角色、任务和天统计费用，区分高峰和空闲价格；每日预算
 - MCP 应用接入；写操作前的确认卡片
 
-[未发布]: https://github.com/kadaliao/open-super-agent/compare/v0.24.0...HEAD
+[未发布]: https://github.com/kadaliao/open-super-agent/compare/v0.25.0...HEAD
+[0.25.0]: https://github.com/kadaliao/open-super-agent/compare/v0.24.0...v0.25.0
 [0.24.0]: https://github.com/kadaliao/open-super-agent/compare/v0.23.0...v0.24.0
 [0.23.0]: https://github.com/kadaliao/open-super-agent/compare/v0.22.0...v0.23.0
 [0.22.0]: https://github.com/kadaliao/open-super-agent/compare/v0.21.1...v0.22.0
