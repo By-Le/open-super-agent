@@ -25,6 +25,9 @@ pub struct Config {
     /// 菜单栏“下载源”里手动选的："cn" / "global"；None 是自动（用上面测出来的，每次启动后在后台再测一次，下次启动生效）
     #[serde(default)]
     pub mirror_pref: Option<String>,
+    /// 第一次关窗口时提醒过“还在菜单栏里运行”没有
+    #[serde(default)]
+    pub close_hinted: bool,
 }
 
 /// 现在用哪边下载：手动选的优先，没选就用测出来的，都没有就是官方源

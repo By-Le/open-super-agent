@@ -665,7 +665,28 @@ fn open_in_browser(app: &AppHandle) {
 
 /// 跳转：WebKit 分不清是页面在跳还是页面里的 iframe 在加载，所以这里都放行，
 /// 只拦本机服务的登录页（自动再登一次）。真跳到别的网站时，由 on_page_load 送去系统浏览器
+/// 服务器登录页上加的“换一种用法”链接跳到这个地址，App 拦下来回到启动页（登录页不给桥接授权，只能这样）
+const SWITCH_HOST: &str = "switch.osa-desktop.invalid";
+
+/// 连的是服务器、停在它的登录页（比如退出登录了）时，页面底下加一行“换一种用法”，不然只能从菜单栏回启动页
+const LOGIN_SWITCH_JS: &str = r#"(() => {
+  if (document.getElementById('osa-desktop-switch')) return;
+  const zh = (navigator.language || '').startsWith('zh');
+  const a = document.createElement('a');
+  a.id = 'osa-desktop-switch';
+  a.href = 'https://switch.osa-desktop.invalid/';
+  a.textContent = zh ? '换一种用法：在这台电脑上运行，或连接别的服务器' : 'Run on this computer or connect to another server';
+  Object.assign(a.style, { position: 'fixed', left: '0', right: '0', bottom: '18px', textAlign: 'center', fontSize: '13px',
+    color: 'inherit', opacity: '0.6', textDecoration: 'underline', textUnderlineOffset: '3px', zIndex: '9999' });
+  document.body.appendChild(a);
+})()"#;
+
 fn allow_navigation(app: &AppHandle, u: &Url) -> bool {
+    if u.host_str() == Some(SWITCH_HOST) {
+        let app = app.clone();
+        std::thread::spawn(move || show_setup(&app, "?switch=1"));
+        return false;
+    }
     if u.path() == "/login" && is_local(app) {
         let origin = state(app).origin.lock().unwrap().clone();
         if let Some(o) = origin.filter(|o| o.origin() == u.origin()) {
@@ -680,6 +701,9 @@ fn allow_navigation(app: &AppHandle, u: &Url) -> bool {
 
 /// 主窗口开始加载别的网站时：用系统浏览器打开它，窗口回到服务器
 fn on_main_load(app: &AppHandle, w: &WebviewWindow, event: PageLoadEvent, u: &Url) {
+    if event == PageLoadEvent::Finished && u.path().starts_with("/login") && !is_local(app) && matches!(u.scheme(), "http" | "https") {
+        let _ = w.eval(LOGIN_SWITCH_JS);
+    }
     if event != PageLoadEvent::Started || !matches!(u.scheme(), "http" | "https") || u.host_str() == Some("tauri.localhost") {
         return;
     }
@@ -816,6 +840,19 @@ pub fn run() {
                 if w.label() == "main" {
                     api.prevent_close();
                     let _ = w.hide();
+                    // 第一次关窗口：提醒一句它还在菜单栏里（不然以为退出了，再打开时其实是把原来那个叫出来）
+                    let app = w.app_handle();
+                    let st = state(app);
+                    let mut cfg = st.cfg.lock().unwrap();
+                    if !cfg.close_hinted {
+                        cfg.close_hinted = true;
+                        store::save(&cfg);
+                        let _ = app.notification().builder()
+                            .title(tr("Open Super Agent 还在运行", "Open Super Agent is still running"))
+                            .body(tr("关掉窗口后它在菜单栏里接着干活。要退出，点菜单栏图标 → 退出。",
+                                     "It keeps working from the menu bar. To quit, click the menu bar icon → Quit."))
+                            .show();
+                    }
                 }
             }
         })

@@ -168,10 +168,11 @@ async fn download(bin: &Path, progress: &impl Fn(u64, u64)) -> anyhow::Result<()
     Ok(())
 }
 
-/// uv 管的 Python 装好了没有（`uv python find`，只认 uv 自己下载的）
+/// Python 装好了没有（`uv python find`）
 async fn python_installed(uv: &str) -> Option<String> {
     let o = tokio::process::Command::new(uv)
-        .args(["python", "find", "--managed-python", PYTHON_VERSION])
+        // 只认 uv 自己下载的：桌面 App 设了 UV_PYTHON_PREFERENCE=only-managed（和 --managed-python 不能一起用）
+        .args(["python", "find", PYTHON_VERSION])
         .stderr(std::process::Stdio::null())
         .output()
         .await
@@ -214,7 +215,8 @@ pub async fn setup_main() -> anyhow::Result<()> {
     }
     say(serde_json::json!({"step": "python", "status": "running"}));
     let o = tokio::process::Command::new(&uv)
-        .args(["python", "install", PYTHON_VERSION])
+        // --no-bin：不往 ~/.local/bin 放 python3.13（那里已经有别的 python3.13 时 uv 会报错，也不该动用户自己的目录）
+        .args(["python", "install", "--no-bin", PYTHON_VERSION])
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::piped())
         .output()

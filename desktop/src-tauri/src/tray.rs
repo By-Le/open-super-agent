@@ -32,7 +32,7 @@ pub fn create(app: &AppHandle) -> tauri::Result<()> {
             &item("show", tr("打开窗口", "Open window"))?,
             &item("browser", tr("在浏览器里打开", "Open in browser"))?,
             &PredefinedMenuItem::separator(app)?,
-            &item("switch", tr("切换服务器…", "Switch server…"))?,
+            &item("switch", tr("换一种用法（本机 / 服务器）…", "Run locally or switch server…"))?,
             &unlink,
             &PredefinedMenuItem::separator(app)?,
             &autostart,
