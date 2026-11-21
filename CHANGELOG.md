@@ -4,6 +4,8 @@
 
 ## [未发布]
 
+## [0.25.1] - 2026-11-21
+
 ### 修复
 - 设置 → 模型可以选择 Magpie 网关公布的画图和视频模型。支持改图的模型也会出现在“照着图片画”里。
 
@@ -709,7 +711,8 @@
 - 按角色、任务和天统计费用，区分高峰和空闲价格；每日预算
 - MCP 应用接入；写操作前的确认卡片
 
-[未发布]: https://github.com/kadaliao/open-super-agent/compare/v0.25.0...HEAD
+[未发布]: https://github.com/kadaliao/open-super-agent/compare/v0.25.1...HEAD
+[0.25.1]: https://github.com/kadaliao/open-super-agent/compare/v0.25.0...v0.25.1
 [0.25.0]: https://github.com/kadaliao/open-super-agent/compare/v0.24.0...v0.25.0
 [0.24.0]: https://github.com/kadaliao/open-super-agent/compare/v0.23.0...v0.24.0
 [0.23.0]: https://github.com/kadaliao/open-super-agent/compare/v0.22.0...v0.23.0
