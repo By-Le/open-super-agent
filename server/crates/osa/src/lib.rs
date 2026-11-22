@@ -2,9 +2,9 @@
 //! 数据库表结构和 Python 版一样（见 docs/plans/rust-rewrite.md）。
 
 pub mod config;
-pub mod runtime;
 pub mod db;
 pub mod py;
+pub mod runtime;
 pub mod util;
 #[macro_use]
 pub mod i18n;
@@ -24,6 +24,7 @@ pub mod catalog;
 pub mod channels;
 pub mod computer;
 pub mod dm;
+pub mod docs;
 pub mod dsml;
 pub mod events;
 pub mod generation;
@@ -73,6 +74,7 @@ pub fn modules_migrate() {
     routines::migrate();
     avatars::migrate();
     library::migrate();
+    docs::migrate();
     search::migrate();
     unfurl::migrate();
     mcp_hub::migrate();

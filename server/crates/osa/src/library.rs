@@ -231,7 +231,18 @@ pub fn read_page_text(args: &Value, limit: usize) -> String {
     )
 }
 
-pub async fn tool_read_page(c: Call) -> Out {
+/// page_id 是字符串时：数字的是资料库网页（转成整数），别的是文档
+fn page_id_arg(c: &mut Call) {
+    if let Some(n) = c.args["page_id"].as_str().and_then(|s| s.trim().parse::<i64>().ok()) {
+        c.args["page_id"] = serde_json::json!(n);
+    }
+}
+
+pub async fn tool_read_page(mut c: Call) -> Out {
+    page_id_arg(&mut c);
+    if crate::docs::is_doc_id(&c.args["page_id"]) {
+        return crate::docs::read_markdown(c.bot_id(), c.args["page_id"].as_str().unwrap_or(""), 12000).await.into();
+    }
     read_page_text(&c.args, 12000).into()
 }
 
@@ -278,7 +289,18 @@ pub fn save_page_text(bot_id: i64, args: &Value, task_id: Option<i64>) -> String
     format!("已保存页面 #{id}「{title}」，链接 {}（用户在资料库里也能看到）。回复里用 Markdown 链接附上它。", link(id))
 }
 
-pub async fn tool_save_page(c: Call) -> Out {
+pub async fn tool_save_page(mut c: Call) -> Out {
+    page_id_arg(&mut c);
+    // 有文档服务时 Markdown 写进文档（Open Agent Docs），资料库只放网页和小应用；没有时照旧存进资料库
+    let fmt = c.args["format"].as_str().unwrap_or("markdown");
+    if crate::docs::configured() && fmt != "html" && !py::truthy(&c.args["app"]) {
+        let pid = &c.args["page_id"];
+        if pid.is_i64() {
+            return "没保存：资料库里的页面只能存网页（format=html）。文字文档用 save_page 不给 page_id 新建，或给文档的 page_id（字符串）更新".into();
+        }
+        let s = |k: &str| c.args[k].as_str().unwrap_or("").to_string();
+        return crate::docs::save_markdown(c.bot_id(), &s("title"), &s("content"), pid.as_str().filter(|x| !x.is_empty())).await.into();
+    }
     let task_id = c.task.as_ref().filter(|t| t.fake_id.is_none()).map(|t| t.id);
     let out = save_page_text(c.bot_id(), &c.args, task_id);
     server::broadcast(json!({"type": "pages_changed"}));
@@ -425,6 +447,12 @@ async fn api_create(Body(d): Body) -> Res {
 }
 
 async fn api_get(Path(pid): Path<i64>) -> Res {
+    // 以前的 Markdown 页面搬进文档了：告诉前端去打开那篇文档
+    if get_page(pid, false).is_none()
+        && let Some(doc) = crate::docs::legacy(pid)
+    {
+        return ok(serde_json::json!({"id": pid, "moved": doc}));
+    }
     ok(page_or_404(pid, true)?)
 }
 

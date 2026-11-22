@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { api, openLibrary, useStore } from '../store'
 import type { SearchHit, Avatar, FileEntry, FileListing, Page } from '../types'
 import BotAvatar from './BotAvatar'
@@ -10,6 +10,11 @@ import { useBack } from '../swipe'
 import { AppletFrame } from './Applet'
 import { FileLink, fileUrl } from './Media'
 import { PC_NAMES } from './Computer'
+
+// 文档（Open Agent Docs 的编辑器）按需加载
+const DocList = lazy(() => import('./Docs').then(m => ({ default: m.DocList })))
+const DocView = lazy(() => import('./Docs').then(m => ({ default: m.DocView })))
+const loading = <div className="lib-body muted">{t('加载中…')}</div>
 
 const when = (ts: number) => new Date(ts * 1000).toLocaleString(locale, { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
 export const size = (n: number) => n < 1024 ? `${n} B` : n < 1 << 20 ? `${(n / 1024).toFixed(1)} KB` : `${(n / (1 << 20)).toFixed(1)} MB`
@@ -25,21 +30,27 @@ export function PageBody({ format, content, rawUrl, applet }: { format: string; 
 
 export default function Library() {
   const pageId = useStore(s => s.libraryPage)
-  const [tab, setTab] = useState(() => localStorage.getItem('osa.libtab') || 'pages')
-  useEffect(() => localStorage.setItem('osa.libtab', tab), [tab])
+  const docs = useStore(s => !!s.settings?.docs?.configured)
+  const [saved, setTab] = useState(() => localStorage.getItem('osa.libtab') || 'docs')
+  const tab = saved === 'docs' && !docs ? 'pages' : saved
+  useEffect(() => localStorage.setItem('osa.libtab', saved), [saved])
   const page = useRef<HTMLElement>(null)
   useBack(() => openLibrary(), page, !!pageId)   // 页面 → 资料库列表
+  if (typeof pageId === 'string') return <main className="chat library doc-page" ref={page}><Suspense fallback={loading}><DocView id={pageId} /></Suspense></main>
   if (pageId) return <main className="chat library" ref={page}><PageView id={pageId} /></main>
   return (
     <main className="chat library">
       <header className="chat-head">
         <span className="head-name">{t('资料库')}</span>
         <div className="panel-tabs">
-          <button className={tab === 'pages' ? 'on' : ''} onClick={() => setTab('pages')}>{tc('tab', '页面')}</button>
+          {docs && <button className={tab === 'docs' ? 'on' : ''} onClick={() => setTab('docs')}>{tc('tab', '文档')}</button>}
+          <button className={tab === 'pages' ? 'on' : ''} onClick={() => setTab('pages')}>{tc('tab', '网页')}</button>
           <button className={tab === 'files' ? 'on' : ''} onClick={() => setTab('files')}>{tc('tab', '文件')}</button>
         </div>
       </header>
-      <div className="scroller"><div className="lib-body">{tab === 'pages' ? <Pages /> : <Files />}</div></div>
+      <div className="scroller"><div className="lib-body">
+        {tab === 'docs' ? <Suspense fallback={loading}><DocList /></Suspense> : tab === 'pages' ? <Pages /> : <Files />}
+      </div></div>
     </main>
   )
 }
@@ -76,14 +87,14 @@ function Pages() {
   if (!list) return <div className="muted">{t('加载中…')}</div>
   if (!list.length) return (
     <div className="lib-empty">
-      <p>{t('还没有页面。')}</p>
-      <p className="muted small">{t('Bot 做好的报告、清单、网页会存在这里。在对话里说“把结果做成页面”，或者在任务结果下面点“存为页面”。')}</p>
+      <p>{t('还没有网页。')}</p>
+      <p className="muted small">{t('Bot 做的网页和小应用（能点、能填的界面）会存在这里。文字的报告、清单在“文档”里。')}</p>
     </div>
   )
   return (
     <div className="lib-list">
-      <p className="lib-intro muted small">{t('页面是 Bot 做好存下来的成品：报告、清单、网页、小应用，所有 Bot 的都在这里，存在服务的数据库里。可以置顶、改名、生成分享链接。')}</p>
-      <input className="lib-search" value={q} placeholder={t('按意思找页面，比如“上次做的竞品对比”')} onChange={e => setQ(e.target.value)} />
+      <p className="lib-intro muted small">{t('网页是 Bot 做好存下来的 HTML 页面和小应用，所有 Bot 的都在这里，存在服务的数据库里。可以置顶、改名、生成分享链接。')}</p>
+      <input className="lib-search" value={q} placeholder={t('按意思找网页，比如“上次做的竞品对比”')} onChange={e => setQ(e.target.value)} />
       {hits && (hits.length ? hits.map(h => (
         <button key={h.ref} className="lib-row" onClick={() => openLibrary(h.ref)}>
           <span className="lib-icon">▤</span>
@@ -108,7 +119,8 @@ function PageView({ id }: { id: number }) {
   const [err, setErr] = useState('')
   const [rename, setRename] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
-  const load = () => api(`/api/pages/${id}`).then(setP).catch((e: any) => setErr(e.message))
+  // 以前的 Markdown 页面搬进文档了：服务端回 {moved: 文档编号}
+  const load = () => api(`/api/pages/${id}`).then(x => (x.moved ? openLibrary(x.moved) : setP(x))).catch((e: any) => setErr(e.message))
   useEffect(() => {
     load()
     window.addEventListener('osa-pages', load)

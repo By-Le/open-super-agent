@@ -4,8 +4,10 @@ name: osa
 
 services:
   osa:
+    # Rust 版的服务（和 lsp、桌面 App 一样）；镜像里带着文档服务 Open Agent Docs，由服务自己起，数据在 data/docs
     build:
       context: .
+      dockerfile: Dockerfile.rust
       args:
         NPM_REGISTRY: ${NPM_REGISTRY:-}
         PYPI_INDEX: ${PYPI_INDEX:-}
@@ -25,7 +27,7 @@ services:
       # 默认只监听本机。局域网里直接访问可以设 OSA_BIND=0.0.0.0，但要先设 OSA_PASSWORD
       - "${OSA_BIND:-127.0.0.1}:${OSA_PORT:-8765}:8765"
     volumes:
-      - ./data:/app/data                     # 数据库、保险库密钥、本机应用清单
+      - ./data:/app/data                     # 数据库、保险库密钥、本机应用清单、文档（data/docs）
       - ./config.yaml:/app/config.yaml:ro    # 改完 docker compose restart 生效
       - cache:/cache                         # npx / uvx 下载的应用，重启后不用重新下载
       - computer-socket:/run/osa-computer    # 和电脑容器共用：里面只有 computerd 的 unix socket

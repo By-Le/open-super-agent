@@ -22,6 +22,7 @@ pub const ATTACH_SEE: &str = "- 消息里的“[附件] 路径”是用户上传
 pub const STATE_PROMPT: &str = include_str!("prompts/state.txt");
 pub const GROUP_PROMPT: &str = include_str!("prompts/group.txt");
 pub const DM_TURN: &str = include_str!("prompts/dm_turn.txt");
+pub const DOC_COMMENT_TURN: &str = include_str!("prompts/doc_comment_turn.txt");
 pub const PRIMARY_RULE: &str = include_str!("prompts/primary_rule.txt");
 pub const OTHER_RULE: &str = "- 管理 Bot 的事归主 Bot「{primary}」：用户要新建、删除 Bot，或者要改别的 Bot，或者你觉得该有个专门的 Bot 时，用 message_bot 私信它（它就在这个群里的话用 handoff），把要做什么写完整，由它请用户确认后去做。改你自己（名字、职责、头像、技能）用 update_bot，同样会弹卡片请用户确认。不要让用户自己去设置里做。定时任务和事件你只能管自己的，要动别的 Bot 的也找主 Bot（它直接改，不用确认）。\n";
 pub const REPLY_TURN: &str = "\n\n这一轮是因为 {name} 回了你的私信（见最近的消息）。";
@@ -425,6 +426,9 @@ impl Router {
                 s += &fmt(BOTADMIN_OWED, &[("owed", o["name"].as_str().unwrap_or(""))]);
             }
             return s;
+        }
+        if woke.kind == "doc_comment" {
+            return fmt(DOC_COMMENT_TURN, &[("prompt", &woke.text)]);
         }
         let name = bots::get(woke.from).map(|b| py::str_of(&b["name"])).unwrap_or_else(|| "已删除的 Bot".into());
         if woke.kind == "dm" {

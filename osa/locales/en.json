@@ -1221,5 +1221,15 @@
   "找到 {n} 条，但都早于最近 {days} 天": "Found {n}, but all older than the last {days} days",
   "服务出错了": "The service returned an error",
   "{name}：这个网站不登录读不了，用电脑上的浏览器读：browser_open 打开 {url}，用 browser_read 读正文和评论。页面要登录或出现验证码时调用 ask_human，请用户在右栏的电脑画面里登录（只要登一次）。": "{name}: this site can't be read logged out; use the computer's browser: browser_open {url}, then browser_read for the text and comments. If it asks to log in or shows a captcha, call ask_human so the user logs in through the computer view on the right (only once).",
-  "{name}：要用电脑上的浏览器读，这里没有电脑可用": "{name}: needs the computer's browser to read, and no computer is available here"
+  "{name}：要用电脑上的浏览器读，这里没有电脑可用": "{name}: needs the computer's browser to read, and no computer is available here",
+  "用户": "User",
+  "搜文档：{q}": "Search docs: {q}",
+  "读文档": "Read doc",
+  "新建文档：{title}": "New doc: {title}",
+  "改文档": "Edit doc",
+  "回复文档评论": "Reply to doc comment",
+  "文档：{tool}": "Docs: {tool}",
+  "[文档评论]《{title}》{who}：{body}": "[Doc comment] \"{title}\" {who}: {body}",
+  "（任务没做完：{result}）": "(Task not finished: {result})",
+  "文档服务没有启动": "The docs service isn't running"
 }

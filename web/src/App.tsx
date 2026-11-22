@@ -119,10 +119,12 @@ export default function App() {
 
   useEffect(() => {
     const deep = location.pathname.match(/^\/library(?:\/pages\/(\d+))?\/?$/)
+    const doc = location.pathname.match(/^\/p\/([\w-]+)\/?$/)   // 文档的地址（通知、评论里的链接）
     const apps = /^\/apps\/?$/.test(location.pathname)   // 登录授权在本窗口完成后回到这里
     bootstrap().then(() => {
-      if (getState().onboarding && !deep && !apps) setOnboard(true)
+      if (getState().onboarding && !deep && !doc && !apps) setOnboard(true)
       if (deep) { openLibrary(deep[1] ? Number(deep[1]) : null); history.replaceState(null, '', '/') }
+      if (doc) { openLibrary(doc[1]); history.replaceState(null, '', '/') }
       if (apps) { openApps(); history.replaceState(null, '', '/') }
       connect()
       desktop?.takePendingOpen?.().then(url => { if (url) openFromUrl(url) })   // 手机 App 是点通知启动的

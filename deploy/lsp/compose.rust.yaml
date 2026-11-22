@@ -1,4 +1,5 @@
 # 换成 Rust 版：叠在 compose.yaml 上面用，正式服务、演示服务器、推送中转都换成 open-super-agent:rust 镜像（Dockerfile.rust）。
+# 镜像里带着文档服务（Open Agent Docs），正式服务自己把它当子进程起，数据在 data/docs；演示服务器不开。
 # 数据目录、配置、端口、权限限制都不变，回退时去掉这个文件再 up 一次就回到 Python 版（镜像 open-super-agent:lsp 还在）。
 #   docker-compose -f compose.yaml -f compose.rust.yaml up -d
 # lsp 内存和磁盘都小，镜像不在服务器上编译：在别的机器上 docker build --platform linux/amd64 -f Dockerfile.rust -t open-super-agent:rust .
@@ -11,6 +12,9 @@ services:
       dockerfile: Dockerfile.rust
   demo:
     image: open-super-agent:rust
+    environment:
+      # 演示服务器的密码是公开的：不开文档，免得有人借它的分享链接对外发东西
+      OSA_DOCS: "off"
   relay:
     image: open-super-agent:rust
     command: ["osa-relay", "--host", "0.0.0.0", "--port", "8790"]

@@ -442,7 +442,7 @@ async fn assets(Path(p): Path<String>) -> Response {
     }
 }
 
-async fn fallback(req: Request) -> Response {
+pub async fn fallback(req: Request) -> Response {
     let path = req.uri().path().to_string();
     if path.starts_with("/api/") || path.starts_with("/hooks/") || path.starts_with("/oauth/") {
         return todo(&format!("{} {path}", req.method())).into_response();
@@ -540,6 +540,7 @@ pub async fn startup() {
         routines::import_legacy(p["id"].as_i64().unwrap_or(0));
     }
     mcp_hub::start().await;
+    crate::docs::start().await;
     crate::channels::start().await;
     tokio::spawn(crate::watchdog::watchdog());
     tokio::spawn(routines::scheduler());
@@ -570,5 +571,6 @@ pub static SHUTDOWN: LazyLock<(tokio::sync::watch::Sender<bool>, tokio::sync::wa
 pub async fn shutdown() {
     crate::channels::stop().await;
     mcp_hub::stop().await;
+    crate::docs::stop().await;
     crate::computer::shutdown().await;
 }

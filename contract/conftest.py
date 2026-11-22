@@ -69,9 +69,10 @@ class Server:
         cfg = make_config(self.tmp, llm.url, config)
         e = {k: v for k, v in os.environ.items()
              if k not in ("OSA_PASSWORD", "OSA_VAULT_KEY", "INSTABOX_API_KEY", "OSA_WEBHOOK_TOKEN", "DEEPSEEK_API_KEY",
-                          "OSA_ALLOWED_HOSTS", "OSA_DESKTOP", "OSA_PARENT_PID")}
+                          "OSA_ALLOWED_HOSTS", "OSA_DESKTOP", "OSA_PARENT_PID", "OSA_DOCS_URL", "OSA_DOCS_SECRET", "OSA_DOCS_BIN")}
         e |= {"OSA_CONFIG": str(cfg), "OSA_DATA_DIR": str(self.data), "FAKE_LLM_KEY": "test", "NO_PROXY": "*",
-              "no_proxy": "*", "TZ": "Asia/Shanghai"}
+              "no_proxy": "*", "TZ": "Asia/Shanghai",
+              "OSA_DOCS": "off"}   # 文档（Open Agent Docs）只在 test_docs.py 里开：本机 PATH 上有 open-agent-docs 时也不自己起
         e |= env or {}
         if IMPL == "rust":
             cmd = [RUST_BIN, "--host", "127.0.0.1", "--port", str(self.port)]

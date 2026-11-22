@@ -144,6 +144,7 @@ pub fn public() -> Value {
         "computer_current": pc::backend_name(),
         "computer_choices": pc::choices(),
         "computer_on_desktop": std::env::var("OSA_DESKTOP").is_ok_and(|v| !v.is_empty()),
+        "docs": {"configured": crate::docs::configured(), "ready": crate::docs::ready()},
         "computer_host_shell": py::truthy(&pc_cfg["host_shell"]),
         "embedding": {"provider": s(&emb["provider"]), "model": s(&emb["model"])},
         "image_model": crate::avatars::choice(false),

@@ -28,6 +28,9 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry --mount=type=cache,targe
 
 FROM node:24-bookworm-slim AS node
 
+# 文档（Open Agent Docs）：osa-server 自己把它当子进程起（只听 127.0.0.1，数据在 data/docs），见 docs/plans/oad.md
+FROM ghcr.io/kadaliao/open-agent-docs:0.3.1 AS oad
+
 FROM python:3.13-slim-bookworm AS base
 ARG NPM_REGISTRY=
 ARG PYPI_INDEX=
@@ -71,6 +74,7 @@ FROM base
 COPY config.yaml LICENSE ./
 COPY --from=web /src/osa/static/dist osa/static/dist
 COPY --from=build /out/osa-server /out/osa-relay /usr/local/bin/
+COPY --from=oad /usr/local/bin/open-agent-docs /usr/local/bin/
 EXPOSE 8765
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
   CMD curl -fsS http://127.0.0.1:8765/manifest.json -o /dev/null || exit 1

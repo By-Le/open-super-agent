@@ -33,9 +33,10 @@ function brTags() {
 const FILE_LINK = /^\/(api\/)?files\/download$/
 function Link({ node, href, ...p }: any) {
   const page = href?.match(/^\/library\/pages\/(\d+)$/)
-  if (page) return <a {...p} href={href} onClick={e => {
+  const doc = href?.match(/^(?:https?:\/\/[^/]+)?\/p\/([\w-]+)$/)   // 文档（Open Agent Docs 的页面地址）
+  if (page || (doc && (!/^https?:/.test(href) || new URL(href).origin === location.origin))) return <a {...p} href={href} onClick={e => {
     if (e.metaKey || e.ctrlKey) return
-    e.preventDefault(); window.dispatchEvent(new CustomEvent('osa-open-page', { detail: Number(page[1]) }))
+    e.preventDefault(); window.dispatchEvent(new CustomEvent('osa-open-page', { detail: page ? Number(page[1]) : doc![1] }))
   }} />
   const u = typeof href === 'string' ? (() => { try { return new URL(href, location.href) } catch { return null } })() : null
   if (u && u.origin === location.origin && FILE_LINK.test(u.pathname)) {

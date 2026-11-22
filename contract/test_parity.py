@@ -15,8 +15,15 @@ from fakellm_http import Call, FakeLLM
 pytestmark = pytest.mark.skipif(not Path(RUST_BIN).exists(), reason="没有构建 Rust 版")
 
 
+# Rust 版有意改过说明的工具（文档只有 Rust 版有，见 docs/plans/oad.md）：只比名字
+RUST_ONLY_SCHEMA = {"save_page", "read_page"}
+
+
 def normalize(v):
     if isinstance(v, dict):
+        fn = v.get("function") if isinstance(v.get("function"), dict) else v
+        if isinstance(fn.get("name"), str) and fn["name"] in RUST_ONLY_SCHEMA and ("description" in fn or "parameters" in fn or "input_schema" in fn):
+            return {"name": fn["name"]}
         return {k: normalize(x) for k, x in v.items()}
     if isinstance(v, list):
         return [normalize(x) for x in v]

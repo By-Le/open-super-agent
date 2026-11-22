@@ -7,6 +7,7 @@ pub fn extra() -> axum::Router {
         .merge(skills::routes())
         .merge(templates::routes())
         .merge(library::routes())
+        .merge(docs::routes())
         .merge(media::routes())
         .merge(search::routes())
         .merge(unfurl::routes())

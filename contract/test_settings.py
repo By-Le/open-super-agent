@@ -10,7 +10,7 @@ from fakellm_http import Call
 SETTINGS_KEYS = {"providers", "presets", "roles", "limits", "heavy_workers", "computer_parallel", "computer_backend",
                  "computer_backends", "computer_current", "computer_choices", "computer_on_desktop", "computer_host_shell",
                  "embedding", "image_model", "image_edit_model", "video_model", "model_info", "prices", "problem",
-                 "language", "security"}
+                 "language", "security", "docs"}
 
 # 冒充 models.dev：一家 DeepSeek（地址和 api.deepseek.com 对上），一家没地址的
 MODELS_DEV = {

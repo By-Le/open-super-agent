@@ -130,7 +130,16 @@ def _py_keys() -> dict[str, list[str]]:
                 keys.setdefault(a.value, []).append(where)
             elif isinstance(a, ast.JoinedStr):
                 keys.setdefault("!f-string", []).append(where)
+    # Rust 版里只有它用到的句子（比如文档 docs.rs）：t!("…")
+    for f in sorted((ROOT / "server" / "crates" / "osa" / "src").rglob("*.rs")):
+        src = f.read_text()
+        for m in _RS_T.finditer(src):
+            k = re.sub(r"\\(.)", lambda x: {"n": "\n", "t": "\t"}.get(x[1], x[1]), m[1])
+            keys.setdefault(k, []).append(f"{f.relative_to(ROOT)}:{src.count(chr(10), 0, m.start()) + 1}")
     return keys
+
+
+_RS_T = re.compile(r'\bt!\(\s*"((?:\\.|[^"\\])*)"')
 
 
 # t('…') / tn("…")，tc('场景', '…')：取引号里的内容

@@ -119,6 +119,15 @@ fn next_id() -> i64 {
     bid
 }
 
+/// 文档里的 Agent 跟着 Bot 建、改名、撤（没配文档、或不在 tokio 里时不做，下次启动 docs::sync 补上）
+fn docs_later(f: impl std::future::Future<Output = ()> + Send + 'static) {
+    if crate::docs::configured()
+        && let Ok(h) = tokio::runtime::Handle::try_current()
+    {
+        h.spawn(f);
+    }
+}
+
 fn clip_name(s: &str, n: usize) -> String {
     py::head(s.trim(), n)
 }
@@ -138,6 +147,7 @@ pub fn create(name: &str, avatar: &Value, instructions: &str, is_primary: bool) 
         params![bid, nm, py::dumps(&avatar, true), instructions, is_primary as i64, now],
     );
     db::exec("insert into chats(kind, title, bot_ids, updated) values('direct', ?, ?, ?)", params![name, ids_json(&[bid]), now]);
+    docs_later(crate::docs::on_bot_created(bid));
     Ok(get(bid).unwrap_or(Value::Null))
 }
 
@@ -148,6 +158,8 @@ pub fn update(bot_id: i64, fields: &Value) -> Result<Value, String> {
         let nm = if nm.is_empty() { t!("未命名") } else { nm };
         db::exec("update bots set name=? where id=?", params![nm, bot_id]);
         db::exec("update chats set title=? where kind='direct' and bot_ids=?", params![nm, ids_json(&[bot_id])]);
+        let an = crate::docs::agent_name(&nm, bot_id);
+        docs_later(async move { crate::docs::rename(bot_id, &an).await });
     }
     if fields.get("instructions").is_some_and(|v| !v.is_null()) {
         db::exec("update bots set instructions=? where id=?", params![py::head(&py::str_of(&fields["instructions"]), 4000), bot_id]);
@@ -173,6 +185,7 @@ pub fn delete(bot_id: i64) -> Result<(), String> {
         delete_chat(c);
     }
     db::exec("delete from bots where id=?", params![bot_id]);
+    docs_later(crate::docs::forget(bot_id));
     for g in list_chats().into_iter().filter(|c| c["kind"] == "group" && ids_of(c).contains(&bot_id)) {
         let ids: Vec<i64> = ids_of(&g).into_iter().filter(|i| *i != bot_id).collect();
         let lead = g["lead"].as_i64().filter(|l| ids.contains(l)).or(ids.first().copied());

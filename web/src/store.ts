@@ -33,7 +33,7 @@ type State = {
   oauthCallback: string              // 登录授权的回调地址：自己建 OAuth 客户端时要填到对方那里
   skills: Record<number, Skill[]>    // 每个 Bot 能用的技能（含共用的）
   view: 'chat' | 'library' | 'apps' | 'observe'  // 主区显示对话、资料库、应用市场还是观测页
-  libraryPage: number | null         // 资料库里打开的页面
+  libraryPage: number | string | null   // 资料库里打开的：数字是网页，字符串是文档
   teach: Teach | null                // 正在“演示一遍”的录制
   teachDraft: TeachDraft | null      // 录完生成的技能草稿，等你在技能面板里审核
   auth: boolean                      // 能退出登录：服务端开了登录（设置了 OSA_PASSWORD），且不是桌面 App 自带的服务
@@ -334,7 +334,7 @@ export function showTask(id: number | null) {
   if (id) window.dispatchEvent(new CustomEvent('osa-open-task'))
 }
 
-export function openLibrary(pageId: number | null = null) {
+export function openLibrary(pageId: number | string | null = null) {
   set({ view: 'library', libraryPage: pageId })
 }
 

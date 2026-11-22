@@ -119,7 +119,7 @@
     "type": "function",
     "function": {
      "name": "save_page",
-     "description": "把成品（报告、清单、对比表、网页等）保存成资料库里的页面，返回页面链接。用户要“做成页面/报告/可以分享的页面”，或结果很长、以后还要看时用。给 page_id 就是更新那个页面。要做成可交互的小应用（表单、看板、计算器、能点按钮查东西的面板）时 format=html 并填 app，页面里用 window.osa 调工具、读写数据、给你发消息（见系统提示词里的说明）。",
+     "description": "把成品（报告、清单、对比表、网页等）保存下来，返回链接。用户要“做成页面/报告/可以分享的页面”，或结果很长、以后还要看时用。markdown 存成文档（和用户一起写的那种，用户能评论、能分享），html 存成资料库里的网页。给 page_id 就是更新那一篇（文档的 page_id 是字符串，网页是数字）。要做成可交互的小应用（表单、看板、计算器、能点按钮查东西的面板）时 format=html 并填 app，页面里用 window.osa 调工具、读写数据、给你发消息（见系统提示词里的说明）。",
      "parameters": {
       "type": "object",
       "properties": {
@@ -138,8 +138,8 @@
         ]
        },
        "page_id": {
-        "type": "integer",
-        "description": "可选：要更新的页面编号"
+        "type": "string",
+        "description": "可选：要更新的那一篇的编号（网页是数字，文档是一串字母数字）"
        },
        "app": {
         "type": "object",
@@ -181,12 +181,13 @@
     "type": "function",
     "function": {
      "name": "read_page",
-     "description": "读资料库里一个页面的全文（html 页面只给文字）。页面编号可以用 search_memory 查到",
+     "description": "读一篇文档或资料库网页的全文（html 网页只给文字）。编号可以用 search_memory 查到；文档的编号是字符串",
      "parameters": {
       "type": "object",
       "properties": {
        "page_id": {
-        "type": "integer"
+        "type": "string",
+        "description": "网页是数字，文档是一串字母数字"
        }
       },
       "required": [
