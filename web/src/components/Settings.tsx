@@ -29,7 +29,7 @@ const GROUPS: { name: string; items: [string, string, string][] }[] = [
 const TITLES = Object.fromEntries(GROUPS.flatMap(g => g.items.map(([k, v]) => [k, v])))
 const DESC: Record<string, string> = {
   models: t('Bot 用哪些大模型。先添加模型服务，再给每项工作选一个模型。'),
-  web: t('Bot 查资料时用哪家搜索网页、读网页。各家怎么调写在配方里（osa/websearch.yaml），在 config.yaml 里能加别家。'),
+  web: t('Bot 查资料、读网页、看大家在社交平台上怎么说时用。'),
   limits: t('防止任务跑太久、花太多。改完离开输入框就保存。'),
   computer: t('Bot 上网、跑命令、处理文件用的那台电脑。你的 Mac 不在这里：它们是派任务的去处，在 Bot 右栏的“电脑”里管。'),
   triggers: t('所有 Bot 的定时任务，在这里就能开关。'),

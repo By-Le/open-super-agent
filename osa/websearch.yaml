@@ -231,7 +231,7 @@ recipes:
     platform: x
     title: X（Exa 搜索，免费）
     desc: 用 Exa 的免费搜索找 X 帖子，再免费补上点赞、回复数。不用账号、不要钱；不一定是最新的
-    en: {title: X (Exa search, free), desc: "Finds X posts with Exa's free search, then fills in likes and replies for free. No account, no cost; may miss the newest posts"}
+    en: {title: "X (Exa search, free)", desc: "Finds X posts with Exa's free search, then fills in likes and replies for free. No account, no cost; may miss the newest posts"}
     request:
       mcp: https://mcp.exa.ai/mcp
       tool: web_search_exa
@@ -245,7 +245,7 @@ recipes:
     platform: reddit
     title: Reddit（Exa 搜索，免费）
     desc: 用 Exa 的免费搜索找 Reddit 帖子，只有标题和摘要、没有分数。不用账号、不要钱；不一定是最新的
-    en: {title: Reddit (Exa search, free), desc: "Finds Reddit threads with Exa's free search: titles and snippets, no scores. No account, no cost; may miss the newest threads"}
+    en: {title: "Reddit (Exa search, free)", desc: "Finds Reddit threads with Exa's free search: titles and snippets, no scores. No account, no cost; may miss the newest threads"}
     request:
       mcp: https://mcp.exa.ai/mcp
       tool: web_search_exa

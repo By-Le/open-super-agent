@@ -1326,3 +1326,13 @@ textarea.newbot-role.edit { display: block; width: 100%; max-height: 360px; resi
 .ev-multi .check { margin: 4px 0; font-size: 13px; }
 .ev-tag { margin: 0 6px 0 0; }
 .routine .warn { color: #d97706; }
+/* 设置 → 搜索和读网页：上面一眼看懂的概览，下面折起来的“自己挑服务” */
+.web-ov { border: 1px solid var(--line); border-radius: 14px; gap: 8px; }
+.web-ov-rows { display: grid; grid-template-columns: auto auto 1fr; gap: 9px 10px; align-items: center; font-size: 13.5px; }
+.web-ov-row { display: contents; }
+.web-ov-row b { font-weight: 600; white-space: nowrap; }
+.web-ov-row .ok { color: var(--good); } .web-ov-row .off { color: var(--fg3); }
+.web-adv { margin-top: 4px; }
+.web-adv > .set-sec:first-of-type { margin-top: 4px; }
+.web-more { margin-top: 10px; }
+.web-ov-note { margin: 0 0 2px; color: var(--fg2); }

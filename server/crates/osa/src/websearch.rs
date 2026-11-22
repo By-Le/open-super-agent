@@ -1184,7 +1184,7 @@ pub fn public() -> Value {
             }).collect();
             rows.push(json!({
                 "name": r["name"], "title": tr(&r, "title"), "desc": tr(&r, "desc"), "link": r["link"].as_str().unwrap_or(""),
-                "platform": if plat.is_empty() { String::new() } else { platform_name(plat) }, "per_item": py::truthy(&r["price_usd_item"]),
+                "platform": if plat.is_empty() { String::new() } else { platform_name(plat) }, "per_item": py::truthy(&r["price_usd_item"]), "site_only": py::truthy(&r["hosts"]),
                 "via": r["via"].as_str().unwrap_or(""), "missing": why, "on": is_on, "auto": r.get("auto").cloned().unwrap_or(json!(true)),
                 "price": price_of(&r), "provider": provider_of(&r).unwrap_or_default(), "fields": fields}));
         }

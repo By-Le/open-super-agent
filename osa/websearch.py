@@ -783,7 +783,7 @@ def public() -> dict:
             on = _on(kind, r, names) and (bool(names) or not why)
             rows.append({
                 "name": r["name"], "title": _tr(r, "title"), "desc": _tr(r, "desc"), "link": r.get("link") or "",
-                "platform": PLATFORMS.get(r.get("platform") or "", r.get("platform") or ""), "per_item": bool(r.get("price_usd_item")),
+                "platform": PLATFORMS.get(r.get("platform") or "", r.get("platform") or ""), "per_item": bool(r.get("price_usd_item")), "site_only": bool(r.get("hosts")),
                 "via": r.get("via") or "",
                 "missing": why, "on": on, "auto": r.get("auto", True), "price": _price(r),
                 "provider": _provider(r) or "",
