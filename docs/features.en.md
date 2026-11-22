@@ -58,7 +58,9 @@ The README lists the highlights; this is the full list. For setup see [Configura
 
 ## Web search and reading
 
-- **Several providers in turn**: in Settings → Search & web pages, turn providers on and order them: DeepSeek (first by default when you have a DeepSeek model provider), Exa (free), Tavily, Brave, Bocha, SearXNG, with DuckDuckGo last;
+- **Works without setup**: free services (Exa, direct fetching and others) are used by default; no API key needed. Settings → Search & web pages opens on an overview:
+  one row each for web search, page reading and each platform's posts, showing which service is in use, whether it's free, and how many backups there are. When a paid service is in use (DeepSeek comes first if you have it), it says which rows cost money and whose account pays.
+- **Several providers in turn**: under "Choose services" below the overview, turn providers on and order them: DeepSeek (first by default when you have a DeepSeek model provider), Exa (free), Tavily, Brave, Bocha, SearXNG, with DuckDuckGo last;
   page reading also has Jina Reader and direct fetching. If one errors, is rate-limited or finds nothing, the next one is tried. Other providers are recipes added in `config.yaml`, no code changes.
 - **Only recent results**: for news and current events, Bots search just the last few days.
 - **Blocked sites**: sites on this list (baidu.com by default) are dropped from results, and Bots won't read or open them.
@@ -66,7 +68,7 @@ The README lists the highlights; this is the full list. For setup see [Configura
   the paid X API is used only when needed, with a per-task budget (US$0.05 by default). Xiaohongshu and Reddit posts are read in the computer's signed-in browser; you log in the first time.
 - The `/recent-buzz` skill in the skill market searches all of these and writes a cited report with engagement counts to the library; it can run as a weekly routine. See [Configuration](configuration.md#搜索和读网页) (Chinese).
 
-<img src="images/settings-web.webp" width="640" alt="Settings → Search & web pages: DeepSeek and Exa turned on as first and second; Tavily, Brave Search and Bocha still need an API key">
+<img src="images/settings-web.webp" width="640" alt="Settings → Search & web pages: an overview with one row each for web search, page reading, X, Reddit and Xiaohongshu, showing the service in use and whether it is free; choosing services is folded below">
 
 ## Apps, skills and templates
 
