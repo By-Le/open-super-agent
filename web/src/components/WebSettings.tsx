@@ -61,7 +61,7 @@ function Overview({ w }: { w: Web }) {
     const s = use[0]
     const browser = s?.via === 'browser'
     const cost = s && (s.price ? t('收费') : s.price === 0 ? t('免费') : '')
-    const said = s && /免费|free/i.test(s.title)   // “Exa（免费）”这种名字里已经说了
+    const said = s && /免费|free/i.test(s.title)   // “Exa（免费）”这种名字里已经说了 i18n-ignore
     const text = !s ? none
       : (browser ? t('用电脑上的浏览器，第一次要你登录一下') : (/^[\u4e00-\u9fff]/.test(s.title) ? t('用{name}', { name: s.title }) : t('用 {name}', { name: s.title })) + (cost && !said ? ' · ' + cost : ''))
         + (use.length > 1 ? ' · ' + t('另有 {n} 家备用', { n: use.length - 1 }) : '')
