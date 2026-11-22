@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>open-super-agent: an AI teammate with its own computer</title>
+<meta name="description" content="Chats, delegates work, and has a computer you can watch and take over. Open source, an alternative to Grok Bot. Bring your own model and pay per token. macOS app, Docker server, iPhone and chat apps.">
+<meta name="theme-color" content="#f4f5f7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#131417" media="(prefers-color-scheme: dark)">
+<link rel="icon" href="../assets/diamond.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
+<link rel="alternate" hreflang="zh-CN" href="https://kadaliao.github.io/open-super-agent/">
+<link rel="alternate" hreflang="en" href="https://kadaliao.github.io/open-super-agent/en/">
+<link rel="canonical" href="https://kadaliao.github.io/open-super-agent/en/">
+<meta property="og:type" content="website">
+<meta property="og:title" content="open-super-agent: a self-hosted, always-on AI teammate">
+<meta property="og:description" content="Chats, delegates work, and has a computer you can watch and take over. Open source, bring your own model.">
+<meta property="og:url" content="https://kadaliao.github.io/open-super-agent/en/">
+<meta property="og:image" content="https://kadaliao.github.io/open-super-agent/images/macos-app.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="./" aria-label="open-super-agent home">
+      <svg viewBox="0 0 20 20" aria-hidden="true"><polygon points="10,1 19,10 10,19 1,10" fill="currentColor"/></svg>
+      open-super-agent
+    </a>
+    <nav class="nav" aria-label="Page">
+      <a href="#tour">Tour</a>
+      <a href="#features">Features</a>
+      <a href="#clients">Clients</a>
+      <a href="#start">Get started</a>
+      <a href="#docs">Docs</a>
+      <a href="https://github.com/kadaliao/open-super-agent">GitHub</a>
+    </nav>
+    <a class="lang" href="../" hreflang="zh-CN" lang="zh-CN">中文</a>
+  </div>
+</header>
+
+<main id="main">
+
+<div class="hero">
+  <div class="wrap">
+    <div>
+      <div class="cast" aria-hidden="true">
+        <svg viewBox="0 0 40 40"><path d="M20 2c1.6 10.5 6.6 15.6 18 18-11.4 2.4-16.4 7.5-18 18-1.6-10.5-6.6-15.6-18-18 11.4-2.4 16.4-7.5 18-18z" fill="#4a6cf7"/><circle cx="16.5" cy="19.5" r="1.8" fill="#16171b"/><circle cx="23.5" cy="19.5" r="1.8" fill="#16171b"/></svg>
+        <svg viewBox="0 0 40 40"><g fill="#f2557f"><circle cx="20" cy="9" r="8"/><circle cx="30.5" cy="16.6" r="8"/><circle cx="26.5" cy="29" r="8"/><circle cx="13.5" cy="29" r="8"/><circle cx="9.5" cy="16.6" r="8"/><circle cx="20" cy="20" r="9"/></g><circle cx="16.5" cy="20" r="1.8" fill="#16171b"/><circle cx="23.5" cy="20" r="1.8" fill="#16171b"/></svg>
+        <svg viewBox="0 0 40 40"><polygon points="20,2 25.3,14.2 38.5,15.4 28.5,24.2 31.4,37.2 20,30.4 8.6,37.2 11.5,24.2 1.5,15.4 14.7,14.2" fill="#f5b70a" stroke="#f5b70a" stroke-width="2.5" stroke-linejoin="round"/><circle cx="16.5" cy="22" r="1.8" fill="#16171b"/><circle cx="23.5" cy="22" r="1.8" fill="#16171b"/></svg>
+      </div>
+      <h1><span>An AI teammate</span> <span>with its own computer</span></h1>
+      <p class="lede">open-super-agent is a self-hosted, always-on AI teammate. It browses, fills in forms and downloads files on its computer while you watch the screen live, and hands over to you for captchas and logins. Open source, an alternative to <a href="https://x.ai/bot">Grok Bot</a>. Bring your own model and pay per token.</p>
+      <div class="actions">
+        <a class="btn primary" href="https://github.com/kadaliao/open-super-agent/releases/latest">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M16.4 12.6c0-2.6 2.1-3.8 2.2-3.9-1.2-1.8-3.1-2-3.7-2-1.6-.2-3.1.9-3.9.9-.8 0-2-.9-3.4-.9-1.7 0-3.3 1-4.2 2.6-1.8 3.1-.5 7.7 1.3 10.2.9 1.2 1.9 2.6 3.2 2.6 1.3-.1 1.8-.8 3.3-.8 1.6 0 2 .8 3.4.8 1.4 0 2.3-1.3 3.1-2.5 1-1.4 1.4-2.8 1.4-2.9-.1 0-2.7-1-2.7-4.1zM13.9 5c.7-.9 1.2-2 1-3.2-1 0-2.3.7-3 1.6-.7.8-1.3 2-1.1 3.1 1.2.1 2.3-.6 3.1-1.5z"/></svg>
+          Download for macOS
+        </a>
+        <a class="btn" href="#start">Deploy to a server</a>
+        <a class="btn" href="https://github.com/kadaliao/open-super-agent">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 .5C5.7.5.5 5.7.5 12c0 5.1 3.3 9.4 7.9 10.9.6.1.8-.3.8-.6v-2c-3.2.7-3.9-1.5-3.9-1.5-.5-1.3-1.3-1.7-1.3-1.7-1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.7-1.6-2.6-.3-5.3-1.3-5.3-5.7 0-1.3.5-2.3 1.2-3.1-.1-.3-.5-1.5.1-3.1 0 0 1-.3 3.2 1.2a11 11 0 0 1 5.8 0c2.2-1.5 3.2-1.2 3.2-1.2.6 1.6.2 2.8.1 3.1.8.8 1.2 1.9 1.2 3.1 0 4.4-2.7 5.4-5.3 5.7.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6 4.6-1.5 7.9-5.8 7.9-10.9C23.5 5.7 18.3.5 12 .5z"/></svg>
+          Source
+        </a>
+      </div>
+      <p class="hero-note">Or <code>brew install --cask kadaliao/tap/open-super-agent</code></p>
+    </div>
+    <figure class="hero-shot" style="margin:0">
+      <div class="window">
+        <div class="window-bar"><i></i><i></i><i></i><span>Feature tour (silent, sped up, Chinese UI)</span></div>
+        <img src="../images/demo.webp" width="1280" height="720" alt="Feature tour: link cards and videos in chat, a side thread on one message, background tasks you can watch, a Bot filling in a form on its own computer, asking before key actions, a group of Bots splitting the work, Bots messaging each other, drawing a poster from one sentence, scheduled tasks, 40 connected apps, skills learned from one demo, remembered preferences, and every cost">
+      </div>
+      <button class="play" type="button" data-open-promo>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="11" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M10 8l6 4-6 4z" fill="currentColor"/></svg>
+        Watch the promo (2 min, Chinese voice-over)
+      </button>
+    </figure>
+  </div>
+</div>
+
+<section id="tour" aria-labelledby="tour-h">
+  <div class="wrap">
+    <h2 id="tour-h">A look around</h2>
+    <p class="section-lede">The screenshots use demo data: an indie developer launching “Tidal Notes 2.0”. The three Bots and everything on the pages were produced by a real model. The UI is shown in Chinese; it also comes in English.</p>
+    <div class="tour">
+      <ul class="tour-list" role="tablist" aria-label="Feature screenshots">
+        <li><button class="tour-tab" role="tab" id="t-group" aria-controls="p-group" style="--accent:var(--nova)"><b>Group work</b><span>Nova assigns the work, Radar hands its competitor research to Quill, and Quill writes the announcement opening into the library.</span></button></li>
+        <li><button class="tour-tab" role="tab" id="t-task" aria-controls="p-task" style="--accent:var(--quill)"><b>Background tasks</b><span>Long jobs run in the background while you keep chatting, with every step on the right: web search, X, Reddit, Xiaohongshu, reading pages.</span></button></li>
+        <li><button class="tour-tab" role="tab" id="t-applet" aria-controls="p-applet" style="--accent:var(--radar)"><b>Applets</b><span>A launch countdown Nova built from one sentence, with to-dos you can tick off.</span></button></li>
+        <li><button class="tour-tab" role="tab" id="t-events" aria-controls="p-events" style="--accent:var(--nova)"><b>Events</b><span>“Tell me when this page changes”: Radar watches for a new release and a pricing page change.</span></button></li>
+        <li><button class="tour-tab" role="tab" id="t-skills" aria-controls="p-skills" style="--accent:var(--quill)"><b>Skills</b><span>Radar's skills, installed from the skill market. Teach a new one by doing the task once, then run it again with /name.</span></button></li>
+        <li><button class="tour-tab" role="tab" id="t-observe" aria-controls="p-observe" style="--accent:var(--radar)"><b>Insights</b><span>What you spent, how fast things ran and what went wrong, per Bot if you like, with a daily budget.</span></button></li>
+        <li><button class="tour-tab" role="tab" id="t-apps" aria-controls="p-apps" style="--accent:var(--nova)"><b>App market</b><span>40 apps, including Notion, Gmail, Feishu, DingTalk and Tencent Docs, connected with a login or a token.</span></button></li>
+      </ul>
+      <div class="tour-stage">
+        <div class="window">
+          <div class="window-bar"><i></i><i></i><i></i></div>
+          <img id="p-group" role="tabpanel" aria-labelledby="t-group" src="../images/chat-group.webp" width="1600" height="1000" loading="lazy" alt="The group chat “2.0 launch team”: Nova assigns the work, Radar picks three pricing differences from the competitor research and hands them to Quill, and Quill saves the opening of the announcement to the library">
+          <img id="p-task" role="tabpanel" aria-labelledby="t-task" src="../images/task-steps.webp" width="1600" height="1000" loading="lazy" hidden alt="Radar's finished background task, with each step listed on the right: web search, Reddit, Xiaohongshu, X, reading pages, and how long each took">
+          <img id="p-applet" role="tabpanel" aria-labelledby="t-applet" src="../images/applet.webp" width="1600" height="1000" loading="lazy" hidden alt="An applet in the chat, a launch countdown: 3 days 15 hours to go, with the unfinished tasks below as checkboxes">
+          <img id="p-events" role="tabpanel" aria-labelledby="t-events" src="../images/events.webp" width="1600" height="1000" loading="lazy" hidden alt="The Events tab: “Obsidian new release” and “flomo pricing page changed”, each with test, check now, pause, edit and history">
+          <img id="p-skills" role="tabpanel" aria-labelledby="t-skills" src="../images/skills.webp" width="1600" height="1000" loading="lazy" hidden alt="Radar's Skills tab with two skills from the skill market, weekly report and recent buzz, plus buttons to teach a task, open the market and import; in the chat Radar has set up a weekly routine and two events">
+          <img id="p-observe" role="tabpanel" aria-labelledby="t-observe" src="../images/observe.webp" width="1600" height="1000" loading="lazy" hidden alt="The Insights page: today's spend, tokens, tasks and time to first reply, hourly spend, and spend per Bot">
+          <img id="p-apps" role="tabpanel" aria-labelledby="t-apps" src="../images/apps.webp" width="1600" height="1000" loading="lazy" hidden alt="The app market: Notion, flomo, Tencent Docs, DingTalk Docs, Feishu Docs, Yuque, Evernote, Gmail, QQ Mail and more, filtered by category">
+        </div>
+        <p class="tour-desc" aria-hidden="true"></p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="features" aria-labelledby="features-h">
+  <div class="wrap">
+    <h2 id="features-h">What it does</h2>
+    <p class="section-lede">Each Bot has its own persona, memory and conversation, and its own computer. You ask, it works, and you can see every step.</p>
+    <ul class="points">
+      <li><h3>Chats and delegates</h3><p>Long jobs run as background tasks while you keep chatting. Put several Bots in a group, and one hands its research to another to write up.</p></li>
+      <li><h3>A computer you can watch</h3><p>Bots browse, fill in forms and download files while you watch live. Several tasks run at once, each in its own browser window, without queueing.</p></li>
+      <li><h3>Or simply your Mac</h3><p>Once you grant the permissions, Bots use the mouse and keyboard in apps like WeChat, Finder and Notes, and stop as soon as you move the mouse.</p></li>
+      <li><h3>Finds what's new</h3><p>Web search and page reading rotate across providers (DeepSeek, Exa, Tavily…), and Bots can search posts on X, Reddit and Xiaohongshu with like and comment counts.</p></li>
+      <li><h3>Connects to your apps</h3><p>40 apps in the market, including Notion, Gmail, GitHub, Feishu, DingTalk and Tencent Docs. Any MCP server works too.</p></li>
+      <li><h3>Asks before acting</h3><p>Sending mail, submitting forms and similar actions show a card first. Secrets are encrypted in a vault and never enter the chat.</p></li>
+      <li><h3>Any model, visible cost</h3><p>DeepSeek, Kimi, Zhipu, OpenAI, Ollama on your machine, or any OpenAI-compatible endpoint. Drawing, image editing and video generation are wired up through config.</p></li>
+      <li><h3>Show it once, run it on time</h3><p>Do a task once and it becomes a skill. Say “every day at 9, …” for a routine, or “tell me when this page changes” for an event.</p></li>
+      <li><h3>Your data stays yours</h3><p>It runs on your own machine. All data, secrets included, exports as one encrypted file you can carry to another machine.</p></li>
+    </ul>
+    <p class="more"><a href="https://github.com/kadaliao/open-super-agent/blob/main/docs/features.en.md">See every feature</a></p>
+  </div>
+</section>
+
+<section id="clients" aria-labelledby="clients-h">
+  <div class="wrap">
+    <h2 id="clients-h">Where you use it</h2>
+    <p class="section-lede">The same Bots, always on in one place, reachable from wherever you are.</p>
+    <ul class="clients">
+      <li><h3>macOS app</h3><p>Download the dmg and open it: about 45 MB, no Docker or Python. It keeps running in the menu bar after you close the window.</p><a href="https://github.com/kadaliao/open-super-agent/blob/main/docs/desktop.md">Desktop app docs</a></li>
+      <li><h3>Server</h3><p>One <code>docker compose up</code> on a VPS or a machine at home. Connect from a browser, the app, your phone or a chat app.</p><a href="https://github.com/kadaliao/open-super-agent/blob/main/docs/docker.md">Docker docs</a></li>
+      <li><h3>iPhone app<small>TestFlight</small></h3><p>Scan a QR code on your computer to connect. Approvals and finished tasks are pushed to your phone, encrypted.</p><a href="https://github.com/kadaliao/open-super-agent/blob/main/docs/mobile.md">iPhone app docs</a></li>
+      <li><h3>Chat apps</h3><p>Talk to your Bots from Telegram, Feishu/Lark, DingTalk, WeCom or Discord, with approvals as message buttons.</p><a href="https://github.com/kadaliao/open-super-agent/blob/main/docs/channels.md">Chat app docs</a></li>
+    </ul>
+    <div class="devices">
+      <figure class="mac" style="margin:0">
+        <img src="../images/macos-app.png" width="1398" height="968" loading="lazy" alt="The macOS desktop app: Bots on the left, Nova's reply after writing a trip checklist into TextEdit in the middle, and the computer panel on the right set to This computer, showing the Mac's screen live">
+        <figcaption class="caption">The desktop app: Nova writes a trip checklist into TextEdit on this Mac. <a href="../images/mac-control.mp4">Watch a Bot use the whole Mac</a></figcaption>
+      </figure>
+      <div class="phones">
+        <img src="../images/ios-chat.png" width="599" height="1304" loading="lazy" alt="iPhone app: a conversation">
+        <img src="../images/ios-approval.png" width="599" height="1304" loading="lazy" alt="iPhone app: an approval card with allow once, always allow and deny">
+        <img src="../images/ios-computer.png" width="599" height="1304" loading="lazy" alt="iPhone app: watching the Bot computer live, ready to take over">
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="start" aria-labelledby="start-h">
+  <div class="wrap">
+    <h2 id="start-h">Get started</h2>
+    <p class="section-lede">The first time you open it, a short guide walks you through adding a model provider, meeting your Bot and connecting an app. Models run at the provider, so no GPU is needed.</p>
+    <div class="paths">
+      <div>
+        <h3>On a Mac</h3>
+        <p>macOS 12 or later, Apple silicon or Intel, 8 GB of RAM or more.</p>
+        <ol class="steps">
+          <li>Download the dmg for your chip from the <a href="https://github.com/kadaliao/open-super-agent/releases/latest">releases page</a>, or use Homebrew:
+            <div class="code"><pre>brew install --cask kadaliao/tap/open-super-agent</pre><button class="copy" type="button" data-done="Copied">Copy</button></div>
+          </li>
+          <li>Open the app and choose “Run on this computer”.</li>
+        </ol>
+      </div>
+      <div>
+        <h3>On a server</h3>
+        <p>You only need Docker. With a cloud computer, 1 core and 1 GB is enough; with the local Docker computer, 4 cores and 8 GB is recommended.</p>
+        <ol class="steps">
+          <li>Clone and start it:
+            <div class="code"><pre>git clone https://github.com/kadaliao/open-super-agent.git
+cd open-super-agent
+cp .env.example .env  <span class="c"># optionally add DEEPSEEK_API_KEY</span>
+docker compose up -d  <span class="c"># first build takes 5–10 min</span></pre><button class="copy" type="button" data-done="Copied">Copy</button></div>
+          </li>
+          <li>Open <code>http://127.0.0.1:8765</code>. For automatic HTTPS and backups, see the <a href="https://github.com/kadaliao/open-super-agent/blob/main/docs/docker.md">deployment docs</a> (Chinese).</li>
+        </ol>
+      </div>
+    </div>
+    <p class="warn"><strong>Turn on login before going public.</strong> Login is off by default, so run it on localhost or a private network such as Tailscale. For the public internet, set <code>OSA_PASSWORD</code> and serve it over HTTPS. See <a href="https://github.com/kadaliao/open-super-agent/blob/main/SECURITY.md">SECURITY.md</a>.</p>
+  </div>
+</section>
+
+<section id="docs" aria-labelledby="docs-h">
+  <div class="wrap">
+    <h2 id="docs-h">Documentation</h2>
+    <p class="section-lede">The docs live in the GitHub repository next to the code. Features and the comparison are in English; the rest are in Chinese for now.</p>
+    <ul class="docs">
+      <li><a href="https://github.com/kadaliao/open-super-agent/blob/main/docs/features.en.md"><b>Features</b><span>Every feature, grouped by topic</span></a></li>
+      <li><a href="https://github.com/kadaliao/open-super-agent/blob/main/docs/comparison.en.md"><b>Compared with OpenMausBot</b><span>Trade-offs between two open-source Grok Bot alternatives</span></a></li>
+      <li><a href="https://github.com/kadaliao/open-super-agent/blob/main/docs/docker.md"><b>Deploy with Docker Compose</b><span>One command, automatic HTTPS, data and backups</span></a></li>
+      <li><a href="https://github.com/kadaliao/open-super-agent/blob/main/docs/configuration.md"><b>Configuration</b><span>Models, drawing, search, the computer, apps, approvals and the vault</span></a></li>
+      <li><a href="https://github.com/kadaliao/open-super-agent/blob/main/docs/events.md"><b>Events</b><span>Webhooks, GitHub, feeds, page changes, mail, prices…</span></a></li>
+      <li><a href="https://github.com/kadaliao/open-super-agent/blob/main/docs/desktop.md"><b>Desktop app</b><span>Run locally, connect to a server, menu bar, updates</span></a></li>
+      <li><a href="https://github.com/kadaliao/open-super-agent/blob/main/docs/mobile.md"><b>iPhone app</b><span>QR pairing and how pushes reach your phone</span></a></li>
+      <li><a href="https://github.com/kadaliao/open-super-agent/blob/main/docs/channels.md"><b>Chat apps</b><span>Telegram, Feishu/Lark, DingTalk, WeCom, Discord</span></a></li>
+      <li><a href="https://github.com/kadaliao/open-super-agent/blob/main/docs/skills.md"><b>Skills</b><span>Writing skills, packages, the market, Claude SKILL.md</span></a></li>
+      <li><a href="https://github.com/kadaliao/open-super-agent/blob/main/docs/apps.md"><b>Adding an app</b><span>Manifest format, icons, testing locally, sending a PR</span></a></li>
+      <li><a href="https://github.com/kadaliao/open-super-agent/blob/main/docs/architecture.md"><b>Architecture</b><span>How the pieces fit, code layout, conventions</span></a></li>
+      <li><a href="https://github.com/kadaliao/open-super-agent/blob/main/docs/roadmap.md"><b>Roadmap</b><span>What comes next, and in what order</span></a></li>
+    </ul>
+  </div>
+</section>
+
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>MIT License © Kada Liao</span>
+    <nav aria-label="Footer">
+      <a href="https://github.com/kadaliao/open-super-agent">GitHub</a>
+      <a href="https://github.com/kadaliao/open-super-agent/releases">Releases</a>
+      <a href="https://github.com/kadaliao/open-super-agent/blob/main/CHANGELOG.md">Changelog</a>
+      <a href="https://github.com/kadaliao/open-super-agent/issues">Issues</a>
+      <a href="https://github.com/kadaliao/open-super-agent/blob/main/CONTRIBUTING.md">Contributing</a>
+      <a href="../" hreflang="zh-CN" lang="zh-CN">中文</a>
+    </nav>
+  </div>
+</footer>
+
+<dialog class="promo" aria-label="Promo video">
+  <button class="close" type="button" aria-label="Close">×</button>
+  <video controls playsinline preload="none" poster="../images/macos-app.png"><source src="../images/promo.mp4" type="video/mp4"></video>
+</dialog>
+
+<script src="../assets/site.js"></script>
+</body>
+</html>

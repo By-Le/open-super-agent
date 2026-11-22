@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>open-super-agent：可以自己部署的常驻 AI 队友</title>
+<meta name="description" content="会聊天，会派活，还有一台能看、能接手的电脑。开源，可替代 Grok Bot；模型自选，按 token 计费。macOS 桌面 App、Docker 服务器、iPhone、飞书钉钉企业微信都能用。">
+<meta name="theme-color" content="#f4f5f7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#131417" media="(prefers-color-scheme: dark)">
+<link rel="icon" href="assets/diamond.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+<link rel="alternate" hreflang="zh-CN" href="https://kadaliao.github.io/open-super-agent/">
+<link rel="alternate" hreflang="en" href="https://kadaliao.github.io/open-super-agent/en/">
+<link rel="canonical" href="https://kadaliao.github.io/open-super-agent/">
+<meta property="og:type" content="website">
+<meta property="og:title" content="open-super-agent：可以自己部署的常驻 AI 队友">
+<meta property="og:description" content="会聊天，会派活，还有一台能看、能接手的电脑。开源，模型自选。">
+<meta property="og:url" content="https://kadaliao.github.io/open-super-agent/">
+<meta property="og:image" content="https://kadaliao.github.io/open-super-agent/images/macos-app.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="./" aria-label="open-super-agent 首页">
+      <svg viewBox="0 0 20 20" aria-hidden="true"><polygon points="10,1 19,10 10,19 1,10" fill="currentColor"/></svg>
+      open-super-agent
+    </a>
+    <nav class="nav" aria-label="页面导航">
+      <a href="#tour">看看</a>
+      <a href="#features">能做什么</a>
+      <a href="#clients">在哪用</a>
+      <a href="#start">开始用</a>
+      <a href="#docs">文档</a>
+      <a href="https://github.com/kadaliao/open-super-agent">GitHub</a>
+    </nav>
+    <a class="lang" href="en/" hreflang="en" lang="en">English</a>
+  </div>
+</header>
+
+<main id="main">
+
+<div class="hero">
+  <div class="wrap">
+    <div>
+      <div class="cast" aria-hidden="true">
+        <svg viewBox="0 0 40 40"><path d="M20 2c1.6 10.5 6.6 15.6 18 18-11.4 2.4-16.4 7.5-18 18-1.6-10.5-6.6-15.6-18-18 11.4-2.4 16.4-7.5 18-18z" fill="#4a6cf7"/><circle cx="16.5" cy="19.5" r="1.8" fill="#16171b"/><circle cx="23.5" cy="19.5" r="1.8" fill="#16171b"/></svg>
+        <svg viewBox="0 0 40 40"><g fill="#f2557f"><circle cx="20" cy="9" r="8"/><circle cx="30.5" cy="16.6" r="8"/><circle cx="26.5" cy="29" r="8"/><circle cx="13.5" cy="29" r="8"/><circle cx="9.5" cy="16.6" r="8"/><circle cx="20" cy="20" r="9"/></g><circle cx="16.5" cy="20" r="1.8" fill="#16171b"/><circle cx="23.5" cy="20" r="1.8" fill="#16171b"/></svg>
+        <svg viewBox="0 0 40 40"><polygon points="20,2 25.3,14.2 38.5,15.4 28.5,24.2 31.4,37.2 20,30.4 8.6,37.2 11.5,24.2 1.5,15.4 14.7,14.2" fill="#f5b70a" stroke="#f5b70a" stroke-width="2.5" stroke-linejoin="round"/><circle cx="16.5" cy="22" r="1.8" fill="#16171b"/><circle cx="23.5" cy="22" r="1.8" fill="#16171b"/></svg>
+      </div>
+      <h1><span>会聊天，会派活，</span><span>还有一台自己的电脑</span></h1>
+      <p class="lede">open-super-agent 是可以自己部署的常驻 AI 队友。它在电脑上查资料、填表、下载文件，你能实时看屏幕，遇到验证码和登录随时接手。开源，可替代 <a href="https://x.ai/bot">Grok Bot</a>；模型自选，按 token 计费。</p>
+      <div class="actions">
+        <a class="btn primary" href="https://github.com/kadaliao/open-super-agent/releases/latest">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M16.4 12.6c0-2.6 2.1-3.8 2.2-3.9-1.2-1.8-3.1-2-3.7-2-1.6-.2-3.1.9-3.9.9-.8 0-2-.9-3.4-.9-1.7 0-3.3 1-4.2 2.6-1.8 3.1-.5 7.7 1.3 10.2.9 1.2 1.9 2.6 3.2 2.6 1.3-.1 1.8-.8 3.3-.8 1.6 0 2 .8 3.4.8 1.4 0 2.3-1.3 3.1-2.5 1-1.4 1.4-2.8 1.4-2.9-.1 0-2.7-1-2.7-4.1zM13.9 5c.7-.9 1.2-2 1-3.2-1 0-2.3.7-3 1.6-.7.8-1.3 2-1.1 3.1 1.2.1 2.3-.6 3.1-1.5z"/></svg>
+          下载 macOS App
+        </a>
+        <a class="btn" href="#start">部署到服务器</a>
+        <a class="btn" href="https://github.com/kadaliao/open-super-agent">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 .5C5.7.5.5 5.7.5 12c0 5.1 3.3 9.4 7.9 10.9.6.1.8-.3.8-.6v-2c-3.2.7-3.9-1.5-3.9-1.5-.5-1.3-1.3-1.7-1.3-1.7-1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.7-1.6-2.6-.3-5.3-1.3-5.3-5.7 0-1.3.5-2.3 1.2-3.1-.1-.3-.5-1.5.1-3.1 0 0 1-.3 3.2 1.2a11 11 0 0 1 5.8 0c2.2-1.5 3.2-1.2 3.2-1.2.6 1.6.2 2.8.1 3.1.8.8 1.2 1.9 1.2 3.1 0 4.4-2.7 5.4-5.3 5.7.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6 4.6-1.5 7.9-5.8 7.9-10.9C23.5 5.7 18.3.5 12 .5z"/></svg>
+          源码
+        </a>
+      </div>
+      <p class="hero-note">也可以 <code>brew install --cask kadaliao/tap/open-super-agent</code></p>
+    </div>
+    <figure class="hero-shot" style="margin:0">
+      <div class="window">
+        <div class="window-bar"><i></i><i></i><i></i><span>功能一览（无声，已加速）</span></div>
+        <img src="images/demo.webp" width="1280" height="720" alt="功能一览：对话里的链接卡片和视频、针对一条消息开讨论串、后台任务边做边看、Bot 用自己的电脑填表、关键操作先问你、几个 Bot 拉群分工、Bot 之间私信、一句话画海报、定时任务、连接 40 个应用、教一遍就会的技能、记住你的偏好、每一笔花费">
+      </div>
+      <button class="play" type="button" data-open-promo>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="11" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M10 8l6 4-6 4z" fill="currentColor"/></svg>
+        看宣传片（2 分钟，有配音）
+      </button>
+    </figure>
+  </div>
+</div>
+
+<section id="tour" aria-labelledby="tour-h">
+  <div class="wrap">
+    <h2 id="tour-h">看看长什么样</h2>
+    <p class="section-lede">下面的截图用的是演示数据：一个独立开发者准备发布“潮汐笔记 2.0”，三个 Bot 和页面里的内容都是真模型跑出来的。</p>
+    <div class="tour">
+      <ul class="tour-list" role="tablist" aria-label="功能截图">
+        <li><button class="tour-tab" role="tab" id="t-group" aria-controls="p-group" style="--accent:var(--nova)"><b>群聊分工</b><span>Nova 派活，Radar 查完竞品交给 Quill，Quill 把公告开头写进资料库。</span></button></li>
+        <li><button class="tour-tab" role="tab" id="t-task" aria-controls="p-task" style="--accent:var(--quill)"><b>后台任务</b><span>耗时的活放到后台，你接着聊；右栏是每一步：搜网页、搜 X / Reddit / 小红书、读网页。</span></button></li>
+        <li><button class="tour-tab" role="tab" id="t-applet" aria-controls="p-applet" style="--accent:var(--radar)"><b>小应用</b><span>一句话让 Nova 做一个发布倒计时，待办能直接勾。</span></button></li>
+        <li><button class="tour-tab" role="tab" id="t-events" aria-controls="p-events" style="--accent:var(--nova)"><b>事件</b><span>“这个网页有变化就告诉我”：Radar 盯着新版本发布和定价页变化。</span></button></li>
+        <li><button class="tour-tab" role="tab" id="t-skills" aria-controls="p-skills" style="--accent:var(--quill)"><b>技能</b><span>右栏是 Radar 会的技能，从技能市场装的 /周报整理、/近期动态；也能点“演示一遍”教它新的，以后输入 /名字 就能重做。</span></button></li>
+        <li><button class="tour-tab" role="tab" id="t-observe" aria-controls="p-observe" style="--accent:var(--radar)"><b>观测</b><span>花了多少、做得快不快、哪里出了错，能按 Bot 看，有每日预算。</span></button></li>
+        <li><button class="tour-tab" role="tab" id="t-apps" aria-controls="p-apps" style="--accent:var(--nova)"><b>应用市场</b><span>40 个应用，Notion、Gmail、飞书、钉钉、腾讯文档……登录或填 token 就能连。</span></button></li>
+      </ul>
+      <div class="tour-stage">
+        <div class="window">
+          <div class="window-bar"><i></i><i></i><i></i></div>
+          <img id="p-group" role="tabpanel" aria-labelledby="t-group" src="images/chat-group.webp" width="1600" height="1000" loading="lazy" alt="群聊“2.0 发布小组”：Nova 把活分给 Radar，Radar 挑出三条竞品价格的差异点交给 Quill，Quill 写好发布公告的开头段存进资料库">
+          <img id="p-task" role="tabpanel" aria-labelledby="t-task" src="images/task-steps.webp" width="1600" height="1000" loading="lazy" hidden alt="Radar 的后台任务做完，右栏列着每一步：搜网页、搜 Reddit、搜小红书、搜 X、读网页，各用了几秒">
+          <img id="p-applet" role="tabpanel" aria-labelledby="t-applet" src="images/applet.webp" width="1600" height="1000" loading="lazy" hidden alt="对话里的小应用“发布倒计时”：离上线还有 3 天 15 小时，下面是还没完成的任务，能勾选">
+          <img id="p-events" role="tabpanel" aria-labelledby="t-events" src="images/events.webp" width="1600" height="1000" loading="lazy" hidden alt="右栏“事件”：“Obsidian 新版本发布”和“flomo 定价页变化”，各有测试、现在看一次、暂停、编辑、记录">
+          <img id="p-skills" role="tabpanel" aria-labelledby="t-skills" src="images/skills.webp" width="1600" height="1000" loading="lazy" hidden alt="Radar 的右栏“技能”：/周报整理 和 /近期动态 两个从技能市场装的技能，上面有演示一遍、技能市场、导入；对话里 Radar 用 /近期动态 建好了每周一的定时任务和两个事件">
+          <img id="p-observe" role="tabpanel" aria-labelledby="t-observe" src="images/observe.webp" width="1600" height="1000" loading="lazy" hidden alt="观测页：今天的费用、token、任务数、多久开始回复，按小时的费用走势，各个 Bot 的花费">
+          <img id="p-apps" role="tabpanel" aria-labelledby="t-apps" src="images/apps.webp" width="1600" height="1000" loading="lazy" hidden alt="应用市场：Notion、flomo、腾讯文档、钉钉文档、飞书云文档、语雀、印象笔记、Gmail、QQ 邮箱等，按类筛选">
+        </div>
+        <p class="tour-desc" aria-hidden="true"></p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="features" aria-labelledby="features-h">
+  <div class="wrap">
+    <h2 id="features-h">它能做什么</h2>
+    <p class="section-lede">每个 Bot 有自己的人设、记忆和对话，也有自己的电脑。你说一句，它去做，做的每一步都看得到。</p>
+    <ul class="points">
+      <li><h3>会聊天，也会派活</h3><p>耗时的活交给后台任务，你接着聊。几个 Bot 能拉群，一个查完资料，自动交给另一个写总结。</p></li>
+      <li><h3>一台能看、能接手的电脑</h3><p>Bot 在电脑上查资料、填表、下载文件，你实时看屏幕。几个任务同时做，各开一个浏览器窗口，不用排队。</p></li>
+      <li><h3>也能用你的 Mac</h3><p>给了权限，Bot 能用鼠标键盘操作微信、访达、备忘录这些 App；你一动鼠标，它就停下。</p></li>
+      <li><h3>查得到最新的</h3><p>搜网页、读网页能换着用几家（DeepSeek、Exa、Tavily……），还能搜 X、Reddit、小红书上的帖子，带点赞和评论数。</p></li>
+      <li><h3>连上你在用的应用</h3><p>应用市场收录了 40 个，Notion、Gmail、GitHub、飞书、钉钉、腾讯文档……也能接任意 MCP。</p></li>
+      <li><h3>先问再做</h3><p>发邮件、提交表单这类操作先弹卡片问你；密钥加密存在保险库里，不进聊天记录。</p></li>
+      <li><h3>模型随便换，花多少看得到</h3><p>DeepSeek、Kimi、智谱、OpenAI、本机的 Ollama，任何兼容 OpenAI 的接口都行。画图、改图、生成视频也按配置接各家。</p></li>
+      <li><h3>教一遍就会，到点就做</h3><p>演示一遍就成了技能。说“每天 9 点帮我……”就建好定时任务，说“这个网页有变化就告诉我”就建好事件。</p></li>
+      <li><h3>在国内好用，数据在你手里</h3><p>飞书、钉钉、企业微信里直接说话；默认不需要国外的付费服务。跑在你自己的机器上，全部数据能导出成一个加密文件。</p></li>
+    </ul>
+    <p class="more"><a href="https://github.com/kadaliao/open-super-agent/blob/main/docs/features.md">完整的功能一览</a></p>
+  </div>
+</section>
+
+<section id="clients" aria-labelledby="clients-h">
+  <div class="wrap">
+    <h2 id="clients-h">在哪用</h2>
+    <p class="section-lede">同一套 Bot，放在一台机器上一直开着，从哪儿都能找它。</p>
+    <ul class="clients">
+      <li><h3>macOS 桌面 App</h3><p>下载 dmg 打开就能用，约 45 MB，不用装 Docker 和 Python。关掉窗口后在菜单栏接着跑。</p><a href="https://github.com/kadaliao/open-super-agent/blob/main/docs/desktop.md">桌面 App 说明</a></li>
+      <li><h3>服务器</h3><p>一条 <code>docker compose up</code> 放到 VPS 或家里的机器上，浏览器、App、手机、聊天软件都能连。</p><a href="https://github.com/kadaliao/open-super-agent/blob/main/docs/docker.md">Docker 部署说明</a></li>
+      <li><h3>iPhone App<small>TestFlight 内测</small></h3><p>扫电脑上的二维码就连上；要你确认的事、做完的任务推送到手机，内容加密。</p><a href="https://github.com/kadaliao/open-super-agent/blob/main/docs/mobile.md">iPhone App 说明</a></li>
+      <li><h3>聊天软件</h3><p>Telegram、飞书、钉钉、企业微信、Discord 里直接说话，要确认的操作变成消息里的按钮。</p><a href="https://github.com/kadaliao/open-super-agent/blob/main/docs/channels.md">聊天软件说明</a></li>
+    </ul>
+    <div class="devices">
+      <figure class="mac" style="margin:0">
+        <img src="images/macos-app.png" width="1398" height="968" loading="lazy" alt="macOS 桌面 App：左边是 Bot 列表，中间是 Nova 把出游清单写进文本编辑后的回复，右边的电脑面板是“本机”，实时显示这台 Mac 的屏幕">
+        <figcaption class="caption">桌面 App：Nova 直接在这台 Mac 上把出游清单写进文本编辑。<a href="images/mac-control.mp4">看 Bot 操作整台 Mac 的录屏</a></figcaption>
+      </figure>
+      <div class="phones">
+        <img src="images/ios-chat.png" width="599" height="1304" loading="lazy" alt="iPhone App：对话">
+        <img src="images/ios-approval.png" width="599" height="1304" loading="lazy" alt="iPhone App：确认卡片，允许一次、总是允许或拒绝">
+        <img src="images/ios-computer.png" width="599" height="1304" loading="lazy" alt="iPhone App：实时看 Bot 电脑的画面，随时接手">
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="start" aria-labelledby="start-h">
+  <div class="wrap">
+    <h2 id="start-h">开始用</h2>
+    <p class="section-lede">第一次打开会有引导：接上一个模型服务、认识你的 Bot（或从模板装一个）、连一个常用应用。模型跑在模型服务那边，不需要显卡。</p>
+    <div class="paths">
+      <div>
+        <h3>在 Mac 上</h3>
+        <p>macOS 12 以上，Apple 芯片或 Intel，8 GB 内存起。</p>
+        <ol class="steps">
+          <li>到<a href="https://github.com/kadaliao/open-super-agent/releases/latest">发布页</a>下载对应芯片的 dmg，或者用 Homebrew：
+            <div class="code"><pre>brew install --cask kadaliao/tap/open-super-agent</pre><button class="copy" type="button" data-done="已复制">复制</button></div>
+          </li>
+          <li>打开 App，选“在这台电脑上运行”。</li>
+        </ol>
+      </div>
+      <div>
+        <h3>在服务器上</h3>
+        <p>只需要装 Docker。用云电脑时 1 核 1 GB 就够，用本地 Docker 电脑建议 4 核 8 GB。</p>
+        <ol class="steps">
+          <li>拉代码，起服务：
+            <div class="code"><pre>git clone https://github.com/kadaliao/open-super-agent.git
+cd open-super-agent
+cp .env.example .env  <span class="c"># 可以先填 DEEPSEEK_API_KEY</span>
+docker compose up -d  <span class="c"># 第一次构建 5–10 分钟</span></pre><button class="copy" type="button" data-done="已复制">复制</button></div>
+          </li>
+          <li>打开 <code>http://127.0.0.1:8765</code>。自动 HTTPS、国内镜像源、备份见<a href="https://github.com/kadaliao/open-super-agent/blob/main/docs/docker.md">部署说明</a>。</li>
+        </ol>
+      </div>
+    </div>
+    <p class="warn"><strong>放到公网前先开登录。</strong>默认不用登录，只适合本机或内网（例如 Tailscale）。部署到公网，先设置 <code>OSA_PASSWORD</code>，再用 HTTPS 访问，见 <a href="https://github.com/kadaliao/open-super-agent/blob/main/SECURITY.md">安全说明</a>。</p>
+  </div>
+</section>
+
+<section id="docs" aria-labelledby="docs-h">
+  <div class="wrap">
+    <h2 id="docs-h">文档</h2>
+    <p class="section-lede">文档放在 GitHub 仓库里，跟着代码一起更新。</p>
+    <ul class="docs">
+      <li><a href="https://github.com/kadaliao/open-super-agent/blob/main/docs/features.md"><b>功能一览</b><span>全部功能，按主题分组</span></a></li>
+      <li><a href="https://github.com/kadaliao/open-super-agent/blob/main/docs/docker.md"><b>用 Docker Compose 部署</b><span>一条命令跑起来、自动 HTTPS、数据和备份</span></a></li>
+      <li><a href="https://github.com/kadaliao/open-super-agent/blob/main/docs/configuration.md"><b>配置</b><span>模型、画图、搜索、电脑、应用、确认规则与保险库</span></a></li>
+      <li><a href="https://github.com/kadaliao/open-super-agent/blob/main/docs/events.md"><b>事件</b><span>webhook、GitHub、订阅源、网页变化、邮件、价格……</span></a></li>
+      <li><a href="https://github.com/kadaliao/open-super-agent/blob/main/docs/desktop.md"><b>桌面 App</b><span>在这台电脑上运行、连接服务器、菜单栏、自动更新</span></a></li>
+      <li><a href="https://github.com/kadaliao/open-super-agent/blob/main/docs/mobile.md"><b>iPhone App</b><span>扫码连接、推送怎么送到手机</span></a></li>
+      <li><a href="https://github.com/kadaliao/open-super-agent/blob/main/docs/channels.md"><b>聊天软件</b><span>Telegram、飞书、钉钉、企业微信、Discord</span></a></li>
+      <li><a href="https://github.com/kadaliao/open-super-agent/blob/main/docs/skills.md"><b>技能</b><span>写法、技能包、技能市场、兼容 Claude SKILL.md</span></a></li>
+      <li><a href="https://github.com/kadaliao/open-super-agent/blob/main/docs/apps.md"><b>给应用市场加应用</b><span>清单格式、图标、在本机试、提 PR</span></a></li>
+      <li><a href="https://github.com/kadaliao/open-super-agent/blob/main/docs/architecture.md"><b>架构</b><span>各组件如何协作、代码目录、设计约定</span></a></li>
+      <li><a href="https://github.com/kadaliao/open-super-agent/blob/main/docs/comparison.md"><b>和 OpenMausBot 比</b><span>两个开源 Grok Bot 替代品的取舍</span></a></li>
+      <li><a href="https://github.com/kadaliao/open-super-agent/blob/main/docs/roadmap.md"><b>路线图</b><span>接下来的方向和先后顺序</span></a></li>
+    </ul>
+  </div>
+</section>
+
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>MIT 许可证 © Kada Liao</span>
+    <nav aria-label="页脚">
+      <a href="https://github.com/kadaliao/open-super-agent">GitHub</a>
+      <a href="https://github.com/kadaliao/open-super-agent/releases">发布页</a>
+      <a href="https://github.com/kadaliao/open-super-agent/blob/main/CHANGELOG.md">更新日志</a>
+      <a href="https://github.com/kadaliao/open-super-agent/issues">提 issue</a>
+      <a href="https://github.com/kadaliao/open-super-agent/blob/main/CONTRIBUTING.md">参与贡献</a>
+      <a href="en/" hreflang="en" lang="en">English</a>
+    </nav>
+  </div>
+</footer>
+
+<dialog class="promo" aria-label="宣传片">
+  <button class="close" type="button" aria-label="关闭">×</button>
+  <video controls playsinline preload="none" poster="images/macos-app.png"><source src="images/promo.mp4" type="video/mp4"></video>
+</dialog>
+
+<script src="assets/site.js"></script>
+</body>
+</html>
