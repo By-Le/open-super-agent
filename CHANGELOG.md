@@ -4,6 +4,18 @@
 
 ## [未发布]
 
+## [0.26.0] - 2026-11-23
+
+### 改动
+- **设置 → 搜索和读网页 简单多了**：原来一打开就是二十多张服务卡片（开关、排序、单价、填 Key、测试）。现在先看到一张概览：
+  搜索网页、读网页、X、Reddit、小红书各一行，写着在用哪家、要不要钱、有几家备用。都是免费的就说“不用填任何东西”；
+  先用的那家收费（比如配了 DeepSeek 就先用它）时，照实写哪几项在花钱、从谁的账户扣、大约每千次多少钱。
+  挑服务、填 API Key、调顺序、不用的网站收进“自己挑服务”，每类也只先列正在用的，其余的收在“还有 N 家可以换”里；
+  每个任务的预算只在真用了按条收钱的平台时才显示
+
+### 修复
+- 英文界面里 “X (Exa search, free)”“Reddit (Exa search, free)” 两家的名字被截成了半截
+
 ## [0.25.1] - 2026-11-21
 
 ### 修复
@@ -711,7 +723,8 @@
 - 按角色、任务和天统计费用，区分高峰和空闲价格；每日预算
 - MCP 应用接入；写操作前的确认卡片
 
-[未发布]: https://github.com/kadaliao/open-super-agent/compare/v0.25.1...HEAD
+[未发布]: https://github.com/kadaliao/open-super-agent/compare/v0.26.0...HEAD
+[0.26.0]: https://github.com/kadaliao/open-super-agent/compare/v0.25.1...v0.26.0
 [0.25.1]: https://github.com/kadaliao/open-super-agent/compare/v0.25.0...v0.25.1
 [0.25.0]: https://github.com/kadaliao/open-super-agent/compare/v0.24.0...v0.25.0
 [0.24.0]: https://github.com/kadaliao/open-super-agent/compare/v0.23.0...v0.24.0
