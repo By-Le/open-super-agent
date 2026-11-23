@@ -4,6 +4,8 @@
 
 ## [未发布]
 
+## [0.27.1] - 2026-11-23
+
 ### 修复
 - 文档里 ⌘Z 撤销不了（文档服务 Open Agent Docs 0.3.1 的编辑器在页面打开时就把撤销记录关掉了，这里接管回来）
 - 文档右上角加了“历史”：看自动存、Bot 改、手动存的版本，和现在对比，能恢复，能给现在存一版
@@ -744,7 +746,8 @@
 - 按角色、任务和天统计费用，区分高峰和空闲价格；每日预算
 - MCP 应用接入；写操作前的确认卡片
 
-[未发布]: https://github.com/kadaliao/open-super-agent/compare/v0.27.0...HEAD
+[未发布]: https://github.com/kadaliao/open-super-agent/compare/v0.27.1...HEAD
+[0.27.1]: https://github.com/kadaliao/open-super-agent/compare/v0.27.0...v0.27.1
 [0.27.0]: https://github.com/kadaliao/open-super-agent/compare/v0.26.0...v0.27.0
 [0.26.0]: https://github.com/kadaliao/open-super-agent/compare/v0.25.1...v0.26.0
 [0.25.1]: https://github.com/kadaliao/open-super-agent/compare/v0.25.0...v0.25.1
