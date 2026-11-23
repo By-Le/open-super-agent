@@ -17,11 +17,14 @@ async fn run() -> anyhow::Result<()> {
     if std::env::args().nth(1).as_deref() == Some("agent") {
         return osa::computer::agent::main().await;
     }
+    if std::env::args().nth(1).as_deref() == Some("backup") {
+        return osa::backup::cli();
+    }
     if std::env::args().nth(1).as_deref() == Some("setup") {
         return osa::runtime::setup_main().await;
     }
     if let Some(other) = std::env::args().nth(1).filter(|a| !a.starts_with('-')) {
-        anyhow::bail!("不认识的子命令：{other}（可以用 agent、setup，或者 --host / --port 起服务）");
+        anyhow::bail!("不认识的子命令：{other}（可以用 agent、setup、backup，或者 --host / --port 起服务）");
     }
     let mut host = "127.0.0.1".to_string();
     let mut port: u16 = 8765;

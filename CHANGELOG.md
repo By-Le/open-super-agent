@@ -13,6 +13,8 @@
 ### 改动
 - 资料库分成“文档”“网页”“文件”三栏。以前的 Markdown 页面第一次启动时自动搬进文档，旧链接会打开搬过去的那篇；网页、小应用照旧
 - `compose.yaml` 改用 Rust 版的镜像（`Dockerfile.rust`），和正式服务器、桌面 App 一样。文档只有 Rust 版有
+- 备份文件带上文档（连同里面上传的图片和文件），在另一台恢复后文档和 Bot 的写作身份都在。Rust 版也能在命令行导出备份：
+  `osa-server backup export -o <目录>`（口令放在 `OSA_BACKUP_PASSPHRASE` 里；Docker 里用 `docker compose exec osa osa-server backup export -o /app/data`）
 
 ## [0.26.0] - 2026-11-23
 

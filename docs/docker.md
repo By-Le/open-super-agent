@@ -40,7 +40,7 @@ docker compose up -d     # 第一次要构建镜像，大约 5–10 分钟
 备份：设置 → **备份与迁移** 导出一个加密文件，或者用命令行（口令也可以放在 `.env` 的 `OSA_BACKUP_PASSPHRASE` 里）：
 
 ```bash
-docker compose exec osa python -m osa.backup export -o /app/data    # 备份文件出现在宿主机的 data/ 里
+docker compose exec osa osa-server backup export -o /app/data    # 备份文件出现在宿主机的 data/ 里
 ```
 
 恢复在网页上传文件就行，服务会自动重启（`restart: unless-stopped`）。说明见 [备份与迁移](configuration.md#备份与迁移)。

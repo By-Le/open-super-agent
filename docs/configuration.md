@@ -537,11 +537,11 @@ mcp_servers:
 
 设置 → **备份与迁移**。换机器、从本机搬到服务器、升级前留一份，都用它。
 
-- **导出**：设一个口令（至少 8 个字符），下载一个 `.osabak` 文件。里面有 Bot、对话、记忆、技能、定时任务、资料库页面、应用配置、
+- **导出**：设一个口令（至少 8 个字符），下载一个 `.osabak` 文件。里面有 Bot、对话、记忆、技能、定时任务、文档（连同里面上传的图片和文件）、资料库网页、应用配置、
   模型服务和各项工作用的模型、确认规则、聊天软件连接、费用记录、保险库里的密钥（含模型的 API Key），以及 `data/apps/` 里本机的应用清单。
   文件用口令加密（scrypt + AES-256-GCM），口令忘了就打不开，请另外记好。
 - **恢复**：在新的那台上传文件、输口令，先解密检查，给你看里面有什么；点“恢复并重启”后服务自动重启，换上备份里的数据。
-  - 原来的数据库留在 `data/osa.db.before-restore-<时间>`，恢复错了可以停掉服务换回去。
+  - 原来的数据库留在 `data/osa.db.before-restore-<时间>`，原来的文档留在 `data/docs.before-restore-<时间>`，恢复错了可以停掉服务换回去。
   - 密钥用新机器自己的主密钥重新加密，两台的 `OSA_VAULT_KEY`（或 `data/vault.key`）不一样也没关系。
   - 聊天软件连接会先停用：确认原来那台停掉以后，在 设置 → 聊天软件 里启用，不然两边抢同一个机器人。原来那台还开着的话，定时任务也会跑两遍。
   - 网页地址（设置 → 聊天软件 最下面）是原来那台的，换了域名记得改。
@@ -551,7 +551,8 @@ mcp_servers:
 命令行（服务开着也能导出；恢复在下次启动时生效）：
 
 ```bash
-uv run python -m osa.backup export -o ~/backups          # 会问口令；或者设 OSA_BACKUP_PASSPHRASE
+OSA_BACKUP_PASSPHRASE=… osa-server backup export -o ~/backups   # Rust 版（Docker 镜像、桌面 App 里的服务）：只能导出，恢复在网页上做
+uv run python -m osa.backup export -o ~/backups          # Python 版：会问口令；或者设 OSA_BACKUP_PASSPHRASE
 uv run python -m osa.backup restore ~/backups/osa-backup-20261106-0835.osabak
 ```
 

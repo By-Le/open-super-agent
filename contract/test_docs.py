@@ -126,3 +126,69 @@ def test_legacy_markdown_pages_move_to_docs(llm):
         assert s2.http.get(f"/api/pages/{h['id']}").json()["format"] == "html"
     finally:
         s2.stop()
+
+
+def test_backup_carries_docs(llm, fake):
+    # 备份带上文档（数据库 + 上传的文件）；在另一台（另一个保险库主密钥）恢复后，文档还在，Bot 的 Agent 照样能用
+    import base64
+    b64 = lambda s: base64.b64encode(s.encode()).decode()
+    s1 = Server(llm, env={"OSA_DOCS": "", "OSA_DOCS_BIN": BIN or ""})
+    try:
+        until(lambda: s1.get("/api/settings")["docs"]["ready"], timeout=30, what="文档服务连上")
+        b = s1.make_bot("Keeper")
+        w = ws_id(s1)
+        page = v1(s1, "POST", f"/workspaces/{w}/pages", json={"title": "带走的文档"}).json()
+        v1(s1, "PUT", f"/pages/{page['id']}/content", json={"markdown": "要带走的一段"})
+        up = v1(s1, "POST", f"/workspaces/{w}/files", content=b"file-bytes-123",
+                headers={"Content-Type": "application/octet-stream", "X-Filename": "a.txt"})
+        assert up.status_code == 201, up.text
+        until(lambda: "Keeper" in {a["name"] for a in v1(s1, "GET", f"/workspaces/{w}/agents").json()["agents"]}, what="Agent")
+        assert s1.get("/api/backup")["counts"]["docs"] >= 1
+        r = s1.http.post("/api/backup/export", json={"passphrase": "correct horse battery"})
+        assert r.status_code == 200, r.text
+        data = r.content
+        # 命令行导出（Docker 里用）：服务开着也行，同样带着文档
+        import subprocess, zipfile
+        out = subprocess.run([conftest.RUST_BIN, "backup", "export", "-o", str(s1.tmp)], capture_output=True, text=True,
+                             env={**os.environ, "OSA_DATA_DIR": str(s1.data), "OSA_CONFIG": str(s1.tmp / "config.yaml"),
+                                  "OSA_BACKUP_PASSPHRASE": "correct horse battery"})
+        assert out.returncode == 0 and "已导出到" in out.stdout, out.stdout + out.stderr
+        assert '"docs"' in out.stdout and list(s1.tmp.glob("osa-backup-*.osabak"))
+    finally:
+        s1.stop()
+    s2 = Server(llm, env={"OSA_DOCS": "", "OSA_DOCS_BIN": BIN or ""})   # 新的一台：数据目录、主密钥都不一样
+    try:
+        until(lambda: s2.get("/api/settings")["docs"]["ready"], timeout=30, what="文档服务连上")
+        r = s2.http.put("/api/backup/restore", content=data, headers={"x-passphrase": b64("correct horse battery")})
+        assert r.status_code == 200, r.text
+        assert r.json()["counts"]["docs"] >= 1
+        started = s2.get("/api/backup")["started"]
+        assert s2.post("/api/backup/restore/confirm") == {"restarting": True}
+
+        def back():
+            try:
+                i = s2.http.get("/api/backup").json()
+                return i["started"] != started and s2.get("/api/settings")["docs"]["ready"]
+            except Exception:
+                return None
+        until(back, timeout=60, what="重启后连上文档服务")
+        assert v1(s2, "GET", f"/pages/{page['id']}").json()["title"] == "带走的文档"
+        assert "要带走的一段" in v1(s2, "GET", f"/pages/{page['id']}/content").json()["markdown"]
+        f = v1(s2, "GET", f"/files/{up.json()['id']}")
+        assert f.status_code == 200 and f.content == b"file-bytes-123"
+        # Bot 用恢复过来的 token 读文档（token 在新机器上重新加密过）
+        bot = next(x for x in s2.get("/api/bootstrap")["bots"] if x["name"] == "Keeper")
+        names = {a["name"] for a in v1(s2, "GET", f"/workspaces/{ws_id(s2)}/agents").json()["agents"] if a["revoked_at"] is None}
+        assert "Keeper" in names and "OSA" in names and not any(n.startswith(("Keeper-", "OSA-")) for n in names)
+        fake.script("router:Keeper", Call("read_page", {"page_id": page["id"]}), "读完")
+        ws = Socket(s2)
+        try:
+            ws.say(bot["chat_id"], "读一下")
+            until(lambda: s2.find(bot["chat_id"], role="assistant", text="读完"), what="回复")
+        finally:
+            ws.close()
+        out = [m for m in fake.bodies("router", "Keeper")[-1]["messages"] if m["role"] == "tool"][0]["content"]
+        assert out.startswith("《带走的文档》"), out
+        assert list(s2.data.glob("docs.before-restore-*")), "原来的文档要留一份"
+    finally:
+        s2.stop()

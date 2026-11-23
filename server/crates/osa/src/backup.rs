@@ -57,6 +57,42 @@ fn apps_dir() -> PathBuf {
     config::DATA.join("apps")
 }
 
+fn docs_dir() -> PathBuf {
+    config::DATA.join("docs")
+}
+
+/// 文档服务的数据：数据库 oad.db 和上传的文件 blobs/。搜索索引 search/ 不带，文档服务启动时自己补
+fn docs_files(dir: &Path) -> Vec<(String, PathBuf)> {
+    fn walk(base: &Path, d: &Path, out: &mut Vec<(String, PathBuf)>) {
+        let Ok(rd) = std::fs::read_dir(d) else { return };
+        let mut es: Vec<PathBuf> = rd.filter_map(|e| e.ok()).map(|e| e.path()).collect();
+        es.sort();
+        for p in es {
+            if p.is_dir() {
+                walk(base, &p, out);
+            } else if p.is_file()
+                && let Ok(rel) = p.strip_prefix(base)
+            {
+                out.push((format!("docs/{}", rel.to_string_lossy().replace('\\', "/")), p.clone()));
+            }
+        }
+    }
+    let mut out = vec![];
+    walk(dir, &dir.join("blobs"), &mut out);
+    out
+}
+
+/// 备份里文档的文件名：docs/oad.db 或 docs/blobs/…（每段只有字母数字和 . _ -，不能是 . 或 ..）
+fn docs_entry_ok(n: &str) -> bool {
+    static SEG: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[A-Za-z0-9._-]{1,128}$").unwrap());
+    if n == "docs/oad.db" {
+        return true;
+    }
+    let Some(rest) = n.strip_prefix("docs/blobs/") else { return false };
+    let segs: Vec<&str> = rest.split('/').collect();
+    segs.len() <= 8 && segs.iter().all(|x| SEG.is_match(x) && *x != "." && *x != "..")
+}
+
 type R<T> = Result<T, String>;
 
 fn io<E: std::fmt::Display>(e: E) -> String {
@@ -250,8 +286,22 @@ pub fn export(passphrase: &str, snap: PathBuf) -> R<(PathBuf, Value)> {
             }
         }
         let _ = db.execute("delete from vault", []);
+        crate::docs::tokens_for_backup(&db);
+        // 文档服务自己的数据库：另做一份一致的快照（文档服务照常运行）
+        let docs = crate::docs::local_dir();
+        let docs_snap = work.join("oad.db");
+        if let Some(d) = &docs {
+            // 文档服务把编辑攒 20 毫秒左右再存盘：稍等一下，刚改的也带上
+            std::thread::sleep(std::time::Duration::from_millis(200));
+            let src = Connection::open(d.join("oad.db")).map_err(io)?;
+            let _ = src.busy_timeout(std::time::Duration::from_secs(10));
+            src.execute("vacuum into ?", params![docs_snap.to_string_lossy()]).map_err(io)?;
+        }
         let mut meta = json!({"format": FORMAT, "created": py::now(), "version": version(), "counts": counts(&db),
                               "secrets": secrets.len(), "unreadable": unreadable});
+        if docs.is_some() {
+            meta["counts"]["docs"] = json!(crate::docs::page_count(&docs_snap).unwrap_or(0));
+        }
         let _ = db.execute_batch("vacuum");
         drop(db);
         let mut apps: Vec<PathBuf> = std::fs::read_dir(apps_dir())
@@ -273,9 +323,22 @@ pub fn export(passphrase: &str, snap: PathBuf) -> R<(PathBuf, Value)> {
                 z.start_file(format!("apps/{}", p.file_name().unwrap_or_default().to_string_lossy()), o).map_err(io)?;
                 std::io::copy(&mut std::fs::File::open(p).map_err(io)?, &mut z).map_err(io)?;
             }
+            if let Some(d) = &docs {
+                z.start_file("docs/oad.db", o).map_err(io)?;
+                std::io::copy(&mut std::fs::File::open(&docs_snap).map_err(io)?, &mut z).map_err(io)?;
+                for (name, p) in docs_files(d) {
+                    if !docs_entry_ok(&name) {
+                        continue;
+                    }
+                    let Ok(mut f) = std::fs::File::open(&p) else { continue }; // 刚被删掉的文件
+                    z.start_file(name, o).map_err(io)?;
+                    std::io::copy(&mut f, &mut z).map_err(io)?;
+                }
+            }
             z.finish().map_err(io)?;
         }
         let _ = std::fs::remove_file(&snap);
+        let _ = std::fs::remove_file(&docs_snap);
         let out = work.join(format!("osa-backup-{}.osabak", py::strftime("%Y%m%d-%H%M")));
         encrypt(&zpath, &out, passphrase)?;
         let _ = std::fs::remove_file(&zpath);
@@ -285,6 +348,33 @@ pub fn export(passphrase: &str, snap: PathBuf) -> R<(PathBuf, Value)> {
         let _ = std::fs::remove_dir_all(&work);
     }
     r
+}
+
+/// 命令行导出：`osa-server backup export [-o 目录或文件]`，口令放在 OSA_BACKUP_PASSPHRASE 里（方便定时备份、Docker 里用）。
+/// 服务开着也能导出（数据库做的是一致快照）。恢复在网页上做：设置 → 备份与迁移
+pub fn cli() -> anyhow::Result<()> {
+    let a: Vec<String> = std::env::args().skip(2).collect();
+    if a.first().map(String::as_str) != Some("export") {
+        anyhow::bail!("用法：osa-server backup export [-o 目录或文件]（口令放在环境变量 OSA_BACKUP_PASSPHRASE 里；恢复在网页的 设置 → 备份与迁移）");
+    }
+    let out = a.iter().position(|x| x == "-o" || x == "--output").and_then(|i| a.get(i + 1)).map(PathBuf::from).unwrap_or_else(|| ".".into());
+    let pass = std::env::var("OSA_BACKUP_PASSPHRASE").unwrap_or_default();
+    if pass.is_empty() {
+        anyhow::bail!("请把备份口令放在环境变量 OSA_BACKUP_PASSPHRASE 里");
+    }
+    check_passphrase(&pass).map_err(anyhow::Error::msg)?;
+    if !db_path().exists() {
+        anyhow::bail!("没有数据：{} 不存在（OSA_DATA_DIR 对吗？）", db_path().display());
+    }
+    let (path, meta) = export(&pass, snapshot().map_err(anyhow::Error::msg)?).map_err(anyhow::Error::msg)?;
+    let dst = if out.is_dir() { out.join(path.file_name().unwrap_or_default()) } else { out };
+    let r = std::fs::copy(&path, &dst).or_else(|_| std::fs::rename(&path, &dst).map(|_| 0));
+    if let Some(d) = path.parent() {
+        let _ = std::fs::remove_dir_all(d);
+    }
+    r?;
+    println!("已导出到 {}：{}", dst.display(), meta["counts"]);
+    Ok(())
 }
 
 // ---------- 恢复 ----------
@@ -350,6 +440,8 @@ pub fn stage(upload: &Path, passphrase: &str) -> R<Value> {
         if have.iter().any(|h| h == "computers") {
             let _ = db.execute("delete from computers", []);
         }
+        let with_docs = names.iter().any(|n| n == "docs/oad.db");
+        crate::docs::tokens_from_backup(&db, with_docs);
         let off = if have.iter().any(|h| h == "channels") {
             db.execute("update channels set enabled=0 where enabled=1", []).unwrap_or(0)
         } else {
@@ -368,6 +460,24 @@ pub fn stage(upload: &Path, passphrase: &str) -> R<Value> {
                 z.by_name(n).map_err(|_| bad())?.read_to_end(&mut b).map_err(io)?;
                 std::fs::write(stage.join("apps").join(&n[5..]), b).map_err(io)?;
             }
+        }
+        if with_docs {
+            for n in names.iter().filter(|n| docs_entry_ok(n)) {
+                let dst = stage.join(n);
+                if let Some(p) = dst.parent() {
+                    std::fs::create_dir_all(p).map_err(io)?;
+                }
+                let mut src = z.by_name(n).map_err(|_| bad())?;
+                std::io::copy(&mut src, &mut std::fs::File::create(&dst).map_err(io)?).map_err(io)?;
+            }
+            let odb = stage.join("docs/oad.db");
+            let ok: String = Connection::open(&odb)
+                .and_then(|c| c.query_row("pragma integrity_check", [], |r| r.get(0)))
+                .map_err(|_| t!("备份里的数据库坏了"))?;
+            if ok != "ok" {
+                return Err(t!("备份里的数据库坏了"));
+            }
+            info["counts"]["docs"] = json!(crate::docs::page_count(&odb).unwrap_or(0));
         }
         std::fs::write(stage.join("meta.json"), py::dumps_u(&info)).map_err(io)?;
         Ok(info)
@@ -425,6 +535,14 @@ pub fn apply_pending() -> bool {
         }
         let _ = std::fs::rename(s.join("apps"), &apps);
     }
+    // 文档整个换成备份里的；备份里没有文档就从空的开始（原来的都留着）
+    let docs = docs_dir();
+    if docs.exists() {
+        let _ = std::fs::rename(&docs, docs.with_file_name(format!("docs.before-restore-{ts}")));
+    }
+    if s.join("docs").is_dir() {
+        let _ = std::fs::rename(s.join("docs"), &docs);
+    }
     let _ = std::fs::remove_dir_all(&s);
     println!("已从备份恢复数据，原来的数据库留在 {}", old.display());
     true
@@ -475,7 +593,10 @@ fn no_backup_in_demo() -> Result<(), ApiError> {
 }
 
 async fn backup_info() -> Res {
-    let c = counts(&crate::db::conn());
+    let mut c = counts(&crate::db::conn());
+    if let Some(n) = crate::docs::local_dir().and_then(|d| crate::docs::page_count(&d.join("oad.db"))) {
+        c["docs"] = json!(n);
+    }
     ok(json!({"counts": c, "secrets": vault::names().len(), "staged": staged(), "started": *STARTED.lock(), "version": version()}))
 }
 

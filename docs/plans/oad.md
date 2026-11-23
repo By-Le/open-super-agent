@@ -37,6 +37,9 @@
 - **叫醒**：OSA 建一个 admin 的 Agent「OSA」，用它的通知流收整个工作区的通知；按通知里的 Agent 找到 Bot，
   在它的私聊里叫醒（kind=doc_comment，提示词是通知里的 prompt）。这一轮结束后 Bot 没在评论里回的，OSA 用它的 token 把回答发到那串评论里，
   再确认通知（没确认的，重连或重启后会再推）。
+- **备份**：`.osabak` 里带 `docs/oad.db`（另做一份一致快照）和 `docs/blobs/`，搜索索引不带（文档服务启动时自己补）。
+  Agent 的 token 在备份里是明文（整个备份是加密的，和 secrets.json 一样），恢复时用新机器的主密钥重新加密；备份里没有文档就清掉这些 Agent，文档从空的开始。
+  恢复时原来的 `data/docs` 留成 `docs.before-restore-<时间>`。连的是别处的 OAD（`OSA_DOCS_URL`）时不备份文档。
 - **外部 Agent**（dsh Bots、Claude Code）：现在不对外开 `/mcp`。要的话在同一个转发里加这一条路径。
 
 ## 分几步

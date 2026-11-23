@@ -130,10 +130,6 @@
     "{n} messaging app connection will be disabled for now. Make sure the old machine is stopped, then enable it under \"Messaging apps\", or both machines will compete for the same bot.",
     "{n} messaging app connections will be disabled for now. Make sure the old machine is stopped, then enable them under \"Messaging apps\", or both machines will compete for the same bots."
   ],
-  "{n} 个页面": [
-    "{n} page",
-    "{n} pages"
-  ],
   "{n} 条回复": [
     "{n} reply",
     "{n} replies"
@@ -230,7 +226,6 @@
   "企业微信": "WeCom",
   "企业自建应用": "Custom App",
   "会{replace}这台现在的全部数据，原来的数据库在服务器上留一份（{file}）。": "{replace} all data currently on this machine. A copy of the old database stays on the server ({file}).",
-  "会带上：{summary}，还有资料库页面、应用配置、确认规则、费用记录。不带电脑里的文件和浏览器的登录状态。": "Includes: {summary}, plus Library pages, app settings, approval rules and cost records. Files on the computer and browser sign-ins are not included.",
   "会打开 {title} 的授权页面，选好允许访问的内容就连上了，不用复制任何密钥。": "This opens {title}'s authorization page. Choose what to allow and you're connected, no keys to copy.",
   "你已处理完，Bot 继续": "You handled it; the bot continues",
   "你正在操作": "You're in control",
@@ -1449,7 +1444,7 @@
   "只按文字": "Text only",
   "消息里的页面链接、“去网页接手”按钮会用这个地址，生成视频时给视频服务的参考视频地址也用它。手机上要能打开，最好是 https。": "Page links and the \"Take over on the web\" button in messages use this address, and so do reference videos sent to video services. It needs to open on your phone; HTTPS is best.",
   "搜索和读网页": "Search & web pages",
-    "Bot 查资料、读网页、看大家在社交平台上怎么说时用。": "Used when bots look things up, read web pages, or check what people say on social platforms.",
+  "Bot 查资料、读网页、看大家在社交平台上怎么说时用。": "Used when bots look things up, read web pages, or check what people say on social platforms.",
   "{what}在用收费服务，从你的 {who} 账户扣钱，大约每千次 {price}。不想花钱，展开下面把它关掉，会自动换成免费的。": "{what}: using a paid service, billed to your {who} account at about {price} per 1,000 calls. To avoid the cost, open the section below and turn it off; a free one takes over automatically.",
   "现在用的都是免费的，不用填任何东西。": "Everything in use is free; there is nothing to fill in.",
   "现在能做的": "What works now",
@@ -1458,7 +1453,10 @@
   "用电脑上的浏览器，第一次要你登录一下": "Uses the browser on the computer; you log in once the first time",
   "用 {name}": "Uses {name}",
   "用{name}": "Uses {name}",
-  "另有 {n} 家备用": ["{n} backup", "{n} backups"],
+  "另有 {n} 家备用": [
+    "{n} backup",
+    "{n} backups"
+  ],
   "没有能用的，展开下面打开一家": "Nothing available. Open the section below and turn one on",
   "{name} 上的帖子": "Posts on {name}",
   "现在搜不了": "Not available right now",
@@ -1514,5 +1512,14 @@
   "还没有网页。": "No web pages yet.",
   "Bot 做的网页和小应用（能点、能填的界面）会存在这里。文字的报告、清单在“文档”里。": "Web pages and mini apps (interfaces you can click and fill in) made by bots are kept here. Text reports and lists are in Docs.",
   "网页是 Bot 做好存下来的 HTML 页面和小应用，所有 Bot 的都在这里，存在服务的数据库里。可以置顶、改名、生成分享链接。": "Web pages are HTML pages and mini apps saved by bots — all bots' are here, stored in the service's database. You can pin, rename, and share them.",
-  "按意思找网页，比如“上次做的竞品对比”": "Search web pages by meaning, e.g. \"the competitor comparison from last time\""
+  "按意思找网页，比如“上次做的竞品对比”": "Search web pages by meaning, e.g. \"the competitor comparison from last time\"",
+  "{n} 个网页": [
+    "{n} web page",
+    "{n} web pages"
+  ],
+  "{n} 篇文档": [
+    "{n} document",
+    "{n} documents"
+  ],
+  "会带上：{summary}，还有文档里上传的图片和文件、应用配置、确认规则、费用记录。不带电脑里的文件和浏览器的登录状态。": "Includes: {summary}, plus images and files uploaded to documents, app settings, approval rules and cost records. Files on the computer and browser sign-ins are not included."
 }

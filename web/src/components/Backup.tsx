@@ -10,7 +10,7 @@ type Staged = { created: number; version: string; counts: Record<string, number>
 const LABELS: [string, (n: number) => string][] = [
   ['bots', n => t('{n} 个 Bot', { n })], ['chats', n => t('{n} 个对话', { n })], ['messages', n => t('{n} 条消息', { n })],
   ['memories', n => t('{n} 条记忆', { n })], ['skills', n => t('{n} 个技能', { n })], ['routines', n => t('{n} 个定时任务', { n })],
-  ['pages', n => t('{n} 个页面', { n })], ['apps', n => t('{n} 个应用', { n })], ['channels', n => t('{n} 个聊天软件连接', { n })]]
+  ['docs', n => t('{n} 篇文档', { n })], ['pages', n => t('{n} 个网页', { n })], ['apps', n => t('{n} 个应用', { n })], ['channels', n => t('{n} 个聊天软件连接', { n })]]
 const summary = (c: Record<string, number>, secrets: number) =>
   LABELS.filter(([k]) => c[k]).map(([k, label]) => label(c[k])).concat(secrets ? [t('{n} 个密钥', { n: secrets })] : []).join(lang === 'en' ? ', ' : '、')
 const when = (ts: number) => new Date(ts * 1000).toLocaleString(locale, { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
@@ -59,7 +59,7 @@ function Export({ info }: { info: Info }) {
   return (
     <section className="bk-box">
       <h4>{t('导出')}</h4>
-      <p className="small">{t('会带上：{summary}，还有资料库页面、应用配置、确认规则、费用记录。不带电脑里的文件和浏览器的登录状态。', { summary: summary(info.counts, info.secrets) })}</p>
+      <p className="small">{t('会带上：{summary}，还有文档里上传的图片和文件、应用配置、确认规则、费用记录。不带电脑里的文件和浏览器的登录状态。', { summary: summary(info.counts, info.secrets) })}</p>
       <p className="muted small">{t('备份里有你所有的密钥（应用的 token、邮箱授权码、聊天软件的机器人密钥），所以要设一个口令加密，恢复时要输同一个口令。')}</p>
       <div className="bk-row">
         <input type="password" autoComplete="new-password" placeholder={t('口令（至少 8 个字符）')} value={p1} onChange={e => setP1(e.target.value)} />

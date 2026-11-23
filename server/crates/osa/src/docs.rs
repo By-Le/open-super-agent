@@ -103,6 +103,54 @@ fn dec(s: &str) -> Option<String> {
     vault::decrypt_raw(&base64::engine::general_purpose::STANDARD.decode(s).ok()?)
 }
 
+// ---------- 备份与迁移（backup.rs 用） ----------
+/// 自己起的文档服务的数据目录（连的是别处的 OAD、或者还没用过文档时是 None）
+pub fn local_dir() -> Option<std::path::PathBuf> {
+    let d = crate::config::DATA.join("docs");
+    d.join("oad.db").exists().then_some(d)
+}
+
+/// OAD 数据库里有几篇文档（不算回收站和数据库的行）
+pub fn page_count(oad_db: &std::path::Path) -> Option<i64> {
+    let c = rusqlite::Connection::open_with_flags(oad_db, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY).ok()?;
+    c.query_row("select count(*) from pages where deleted_at is null and kind<>'row'", [], |r| r.get(0)).ok()
+}
+
+const PLAIN: &str = "plain:";
+
+/// 导出前：Agent 的 token 是用这台的保险库主密钥加密的，换了机器解不开。备份文件整个是加密的，里面放明文（和 secrets.json 一样）
+pub fn tokens_for_backup(db: &rusqlite::Connection) {
+    let rows: Vec<(i64, String)> = db
+        .prepare("select bot_id, token from docs_agents")
+        .and_then(|mut s| s.query_map([], |r| Ok((r.get(0)?, r.get(1)?))).map(|m| m.filter_map(|x| x.ok()).collect()))
+        .unwrap_or_default();
+    for (id, tok) in rows {
+        match dec(&tok) {
+            Some(t) => db.execute("update docs_agents set token=? where bot_id=?", params![format!("{PLAIN}{t}"), id]),
+            None => db.execute("delete from docs_agents where bot_id=?", params![id]),
+        }
+        .ok();
+    }
+}
+
+/// 恢复时：备份里带着文档就用这台的主密钥重新加密 token；没带文档，这些 Agent 在新的文档服务里没有，清掉（启动时重新建）
+pub fn tokens_from_backup(db: &rusqlite::Connection, with_docs: bool) {
+    let rows: Vec<(i64, String)> = db
+        .prepare("select bot_id, token from docs_agents")
+        .and_then(|mut s| s.query_map([], |r| Ok((r.get(0)?, r.get(1)?))).map(|m| m.filter_map(|x| x.ok()).collect()))
+        .unwrap_or_default();
+    for (id, tok) in rows {
+        match tok.strip_prefix(PLAIN).filter(|_| with_docs) {
+            Some(t) => db.execute("update docs_agents set token=? where bot_id=?", params![enc(t), id]),
+            None => db.execute("delete from docs_agents where bot_id=?", params![id]),
+        }
+        .ok();
+    }
+    if !with_docs {
+        db.execute("delete from docs_legacy", []).ok();
+    }
+}
+
 struct AgentRow {
     agent_id: String,
     token: String,
