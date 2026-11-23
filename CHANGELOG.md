@@ -4,6 +4,8 @@
 
 ## [未发布]
 
+## [0.27.0] - 2026-11-23
+
 ### 新增
 - **文档**：资料库里的文档换成 [Open Agent Docs](https://github.com/kadaliao/open-agent-docs)，你和 Bot 一起写。直接在里面编辑，
   选中一段写评论、@ 某个 Bot，它就被叫醒：改页面、在评论里回复（私聊里也看得到）。每个 Bot 写的段落、评论记在它名下。
@@ -15,6 +17,7 @@
 - `compose.yaml` 改用 Rust 版的镜像（`Dockerfile.rust`），和正式服务器、桌面 App 一样。文档只有 Rust 版有
 - 备份文件带上文档（连同里面上传的图片和文件），在另一台恢复后文档和 Bot 的写作身份都在。Rust 版也能在命令行导出备份：
   `osa-server backup export -o <目录>`（口令放在 `OSA_BACKUP_PASSPHRASE` 里；Docker 里用 `docker compose exec osa osa-server backup export -o /app/data`）
+  以前的版本做的备份里没有文档：用它恢复时，确认前会提醒恢复后文档栏是空的，原来的文档留在 `data/docs.before-restore-<时间>`
 
 ## [0.26.0] - 2026-11-23
 
@@ -735,7 +738,8 @@
 - 按角色、任务和天统计费用，区分高峰和空闲价格；每日预算
 - MCP 应用接入；写操作前的确认卡片
 
-[未发布]: https://github.com/kadaliao/open-super-agent/compare/v0.26.0...HEAD
+[未发布]: https://github.com/kadaliao/open-super-agent/compare/v0.27.0...HEAD
+[0.27.0]: https://github.com/kadaliao/open-super-agent/compare/v0.26.0...v0.27.0
 [0.26.0]: https://github.com/kadaliao/open-super-agent/compare/v0.25.1...v0.26.0
 [0.25.1]: https://github.com/kadaliao/open-super-agent/compare/v0.25.0...v0.25.1
 [0.25.0]: https://github.com/kadaliao/open-super-agent/compare/v0.24.0...v0.25.0
