@@ -29,7 +29,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry --mount=type=cache,targe
 FROM node:24-bookworm-slim AS node
 
 # 文档（Open Agent Docs）：osa-server 自己把它当子进程起（只听 127.0.0.1，数据在 data/docs），见 docs/plans/oad.md
-FROM ghcr.io/kadaliao/open-agent-docs:0.3.1 AS oad
+FROM ghcr.io/kadaliao/open-agent-docs:0.3.2 AS oad
 
 FROM python:3.13-slim-bookworm AS base
 ARG NPM_REGISTRY=

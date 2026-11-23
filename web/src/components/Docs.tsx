@@ -89,21 +89,6 @@ export function DocList() {
   )
 }
 
-// 撤销：y-prosemirror 的撤销插件在编辑器重建插件视图时（Tiptap 的浮动工具栏注册插件就会）把撤销管理器 destroy 掉，
-// 但插件状态里还留着这个已经不听改动的管理器，结果 ⌘Z 什么也撤不了（Open Agent Docs 自己的网页也一样，0.3.1）。
-// 这里让它重新听，并把之后的 destroy 换成只清掉它自己的监听；编辑器真正关掉时再真的 destroy。
-function keepUndo(editor: Editor) {
-  const st = editor.state
-  const plugin = st.plugins.find(p => (p as any).key?.startsWith('y-undo$'))
-  const um: any = plugin && (plugin as any).getState(st)?.undoManager
-  if (!um || um.__osaKeep) return
-  um.__osaKeep = true
-  const realDestroy = um.destroy.bind(um)
-  um.destroy = () => { um._observers = new Map() }
-  if (!um.doc._observers?.get('afterTransaction')?.has(um.afterTransactionHandler)) um.doc.on('afterTransaction', um.afterTransactionHandler)
-  editor.on('destroy', () => realDestroy())
-}
-
 // 编辑器用到的外部服务：上传图片和文件、链接预览
 const unfurls = new Map<string, Unfurl>()
 function mediaServices(ws: string, pageId: string): Partial<MediaServices> {
@@ -114,6 +99,16 @@ function mediaServices(ws: string, pageId: string): Partial<MediaServices> {
     remember: (url, d) => { unfurls.set(url, d) },
     pageUrl: () => `${location.origin}/p/${pageId}`,
   }
+}
+
+// 正文里的链接：本工作区的文档（/p/<id>）在资料库里打开，别的交给编辑器（新标签页）
+function openLink(href: string) {
+  let u: URL
+  try { u = new URL(href, location.origin) } catch { return false }
+  const id = u.origin === location.origin && u.pathname.startsWith('/p/') ? u.pathname.split('/')[2] : ''
+  if (!id) return false
+  openLibrary(decodeURIComponent(id))
+  return true
 }
 
 type Panel = 'comments' | 'history' | null
@@ -236,7 +231,7 @@ function DocBody({ page, me, ws, panel, setPanel, version, setVersion, onOpenCou
           <article className="doc-main" data-status={doc.status}>
             <OadTitle ydoc={doc.ydoc} placeholder={t('无标题')} onEnter={() => editor && focusStart(editor)} onChange={onTitle} />
             <OadEditor ydoc={doc.ydoc} provider={doc.provider} user={user} media={media} authors={allAuthors} onUnknownAuthor={loadAuthors}
-              onReady={e => { keepUndo(e); setEditor(e) }}
+              onReady={setEditor} onOpenLink={openLink}
               onComment={a => { setDraft(a); setActive(null); setPanel('comments') }}
               onOpenThreads={ids => { const id = ids.find(x => x !== '__draft'); if (!id) return; setDraft(null); setActive(id); setPanel('comments') }} />
           </article>

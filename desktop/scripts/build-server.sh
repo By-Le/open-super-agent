@@ -12,7 +12,7 @@ ARCH="${1:-$(uname -m)}"
 [ "$ARCH" = "arm64" ] && ARCH=aarch64
 case "$ARCH" in aarch64|x86_64) ;; *) echo "不支持的架构：$ARCH" >&2; exit 1 ;; esac
 TRIPLE="$ARCH-apple-darwin"
-OAD_VERSION=0.3.1   # 和 server/crates/osa/Cargo.toml 里的 open-agent-docs 一致
+OAD_VERSION=0.3.2   # 和 server/crates/osa/Cargo.toml 里的 open-agent-docs 一致
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 OUT="$ROOT/desktop/build"

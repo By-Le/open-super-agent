@@ -1581,9 +1581,9 @@ checksum = "c08d65885ee38876c4f86fa503fb49d7b507c2b62552df7c70b2fce627e06381"
 
 [[package]]
 name = "open-agent-docs"
-version = "0.3.1"
+version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "83a6a386a94d25242af6514bde2180c747f193e45acf811087c6506ce538930f"
+checksum = "aeda8ac273e17c95f34b3b2659ef5dbfc8c7f44f1feb5f4433ba73c38b05e550"
 dependencies = [
  "base64 0.22.1",
  "bytes",
