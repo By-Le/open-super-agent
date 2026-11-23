@@ -120,6 +120,8 @@ function Restore({ info, onChange }: { info: Info; onChange: () => void }) {
         <ul className="small bk-notes">
           <li>{tn('会{replace}这台现在的全部数据，原来的数据库在服务器上留一份（{file}）。', {
             replace: <b>{tc('backup', '替换')}</b>, file: <code>{t('data/osa.db.before-restore-时间')}</code> })}</li>
+          {(info.counts.docs || 0) > 0 && !(staged.counts.docs >= 0) && <li>{tn('这个备份里没有文档（以前的版本做的备份不带文档）：恢复后文档栏是空的。这台现在的 {n} 篇文档不会删，挪到服务器上的 {dir} 里。', {
+            n: info.counts.docs, dir: <code>{t('data/docs.before-restore-时间')}</code> })}</li>}
           <li>{t('电脑不跟着走：这台会按自己的设置开电脑，原来电脑里的文件不在备份里。')}</li>
           {staged.channels_off > 0 && <li>{t('{n} 个聊天软件连接会先停用：确认原来那台已经停掉，再到“聊天软件”里启用，不然两边会抢同一个机器人。', { n: staged.channels_off })}</li>}
           <li>{t('原来那台如果还开着，记得停掉，不然定时任务会跑两遍。')}</li>

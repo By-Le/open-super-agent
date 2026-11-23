@@ -1521,5 +1521,7 @@
     "{n} document",
     "{n} documents"
   ],
-  "会带上：{summary}，还有文档里上传的图片和文件、应用配置、确认规则、费用记录。不带电脑里的文件和浏览器的登录状态。": "Includes: {summary}, plus images and files uploaded to documents, app settings, approval rules and cost records. Files on the computer and browser sign-ins are not included."
+  "会带上：{summary}，还有文档里上传的图片和文件、应用配置、确认规则、费用记录。不带电脑里的文件和浏览器的登录状态。": "Includes: {summary}, plus images and files uploaded to documents, app settings, approval rules and cost records. Files on the computer and browser sign-ins are not included.",
+  "这个备份里没有文档（以前的版本做的备份不带文档）：恢复后文档栏是空的。这台现在的 {n} 篇文档不会删，挪到服务器上的 {dir} 里。": "This backup has no documents (backups from earlier versions don't include them): after restoring, Documents will be empty. The {n} documents here now aren't deleted; they're moved to {dir} on the server.",
+  "data/docs.before-restore-时间": "data/docs.before-restore-<time>"
 }

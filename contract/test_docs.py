@@ -192,3 +192,35 @@ def test_backup_carries_docs(llm, fake):
         assert list(s2.data.glob("docs.before-restore-*")), "原来的文档要留一份"
     finally:
         s2.stop()
+
+
+def test_restore_backup_without_docs(llm):
+    # 以前的版本（或者没开文档）做的备份里没有文档：上传后的摘要里没有 docs，网页据此提醒；恢复后文档从空的开始，原来的挪到一边
+    import base64
+    s0 = Server(llm, env={"OSA_DOCS": "off"})
+    try:
+        data = s0.http.post("/api/backup/export", json={"passphrase": "correct horse battery"}).content
+    finally:
+        s0.stop()
+    s = Server(llm, env={"OSA_DOCS": "", "OSA_DOCS_BIN": BIN or ""})
+    try:
+        until(lambda: s.get("/api/settings")["docs"]["ready"], timeout=30, what="文档服务连上")
+        page = v1(s, "POST", f"/workspaces/{ws_id(s)}/pages", json={"title": "这台的文档"}).json()
+        assert s.get("/api/backup")["counts"]["docs"] >= 1
+        r = s.http.put("/api/backup/restore", content=data, headers={"x-passphrase": base64.b64encode(b"correct horse battery").decode()})
+        assert r.status_code == 200 and "docs" not in r.json()["counts"]
+        started = s.get("/api/backup")["started"]
+        s.post("/api/backup/restore/confirm")
+
+        def back():
+            try:
+                return s.http.get("/api/backup").json()["started"] != started and s.get("/api/settings")["docs"]["ready"]
+            except Exception:
+                return None
+        until(back, timeout=60, what="重启后连上文档服务")
+        assert v1(s, "GET", f"/pages/{page['id']}").status_code == 404
+        assert s.get("/api/backup")["counts"].get("docs", 0) == 0
+        old = list(s.data.glob("docs.before-restore-*"))
+        assert old and (old[0] / "oad.db").exists()
+    finally:
+        s.stop()
