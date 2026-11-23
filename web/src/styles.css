@@ -1356,6 +1356,14 @@ textarea.newbot-role.edit { display: block; width: 100%; max-height: 360px; resi
 .oad-host .comments .composer textarea { flex: none; max-height: none; padding: 8px 10px; border: 1px solid var(--oad-line-2); background: var(--oad-bg); line-height: 1.55; }
 .oad-host .comments .composer textarea:focus { border-color: var(--oad-accent); }
 .oad-host .comments .composer-hint { text-align: left; margin-top: 0; }
+/* 反过来也一样：OAD 的样式表没加前缀，文档页是懒加载的，进过一次文档以后它排在 OSA 后面，
+   同名的 .thread（加框、圆角、手形光标）、.composer textarea（加框、蓝色光圈、字号）会盖到聊天上。
+   聊天输入框多出来的 2px 边框还让自动增高算矮了，冒出滚动条。不在 .oad-host 里的一律改回 OSA 的样子 */
+.thread:not(.oad-host .thread) { border: 0; border-radius: 0; background: none; box-shadow: none; cursor: auto; transition: none; opacity: 1; }
+.composer:not(.oad-host .composer) { position: static; margin-top: 0; }
+.composer:not(.oad-host .composer) textarea { display: block; width: auto; border: 0; border-radius: 0; background: transparent; color: var(--fg); font: inherit; line-height: 1.5; box-shadow: none; transition: none; }
+.composer-hint:not(.oad-host .composer-hint) { margin-right: 0; color: var(--fg3); font-size: 11.5px; }
+.composer-hint.bad:not(.oad-host .composer-hint) { color: var(--bad); }
 .oad-host .seg { display: inline-flex; gap: 0; border: 0; padding: 2px; border-radius: 8px; background: var(--oad-bg-2); align-self: auto; flex-wrap: nowrap; }
 .oad-host .seg button { height: 26px; padding: 0 10px; border-radius: 6px; display: inline-flex; align-items: center; gap: 6px; color: var(--oad-fg-2); font-size: 13px; font-weight: 500; }
 .oad-host .seg button[aria-selected='true'] { background: var(--oad-bg); color: var(--oad-fg); box-shadow: 0 1px 2px rgba(0, 0, 0, .08), 0 0 0 1px var(--oad-line); }

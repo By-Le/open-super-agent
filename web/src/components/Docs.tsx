@@ -223,7 +223,8 @@ function DocBody({ page, me, ws, panel, setPanel, version, setVersion, onOpenCou
     setCommentThreads(editor, marks, draft ? '__draft' : active)
   }, [editor, doc.ready, threads, active, draft])
   useEffect(() => { if (panel !== 'comments') { setDraft(null); setActive(null) } }, [panel])
-  if (!doc.ydoc) return <div className="lib-body muted">{t('连接中…')}</div>
+  // 等本机缓存或服务器第一次同步到了再画编辑器（连不上最多等 2.5 秒）：不然先闪一下“无标题”的空白页，再跳成正文
+  if (!doc.ydoc || !doc.ready) return <div className="lib-body muted">{t('加载中…')}</div>
   return (
     <div className="doc-split oad-host">
       <div className="doc-col">

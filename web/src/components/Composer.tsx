@@ -69,7 +69,8 @@ export default function Composer({ chatId, bot, members, busy, onSend, inThread 
   }, [])
   useEffect(() => {  // 自动增高
     const el = ref.current
-    if (el) { el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, 240) + 'px' }
+    // scrollHeight 不含边框，而 height 按 border-box 算：把边框补上，不然差一两像素就冒滚动条
+    if (el) { el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight + el.offsetHeight - el.clientHeight, 240) + 'px' }
   }, [text])
 
   // 附件：原文件传到共用电脑的 uploads 目录（Bot 派任务时靠路径处理它）；图片另外缩小后存一份到服务端，
