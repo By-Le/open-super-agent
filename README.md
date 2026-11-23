@@ -62,7 +62,7 @@
 
 | 用法 | 说明 |
 |---|---|
-| 💻 **macOS 桌面 App** | 下载 dmg 打开就能用：约 45 MB，自带运行环境，不用装 Docker 和 Python。Bot 默认直接用这台电脑：浏览器，给了权限还有屏幕和鼠标键盘；也能换成 Docker 沙盒或云电脑。关掉窗口后在菜单栏接着跑；也能连到你的服务器，服务器上的 Bot 能把要在 Mac 上做的任务派过来。见 [桌面 App](docs/desktop.md) |
+| 💻 **macOS 桌面 App** | 下载 dmg 打开就能用：约 40 MB，自带运行环境，不用装 Docker 和 Python。Bot 默认直接用这台电脑：浏览器，给了权限还有屏幕和鼠标键盘；也能换成 Docker 沙盒或云电脑。关掉窗口后在菜单栏接着跑；也能连到你的服务器，服务器上的 Bot 能把要在 Mac 上做的任务派过来。见 [桌面 App](docs/desktop.md) |
 | 🖥️ **服务器** | 一条 `docker compose up` 放到 VPS 或家里的机器上，一直开着；浏览器、桌面 App、手机、聊天软件都能连。见 [用 Docker Compose 部署](docs/docker.md) |
 | 📱 **iPhone App**（TestFlight 内测） | 用相机扫电脑上的二维码就连上；要你确认的事、做完的任务推送到手机，内容加密，锁屏上就能看。见 [iPhone App](docs/mobile.md) |
 | 💬 **聊天软件** | 在 Telegram、飞书、钉钉、企业微信、Discord 里直接和 Bot 说话，要你确认的操作变成消息里的按钮。见 [聊天软件](docs/channels.md) |

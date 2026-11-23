@@ -91,7 +91,7 @@ The README lists the highlights; this is the full list. For setup see [Configura
 
 ## Library, images and links
 
-- **Library**: documents are written by you and your Bots together ([Open Agent Docs](https://github.com/kadaliao/open-agent-docs)): edit them directly, select a passage to comment and @ a Bot, and it comes to make the change and replies in the thread; share a document by link for anyone to read without logging in.
+- **Library**: documents are written by you and your Bots together ([Open Agent Docs](https://github.com/kadaliao/open-agent-docs)): edit them directly, select a passage to comment and @ a Bot, and it comes to make the change and replies in the thread; undo, browse version history and restore; share a document by link for anyone to read without logging in.
   Web pages and applets the Bots make live under Web pages; browse, upload and download files on the shared computer. See [Configuration → Docs](configuration.md#文档) (Chinese).
 - **Each Bot's library**: the Library tab in the side panel lists everything that Bot has handed you, newest first: pages, files it sent, images it drew and links in its replies. Filter by kind, search, open the original, and jump to the task that made it.
 - **Applets**: when you need something to click (a sign-up form, a board, a calculator, a panel that looks something up, a dashboard updated daily), the Bot builds it and it shows up right in the chat.
@@ -144,7 +144,7 @@ The README lists the highlights; this is the full list. For setup see [Configura
 
 - **Web**: any browser, desktop or phone. On a phone you can also watch the screen, take over and type, handle approvals, and dictate messages.
 - **macOS desktop app**:
-  - About a 45 MB download with its own runtime, no Docker or Python; Bots use this computer (a browser, plus the screen, mouse and keyboard once you grant the permissions).
+  - About a 40 MB download with its own runtime, no Docker or Python; Bots use this computer (a browser, plus the screen, mouse and keyboard once you grant the permissions).
   - Keeps running in the menu bar after you close the window, with system notifications for approvals and finished tasks.
   - Can also act as a client for your server. See [Desktop app](desktop.md) (Chinese).
 - **iPhone app** (TestFlight): connect by scanning a QR code on your computer with the Camera; pushes go through an encrypted relay, arrive even when the app is closed, show their content on the lock screen, and open the right conversation when tapped. See [iPhone app](mobile.md) (Chinese).

@@ -1523,5 +1523,30 @@
   ],
   "会带上：{summary}，还有文档里上传的图片和文件、应用配置、确认规则、费用记录。不带电脑里的文件和浏览器的登录状态。": "Includes: {summary}, plus images and files uploaded to documents, app settings, approval rules and cost records. Files on the computer and browser sign-ins are not included.",
   "这个备份里没有文档（以前的版本做的备份不带文档）：恢复后文档栏是空的。这台现在的 {n} 篇文档不会删，挪到服务器上的 {dir} 里。": "This backup has no documents (backups from earlier versions don't include them): after restoring, Documents will be empty. The {n} documents here now aren't deleted; they're moved to {dir} on the server.",
-  "data/docs.before-restore-时间": "data/docs.before-restore-<time>"
+  "data/docs.before-restore-时间": "data/docs.before-restore-<time>",
+  "自动存的": "Autosave",
+  "Bot 改的": "Bot edit",
+  "手动存的": "Saved",
+  "历史版本": "Version history",
+  "给这一版起个名字": "Name this version",
+  "存一版": "Save",
+  "给现在存一版": "Save a named version",
+  "现在": "Current",
+  "还没有存过的版本。编辑停下两分钟会自动存一版。": "No saved versions yet. A version is saved after two minutes without edits.",
+  "加上的": "Added",
+  "删掉的": "Removed",
+  "改过的": "Changed",
+  "把文档恢复到「{name}」的样子？恢复是一次新的改动，之后的历史都还在。": "Restore the document to how it was at {name}? Restoring is a new change; later history is kept.",
+  "恢复这一版": "Restore this version",
+  "和现在比": "Compared with now",
+  "{n} 处不同": [
+    "{n} difference",
+    "{n} differences"
+  ],
+  "和现在一样": "Same as now",
+  "只看改动": "Changes only",
+  "看以前的版本、恢复": "See and restore earlier versions",
+  "历史": "History",
+  "评论": "Comments",
+  "恢复出来的": "Restore"
 }
