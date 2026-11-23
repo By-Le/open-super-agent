@@ -1349,25 +1349,10 @@ textarea.newbot-role.edit { display: block; width: 100%; max-height: 360px; resi
 .page-actions .btn.on { background: var(--bg3); border-color: var(--fg3); }
 .doc-count { display: inline-block; min-width: 18px; padding: 0 5px; margin-left: 6px; border-radius: 9px; background: var(--acc); color: var(--acc-fg); font-size: 11.5px; line-height: 18px; text-align: center; }
 .doc-toast { position: absolute; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 7; padding: 8px 16px; border-radius: 10px; background: var(--fg); color: var(--bg); font-size: 13px; }
-/* 评论栏、历史栏里用的是 OAD 的类名（.thread、.composer、.seg、.btn-sm……），和 OSA 聊天里的同名样式会叠在一起：在这里按 OAD 的样子改回来 */
-.oad-host .comments .thread { max-width: none; margin: 0; padding: 10px 12px; }
-.oad-host .comments .composer { display: block; gap: 0; background: none; border: 0; border-radius: 0; padding: 0; transition: none; }
-.oad-host .comments .composer:focus-within { border-color: transparent; }
-.oad-host .comments .composer textarea { flex: none; max-height: none; padding: 8px 10px; border: 1px solid var(--oad-line-2); background: var(--oad-bg); line-height: 1.55; }
-.oad-host .comments .composer textarea:focus { border-color: var(--oad-accent); }
-.oad-host .comments .composer-hint { text-align: left; margin-top: 0; }
-/* 反过来也一样：OAD 的样式表没加前缀，文档页是懒加载的，进过一次文档以后它排在 OSA 后面，
-   同名的 .thread（加框、圆角、手形光标）、.composer textarea（加框、蓝色光圈、字号）会盖到聊天上。
-   聊天输入框多出来的 2px 边框还让自动增高算矮了，冒出滚动条。不在 .oad-host 里的一律改回 OSA 的样子 */
-.thread:not(.oad-host .thread) { border: 0; border-radius: 0; background: none; box-shadow: none; cursor: auto; transition: none; opacity: 1; }
-.composer:not(.oad-host .composer) { position: static; margin-top: 0; }
-.composer:not(.oad-host .composer) textarea { display: block; width: auto; border: 0; border-radius: 0; background: transparent; color: var(--fg); font: inherit; line-height: 1.5; box-shadow: none; transition: none; }
-.composer-hint:not(.oad-host .composer-hint) { margin-right: 0; color: var(--fg3); font-size: 11.5px; }
-.composer-hint.bad:not(.oad-host .composer-hint) { color: var(--bad); }
-.oad-host .seg { display: inline-flex; gap: 0; border: 0; padding: 2px; border-radius: 8px; background: var(--oad-bg-2); align-self: auto; flex-wrap: nowrap; }
-.oad-host .seg button { height: 26px; padding: 0 10px; border-radius: 6px; display: inline-flex; align-items: center; gap: 6px; color: var(--oad-fg-2); font-size: 13px; font-weight: 500; }
-.oad-host .seg button[aria-selected='true'] { background: var(--oad-bg); color: var(--oad-fg); box-shadow: 0 1px 2px rgba(0, 0, 0, .08), 0 0 0 1px var(--oad-line); }
-.oad-host .seg-count { min-width: 16px; padding: 0 4px; border-radius: 8px; background: var(--oad-bg-3); color: var(--oad-fg-2); font-size: 11px; line-height: 16px; text-align: center; }
+/* OAD 0.4 起编辑器的类名都带 oad- 前缀，和 OSA 不再撞名。评论栏的主按钮换成 OSA 的主色 */
+.oad-host .oad-root .oad-btn-primary { background: var(--acc); color: var(--acc-fg); border-color: var(--acc); }
+.oad-host .oad-root .oad-btn-primary:hover:not(:disabled) { opacity: .88; background: var(--acc); }
+/* 历史栏（DocHistory，从 OAD 的网页搬来）用的是 OSA 自己的 .btn、.icon-btn，按 OAD 的尺寸调小 */
 .oad-host .icon-btn { width: 28px; height: 28px; border-radius: 6px; font-size: 16px; }
 .oad-host .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
 .oad-host .btn-sm { padding: 4px 10px; font-size: 12.5px; border-radius: 8px; }
@@ -1375,5 +1360,5 @@ textarea.newbot-role.edit { display: block; width: 100%; max-height: 360px; resi
 .oad-host .btn-primary:hover:not(:disabled) { opacity: .88; background: var(--acc); }
 @media (max-width: 900px) {
   .doc-main { padding: 12px 16px 60px; }
-  .oad-host .comments { position: absolute; z-index: 6; right: 0; top: 0; bottom: 0; width: min(100%, 340px); box-shadow: var(--oad-shadow); }
+  .oad-host .oad-comments { position: absolute; z-index: 6; right: 0; top: 0; bottom: 0; width: min(100%, 340px); box-shadow: var(--oad-shadow); }
 }

@@ -62,10 +62,10 @@
   color: var(--oad-fg);
 }
 .hist-item:hover {
-  background: var(--side-hover);
+  background: var(--oad-side-hover);
 }
 .hist-item.is-on {
-  background: var(--side-active);
+  background: var(--oad-side-active);
 }
 /* 时间线：竖线 + 圆点 */
 .hist-item::before {

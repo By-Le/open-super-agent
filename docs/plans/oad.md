@@ -1,6 +1,6 @@
 # 文档改用 Open Agent Docs
 
-2026-11-23 定的：OSA 的文档交给 [Open Agent Docs](https://github.com/kadaliao/open-agent-docs)（OAD，0.3.1 起；0.3.2 修了撤销、正文里的链接能点开）。
+2026-11-23 定的：OSA 的文档交给 [Open Agent Docs](https://github.com/kadaliao/open-agent-docs)（OAD，0.3.1 起；0.3.2 修了撤销、正文里的链接能点开；0.4.0 起编辑器的类名都带 oad- 前缀，不再改到 OSA 的样式）。
 旧资料库里的 Markdown 页面和 Notion 都不再用；资料库里的网页（HTML 报告）、小应用、电脑里的文件照旧。
 
 ## 要得到什么
